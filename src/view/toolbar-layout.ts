@@ -46,6 +46,7 @@ export type CoreItemId =
   | "tape"
   | "record"
   | "fill"
+  | "translate"
   | "calculator"
   | "home"
   | "thumbnails"
@@ -123,6 +124,7 @@ export const BAR_ITEMS: readonly CoreItemId[] = [
   "tape",
   "record",
   "fill",
+  "translate",
   "calculator",
   "home",
   "thumbnails",
@@ -366,6 +368,9 @@ export const BAR_ITEM_LABELS: Record<CoreItemId, string> = {
   get fill() {
     return t("toolbar.tool.fill");
   },
+  get translate() {
+    return t("toolbar.tool.translate");
+  },
   get calculator() {
     return t("toolbar.calculator");
   },
@@ -425,6 +430,7 @@ export const BAR_ITEM_ICONS: Record<CoreItemId, string> = {
   tape: "bandage",
   record: "mic",
   fill: "paint-bucket",
+  translate: "languages",
   calculator: "calculator",
   home: "house",
   thumbnails: "panel-left",

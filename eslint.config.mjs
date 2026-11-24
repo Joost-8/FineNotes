@@ -18,6 +18,10 @@ export default tseslint.config(
       // Promo videos and their editor scripts (gitignored; not the plugin).
       "content creation/**",
       "**/*.mjs",
+      // The UI gallery is private tooling, gitignored here and shared through the
+      // maintainer's own repo; CI never sees it. A worktree that holds a copy
+      // must lint the same files CI does.
+      "scripts/ui-gallery/**",
       // UI gallery output and Obsidian's extracted files (gitignored).
       "scripts/ui-gallery/.cache/**",
       "scripts/ui-gallery/out/**",

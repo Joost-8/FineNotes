@@ -26,6 +26,8 @@ export interface FeatureHost {
   hideFeature(id: string, hide: boolean): void;
   /** Start a request on GitHub that carries these words. */
   ask(query: string): void;
+  /** Open GitHub's bug form, these words as its title and this device's versions filled in. */
+  report?: (query: string) => void;
 }
 
 /** Features a search list shows at most, under notebooks and pages. */

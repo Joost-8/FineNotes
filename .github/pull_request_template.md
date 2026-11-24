@@ -1,12 +1,23 @@
-## What and why
+## What changed and why
 
-<!-- One change per pull request. "Closes #123" links the issue and closes it on merge. -->
+<!-- One change per pull request. -->
 
 Closes #
 
-## How it was tested
+## Proof
 
-<!-- Tests added or changed, and the devices you tried it on (iPad + Pencil, Android + S Pen, desktop). Say so if you could not test on a device. -->
+<!-- Tests added or changed, screenshots or a recording, measurements (before and after). -->
 
-- [ ] `npm run lint`, `npm run lint:review`, `npm run typecheck`, `npm test` and `npm run build` pass
-- [ ] Tried on:
+## Test on the device
+
+<!-- Three steps someone can follow on an iPad or Android tablet, or "nothing to test by hand". -->
+
+1.
+2.
+3.
+
+## Not verified
+
+<!-- What you could not check (a device, a platform, a case), or "nothing". -->
+
+- [ ] `npm run gates` passes

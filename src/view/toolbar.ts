@@ -875,6 +875,8 @@ export interface ToolbarCallbacks {
   onAi?: (anchor: HTMLElement) => void;
   /** Open the calculator; `anchor` is the button. */
   onCalculator?: (anchor: HTMLElement) => void;
+  /** Open (or close) the Translate window, empty to type into. */
+  onTranslate?: (anchor: HTMLElement) => void;
   /** Start or stop an audio recording, or open its controls; `anchor` is the button. */
   onRecord?: (anchor: HTMLElement) => void;
   /** Open this note's settings (where its pictures and recordings go); `anchor` is the gear. */
@@ -1115,6 +1117,7 @@ const FOLD_RANK = {
   pdf: 2,
   sticker: 2.4,
   sticky: 2.6,
+  translate: 2.8,
   record: 3,
   image: 4,
   ai: 5,
@@ -1657,6 +1660,15 @@ export class Toolbar {
         (anchor) => this.tapSticky(anchor),
       );
     }
+    // Translate: the window to type text into (a selection's Translate opens it with that text).
+    if (cb.onTranslate)
+      action(
+        "translate",
+        FOLD_RANK.translate,
+        "languages",
+        t("toolbar.tool.translate"),
+        cb.onTranslate,
+      );
     // The note's recordings live in the page sidebar's Files tab, as in
     // GoodNotes; the mic only starts and stops one.
     this.recordButton = action(

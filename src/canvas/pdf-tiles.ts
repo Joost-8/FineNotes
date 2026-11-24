@@ -10,7 +10,7 @@
  */
 
 import type { Bounds, PageGeometry } from "../model/document";
-import { TILE_SIZE } from "./tile-grid";
+import { TILE_SIZE, tilesTouching } from "./tile-grid";
 
 /**
  * A PDF tile's side, in device px: two ink tiles (`TILE_SIZE`), so each one
@@ -29,6 +29,36 @@ export interface PdfTile {
   region: Bounds;
   /** Whether it shows on screen now; the others are rendered ahead. */
   visible: boolean;
+}
+
+/** Bytes of the PDF tiles a screen of `w` x `h` device px can show at once. */
+export function screenDetailBytes(w: number, h: number): number {
+  return tilesTouching(w, h, PDF_TILE_PX) * PDF_TILE_PX * PDF_TILE_PX * 4;
+}
+
+/** What the PDF cache keeps, in bytes (`PdfMemoryBudget` in `view/pdf-backdrop.ts`). */
+export interface DetailBudget {
+  soft: number;
+  hard: number;
+  keepDetail: number;
+}
+
+/**
+ * `base` grown to a screen of `w` x `h` device px, for a device with memory
+ * to spare (FineNotes#298). The fixed budget was set for an iPad screen; on
+ * an Android tablet's 3200 x 2000 px the tiles on screen and the row ahead
+ * took most of it, and the 32 MB of detail kept behind the view held fewer
+ * tiles than one screen: a zoomed-in pan back and forth rendered 106 of 142
+ * tiles again. Here a screen and a half of tiles is kept behind the view,
+ * the soft budget grows by as much (it trims what was not drawn just now),
+ * and the hard one holds that and a screen and a half more in view. Never
+ * below `base`.
+ */
+export function roomierPdfBudget(base: DetailBudget, w: number, h: number): DetailBudget {
+  const screen = screenDetailBytes(w, h);
+  const keepDetail = Math.max(base.keepDetail, 1.5 * screen);
+  const soft = base.soft + (keepDetail - base.keepDetail);
+  return { soft, hard: Math.max(base.hard, soft + 1.5 * screen), keepDetail };
 }
 
 /** A tile's side in page px at `level` device px per page px. */

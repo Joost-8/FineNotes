@@ -14,6 +14,7 @@
  *     - **Where:** Toolbar › Pen (keys P or W).
  *     - **Notes:** …            (optional)
  *     - **Words:** pen, write, ink
+ *     - **Seen as:** pen draws nothing, lines too thin   (optional: a bug report's words)
  *     - **Settings:** `pressureWidth`, `pencilTilt`   (optional)
  *     - **Commands:** `zoom-in`                       (optional)
  *     - **Tip:** `penOrder`                           (optional)
@@ -45,6 +46,27 @@ export const GUIDE_PAGES: readonly GuidePage[] = [
 
 const AREAS = new Set<string>(GUIDE_PAGES.map((page) => page.area));
 
+/** Where the guide's pages are read on GitHub. */
+const GUIDE_URL = "https://github.com/Joost-8/FineNotes/blob/main/guide";
+
+/**
+ * The anchor GitHub gives a heading: lower case, punctuation dropped,
+ * spaces as hyphens ("Simple look (hide Obsidian's bars)" →
+ * "simple-look-hide-obsidians-bars").
+ */
+export function headingAnchor(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s_-]/gu, "")
+    .replace(/\s/g, "-");
+}
+
+/** An entry's place in the wiki on GitHub: its page, at its heading. */
+export function guideEntryUrl(entry: Pick<GuideEntry, "area" | "title">): string {
+  const page = GUIDE_PAGES.find((candidate) => candidate.area === entry.area) ?? GUIDE_PAGES[0];
+  return `${GUIDE_URL}/${page.file}#${headingAnchor(entry.title)}`;
+}
+
 /** What each page says under its title. */
 const INTRO: Readonly<Record<GuideArea, string>> = {
   start:
@@ -64,6 +86,7 @@ const FIELDS = [
   ["where", "Where"],
   ["notes", "Notes"],
   ["words", "Words"],
+  ["seen", "Seen as"],
   ["settings", "Settings"],
   ["commands", "Commands"],
   ["feature", "Tip"],
@@ -115,6 +138,8 @@ export function parseGuidePage(markdown: string, file = "page"): GuideEntry[] {
     };
     const notes = fields.get("notes");
     if (notes) entry.notes = notes;
+    const seen = fields.get("seen");
+    if (seen) entry.seen = seen;
     const settings = listOf(fields.get("settings") ?? "");
     if (settings.length > 0) entry.settings = settings;
     const commands = listOf(fields.get("commands") ?? "");
@@ -135,7 +160,7 @@ export function parseGuidePage(markdown: string, file = "page"): GuideEntry[] {
       at = index;
       return;
     }
-    const field = /^- \*\*([A-Za-z]+):\*\* ?(.*)$/.exec(line);
+    const field = /^- \*\*([A-Za-z][A-Za-z ]*):\*\* ?(.*)$/.exec(line);
     if (field && title !== null) {
       const name = FIELD_OF.get(field[1].toLowerCase());
       if (!name) throw new GuidePageError(`${file}:${index + 1}: unknown field "${field[1]}".`);
@@ -174,6 +199,7 @@ export function formatGuidePage(page: GuidePage, entries: readonly GuideEntry[])
     out.push(`- **Where:** ${entry.where}`);
     if (entry.notes) out.push(`- **Notes:** ${entry.notes}`);
     out.push(`- **Words:** ${entry.words}`);
+    if (entry.seen) out.push(`- **Seen as:** ${entry.seen}`);
     if (entry.settings?.length) out.push(`- **Settings:** ${code(entry.settings)}`);
     if (entry.commands?.length) out.push(`- **Commands:** ${code(entry.commands)}`);
     if (entry.feature) out.push(`- **Tip:** \`${entry.feature}\``);

@@ -18,6 +18,7 @@ import {
   pickBounds,
   pickHandles,
   pickWord,
+  sweepWords,
 } from "../../src/canvas/text-pick";
 
 const VIEWPORT: Matrix = [1, 0, 0, -1, 0, 800];
@@ -151,5 +152,33 @@ describe("pickHandles and pickBounds", () => {
 describe("handleTarget", () => {
   it("reads the pointer offset by where it took the handle", () => {
     expect(handleTarget({ x: 10, y: 20 }, { x: -3, y: 4 })).toEqual({ x: 7, y: 24 });
+  });
+});
+
+describe("sweepWords", () => {
+  /** "A hash table" at y 100: a one-letter word, where a pen easily lands past its middle. */
+  const ONE = layoutText([item("A hash table", 100, 100)], PAGE);
+  const a = ONE.chars[0];
+  const table = ONE.chars[ONE.chars.length - 2];
+
+  it("keeps the word the pen came down on, even past the middle of its last letter", () => {
+    const pick = sweepWords(ONE, on1(a.x1 - 0.5), on1(table.x1));
+    expect(pick?.text).toBe("A hash table");
+  });
+
+  it("keeps it when the sweep runs backwards too", () => {
+    const hash = ONE.chars[2];
+    const pick = sweepWords(ONE, on1(a.x1 - 0.5), on1(hash.x0 + 0.5));
+    expect(pick?.text).toBe("A");
+    // Where it ends is a caret, as in a PDF viewer: past the middle of "A" is after it.
+    expect(sweepWords(ONE, on1(table.x1), on1(a.x1 - 0.5))?.text).toBe("hash table");
+    expect(sweepWords(ONE, on1(table.x1), on1(a.x0 + 0.5))?.text).toBe("A hash table");
+  });
+
+  it("follows the lines in reading order, whole words, and is null off the text", () => {
+    const pick = sweepWords(LAYOUT, on1(LAYOUT.chars[0].x0 + 1), on2(LAYOUT.chars[14].x0 + 1));
+    expect(pick?.text).toBe("hello world\nsecond");
+    expect(pick?.rects).toHaveLength(2);
+    expect(sweepWords(LAYOUT, { x: 500, y: 600 }, on1(120))).toBeNull();
   });
 });

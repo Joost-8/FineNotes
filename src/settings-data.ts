@@ -434,6 +434,13 @@ export interface GoodObsidianSettings {
   speechBaseUrl?: string;
   /** The interface language: a code from `INTERFACE_LANGUAGES`, or "auto" to follow Obsidian. */
   interfaceLanguage?: string;
+  // Translating selected text on this device (translate/languages.ts).
+  /** The language last translated into; empty until one is chosen. */
+  translateTo?: string;
+  /** The language last translated from, used when a short text's language is unclear. */
+  translateFrom?: string;
+  /** Translate with the AI service instead of on this device (shown only with one set up). */
+  translateWithAi?: boolean;
 
   // Dark pages (#25): a view setting. What is stored never changes.
   /** Light pages, dark pages, or following Obsidian's theme. Checked where it is read. */
@@ -674,6 +681,8 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   speechServiceModel: "",
   speechBaseUrl: "",
   interfaceLanguage: "auto",
+  translateTo: "",
+  translateFrom: "",
   notebookOwnFolder: true,
   showNewNotebookInContextMenu: true,
   showNewNotebookInExplorer: true,

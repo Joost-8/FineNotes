@@ -1452,6 +1452,9 @@ select.goodobsidian-choice-select {
   font-weight: var(--font-semibold, 600);
   grid-column: 2;
   text-align: center;
+  /* Text only. "Select all" is wider than its 44 px column and runs under
+     the title, which would otherwise take the taps on its right half. */
+  pointer-events: none;
 }
 
 .goodobsidian-pagesidebar .goodobsidian-pagesidebar-close.clickable-icon {
@@ -6691,6 +6694,241 @@ button.goodobsidian-cover-swatch.clickable-icon {
   }
 }
 
+/* ------------------------------------------- the Translate window (Translate) */
+/* A floating window like the calculator's (the shared frame rules are with
+   the graph window's): the two languages, the text, the translation in a
+   well, and its actions under it. */
+.goodobsidian-tr {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 0 4px 4px;
+}
+
+.goodobsidian-tr-langs {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.goodobsidian-tr-window select.dropdown.goodobsidian-tr-lang {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: var(--font-ui-small);
+}
+
+/* From while it detects: the language found, in the accent colour. */
+.goodobsidian-tr-window select.dropdown.goodobsidian-tr-lang.is-auto {
+  color: var(--text-accent);
+}
+
+.goodobsidian-tr-window button.clickable-icon.goodobsidian-tr-button {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  justify-content: center;
+  border-radius: var(--gob-radius-m);
+  color: var(--gob-icon);
+}
+
+.goodobsidian-tr-window button.clickable-icon.goodobsidian-tr-button.is-hidden {
+  display: none;
+}
+
+/* The AI switch: on is the accent fill, as a selected tool is. */
+.goodobsidian-tr-window button.clickable-icon.goodobsidian-tr-button.is-ai.is-on {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+/* The text: editable, with Clear in its corner while it holds any. */
+.goodobsidian-tr-source {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  min-height: 64px;
+}
+
+.goodobsidian-tr-window textarea.goodobsidian-tr-text {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  resize: none;
+  padding: 8px 36px 8px 10px;
+  border-radius: var(--gob-radius-m);
+  font-size: 16px;
+  line-height: 1.45;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.goodobsidian-tr-window button.clickable-icon.goodobsidian-tr-button.is-clear {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 28px;
+  height: 28px;
+}
+
+/* The translation: a well in the secondary background, selectable. */
+.goodobsidian-tr-result {
+  flex: 1 1 0;
+  min-height: 64px;
+  padding: 8px 10px;
+  overflow-y: auto;
+  border-radius: var(--gob-radius-m);
+  background: var(--background-secondary);
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.goodobsidian-tr-output {
+  font-size: 16px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.goodobsidian-tr-placeholder {
+  color: var(--text-faint);
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+/* An AI translation of a word: its dictionary notes under it. */
+.goodobsidian-tr-notes {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: 1.4;
+}
+
+.goodobsidian-tr-note {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  white-space: normal;
+}
+
+/* The download card in the translation's place, drawn as the model
+   download card is (its icon, title, detail, track and button classes). */
+.goodobsidian-tr-download {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: var(--font-ui-small);
+  line-height: 1.35;
+}
+
+.goodobsidian-tr-download.is-busy .goodobsidian-download-card-track {
+  display: block;
+}
+
+.goodobsidian-tr-download.is-failed .goodobsidian-download-card-icon {
+  color: var(--color-orange);
+}
+
+.goodobsidian-tr-download button.goodobsidian-download-card-button.clickable-icon {
+  flex: 0 0 auto;
+  align-self: center;
+  justify-content: center;
+  height: var(--gob-touch);
+  padding: 0 14px;
+  border-radius: var(--gob-radius-pill);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-weight: var(--font-semibold, 600);
+  white-space: nowrap;
+  opacity: 1;
+}
+
+.goodobsidian-tr-download button.goodobsidian-download-card-button.clickable-icon:hover {
+  background: var(--interactive-accent-hover);
+}
+
+.goodobsidian-tr-download button.goodobsidian-download-card-button.clickable-icon:disabled {
+  opacity: 0.5;
+}
+
+.goodobsidian-tr-fine {
+  margin-top: 6px;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+/* Under the translation: Read aloud at the start, the rest at the end. */
+.goodobsidian-tr-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  padding-right: 22px;
+}
+
+.goodobsidian-tr-actions.is-hidden {
+  display: none;
+}
+
+.goodobsidian-tr-spacer {
+  flex: 1 1 auto;
+}
+
+/* Busy: three dots that pulse in turn, where the translation will be. */
+.goodobsidian-tr-busy {
+  display: flex;
+  gap: 5px;
+  padding: 8px 0;
+}
+
+.goodobsidian-tr-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  animation: goodobsidian-tr-pulse 1s ease-in-out infinite;
+}
+
+.goodobsidian-tr-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.goodobsidian-tr-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes goodobsidian-tr-pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Minimised: the bar as a pill, as the graph window's. */
+.goodobsidian-tr-window.is-minimised {
+  border-radius: var(--gob-radius-pill);
+}
+
+.goodobsidian-tr-window.is-minimised .goodobsidian-tr-window-body,
+.goodobsidian-tr-window.is-minimised .goodobsidian-tr-window-grip,
+.goodobsidian-tr-window.is-minimised
+  button.clickable-icon.goodobsidian-tr-window-button:not(.is-close) {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goodobsidian-tr-dot {
+    animation: none;
+  }
+}
+
 /* ------------------------------------------------ images on the page (0.5) */
 
 /* The selected image's chrome: a frame turned with the image, square corner
@@ -11898,8 +12136,9 @@ button.goodobsidian-color-delete.clickable-icon {
     position: absolute;
     z-index: 2;
     min-width: 0;
-    width: 22px;
-    height: 22px;
+    /* WCAG's 24 px target floor; only a mouse shows them (the row swipes on a tablet). */
+    width: 24px;
+    height: 24px;
     padding: 0;
     border: 1px solid var(--gob-line);
     border-radius: 50%;
@@ -15374,7 +15613,8 @@ button.clickable-icon.goodobsidian-calc-apply.is-error {
 .goodobsidian-graph-window,
 .goodobsidian-eq-window,
 .goodobsidian-calc-window,
-.goodobsidian-zoombox-window {
+.goodobsidian-zoombox-window,
+.goodobsidian-tr-window {
   position: absolute;
   z-index: 20;
   display: flex;
@@ -15393,14 +15633,16 @@ button.clickable-icon.goodobsidian-calc-apply.is-error {
 
 .goodobsidian-graph-window.is-raised,
 .goodobsidian-calc-window.is-raised,
-.goodobsidian-zoombox-window.is-raised {
+.goodobsidian-zoombox-window.is-raised,
+.goodobsidian-tr-window.is-raised {
   transform: scale(1.02);
 }
 
 .goodobsidian-graph-window-bar,
 .goodobsidian-eq-window-bar,
 .goodobsidian-calc-window-bar,
-.goodobsidian-zoombox-window-bar {
+.goodobsidian-zoombox-window-bar,
+.goodobsidian-tr-window-bar {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
@@ -15414,7 +15656,8 @@ button.clickable-icon.goodobsidian-calc-apply.is-error {
 .goodobsidian-graph-window-title,
 .goodobsidian-eq-window-title,
 .goodobsidian-calc-window-title,
-.goodobsidian-zoombox-window-title {
+.goodobsidian-zoombox-window-title,
+.goodobsidian-tr-window-title {
   flex: 1 1 auto;
   color: var(--text-muted);
   font-size: var(--font-ui-small);
@@ -15432,7 +15675,8 @@ button.clickable-icon.goodobsidian-calc-apply.is-error {
 button.clickable-icon.goodobsidian-graph-window-button,
 button.clickable-icon.goodobsidian-eq-window-button,
 button.clickable-icon.goodobsidian-calc-window-button,
-button.clickable-icon.goodobsidian-zoombox-window-button {
+button.clickable-icon.goodobsidian-zoombox-window-button,
+button.clickable-icon.goodobsidian-tr-window-button {
   flex: 0 0 auto;
   width: 36px;
   height: 36px;
@@ -15444,7 +15688,8 @@ button.clickable-icon.goodobsidian-zoombox-window-button {
 .goodobsidian-graph-window-body,
 .goodobsidian-eq-window-body,
 .goodobsidian-calc-window-body,
-.goodobsidian-zoombox-window-body {
+.goodobsidian-zoombox-window-body,
+.goodobsidian-tr-window-body {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -15492,7 +15737,8 @@ button.clickable-icon.goodobsidian-zoombox-window-button {
 .goodobsidian-graph-window-grip,
 .goodobsidian-eq-window-grip,
 .goodobsidian-calc-window-grip,
-.goodobsidian-zoombox-window-grip {
+.goodobsidian-zoombox-window-grip,
+.goodobsidian-tr-window-grip {
   position: absolute;
   right: 0;
   bottom: 0;
@@ -15509,7 +15755,8 @@ button.clickable-icon.goodobsidian-zoombox-window-button {
 .goodobsidian-graph-window-grip svg,
 .goodobsidian-eq-window-grip svg,
 .goodobsidian-calc-window-grip svg,
-.goodobsidian-zoombox-window-grip svg {
+.goodobsidian-zoombox-window-grip svg,
+.goodobsidian-tr-window-grip svg {
   width: 14px;
   height: 14px;
 }
@@ -15606,7 +15853,8 @@ button.clickable-icon.goodobsidian-zoombox-window-button {
 .goodobsidian-graph-window.is-front,
 .goodobsidian-eq-window.is-front,
 .goodobsidian-calc-window.is-front,
-.goodobsidian-zoombox-window.is-front {
+.goodobsidian-zoombox-window.is-front,
+.goodobsidian-tr-window.is-front {
   z-index: 21;
 }
 

@@ -133,6 +133,7 @@ import {
   ByteLru,
   TILE_SIZE,
   type TileRect,
+  panTileBytes,
   previewScale,
   quantiseLevel,
   rasterSize,
@@ -237,6 +238,8 @@ export interface BackdropPainter {
      */
     near?: Array<{ backdrop: Backdrop; geometry: PageGeometry }>,
   ) => void;
+  /** The screen it draws for is `width` x `height` device px (FineNotes#298: caches sized to it). */
+  setScreen?: (width: number, height: number) => void;
   /**
    * `weight` thickens synthetic rules for a small thumbnail (default 1).
    * `target.paper` is the paper theme the caller paints the rest of the page
@@ -869,10 +872,29 @@ export class Renderer {
     this.backdrop = layerOf(backdrop, false);
     this.dry = layerOf(dry, false);
     this.wet = layerOf(wet, wetDesynchronized);
+    this.wetAsked = wetDesynchronized;
     // The same WebKit can fail to clear a desynchronized canvas to
     // transparent, and the wet layer lies over the dry one: it is shown only
     // while something is drawn on it, so a stale frame can never hide ink.
     this.setWetVisible(false);
+  }
+
+  /** Whether the wet layer asked for a low-latency (`desynchronized`) context. */
+  private readonly wetAsked: boolean;
+
+  /**
+   * The wet layer's low-latency context, for the HUD: `on` (granted), `asked`
+   * (asked for and refused: browsers refuse it silently), `off` (not asked
+   * for), or `?` where the browser cannot say.
+   */
+  wetLowLatency(): "on" | "asked" | "off" | "?" {
+    if (!this.wetAsked) return "off";
+    const ctx = this.wet.ctx as CanvasRenderingContext2D & {
+      getContextAttributes?: () => { desynchronized?: boolean };
+    };
+    const granted = ctx.getContextAttributes?.().desynchronized;
+    if (granted === undefined) return "?";
+    return granted ? "on" : "asked";
   }
 
   /** Release every cached bitmap. The renderer is unusable afterwards. */
@@ -929,10 +951,34 @@ export class Renderer {
     this.applyTileBudget();
   }
 
+  /**
+   * Keep every tile a pan can come back to (`panTileBytes`, FineNotes#298),
+   * on a device with memory to spare: the prefetch ring round the dry layer
+   * and a screen more. Off, the budget is {@link TILE_BUDGET_VIEWPORTS}
+   * screens, which on a large screen held fewer tiles than one paint makes.
+   */
+  setPanRoom(on: boolean): void {
+    if (on === this.panRoom) return;
+    this.panRoom = on;
+    this.applyTileBudget();
+  }
+
+  private panRoom = false;
+
   private applyTileBudget(): void {
     const warm = this.warmViewports * this.viewportBytes;
+    const { w, h } = this.screenDevice;
+    const dpr = this.screen.dpr;
+    const pan = this.panRoom
+      ? panTileBytes(
+          w,
+          h,
+          PREFETCH_MARGIN + this.overscan.x * dpr,
+          PREFETCH_MARGIN + this.overscan.y * dpr,
+        )
+      : 0;
     this.tiles.setBudget(
-      Math.max(MIN_TILE_BUDGET, TILE_BUDGET_VIEWPORTS * this.viewportBytes) + warm,
+      Math.max(MIN_TILE_BUDGET, TILE_BUDGET_VIEWPORTS * this.viewportBytes, pan) + warm,
     );
   }
 

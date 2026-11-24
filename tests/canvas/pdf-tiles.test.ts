@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { PDF_TILE_PX, tileRegion, tileSide, tilesFor } from "../../src/canvas/pdf-tiles";
+import {
+  PDF_TILE_PX,
+  roomierPdfBudget,
+  screenDetailBytes,
+  tileRegion,
+  tileSide,
+  tilesFor,
+} from "../../src/canvas/pdf-tiles";
 import { TILE_SIZE } from "../../src/canvas/tile-grid";
 
 const geometry = { width: 1024, height: 1448 };
@@ -61,5 +68,34 @@ describe("PDF tile grid", () => {
     expect(tilesFor(geometry, { minX: 2000, minY: 0, maxX: 2100, maxY: 100 }, 16)).toEqual([]);
     expect(tilesFor(geometry, { minX: 0, minY: 0, maxX: 100, maxY: 100 }, 0)).toEqual([]);
     expect(tilesFor(geometry, { minX: 0, minY: 0, maxX: Number.NaN, maxY: 100 }, 16)).toEqual([]);
+  });
+});
+
+describe("a PDF budget sized to the screen (FineNotes#298)", () => {
+  const MB = 1024 * 1024;
+  const base = { soft: 48 * MB, hard: 96 * MB, keepDetail: 32 * MB };
+
+  it("counts the tiles a screen can show at once", () => {
+    // 3200 x 2000 px: 5 x 3 tiles of 4 MB at most.
+    expect(screenDetailBytes(3200, 2000)).toBe(15 * 4 * MB);
+    expect(screenDetailBytes(0, 2000)).toBe(0);
+  });
+
+  it("keeps a screen and a half behind the view, and room for it", () => {
+    const tablet = roomierPdfBudget(base, 3200, 2000);
+    expect(tablet.keepDetail).toBe(90 * MB);
+    expect(tablet.soft).toBe(48 * MB + 58 * MB);
+    expect(tablet.hard).toBe(tablet.soft + 90 * MB);
+    // More than a screen of tiles is kept, where 32 MB held 8.
+    expect(tablet.keepDetail).toBeGreaterThan(screenDetailBytes(3200, 2000));
+  });
+
+  it("never goes below the budget it grows from", () => {
+    const small = roomierPdfBudget(base, 400, 300);
+    expect(small.keepDetail).toBe(base.keepDetail);
+    expect(small.soft).toBe(base.soft);
+    expect(small.hard).toBe(base.hard);
+    const none = roomierPdfBudget(base, 0, 0);
+    expect(none).toEqual(base);
   });
 });

@@ -574,6 +574,7 @@ describe("registration", () => {
         "open-library",
         "read-handwriting-on-device",
         "recognize-handwriting",
+        "report-bug",
         "reread-scanned-pages",
         "scan-document",
         "save-as-template",

@@ -726,6 +726,7 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 - **What:** Hides Obsidian's title bar, status bar, left ribbon and sidebars (tabs stay) so FineNotes looks like its own app; Home then shows its folder rail.
 - **Where:** Settings › General › Simple look; gear (Notebook settings) › Simple look; Home's card "Only here for FineNotes?"; welcome; command palette "Simple look: hide or show Obsidian's tabs, sidebars and menus"
 - **Words:** simple look, hide sidebars, hide ribbon, app-like, distraction free, clean interface, hide Obsidian
+- **Seen as:** left panel disappears, side panels gone, sidebars missing, ribbon gone, menus disappeared
 - **Settings:** `simpleLook`
 - **Commands:** `toggle-simple-look`
 

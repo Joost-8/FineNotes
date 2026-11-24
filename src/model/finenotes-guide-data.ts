@@ -38,6 +38,7 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     what: "Notebooks are ordinary files in your vault (Title.notebook.md, and with Each notebook gets its own folder on, a folder beside it with its pictures, recordings and exports). Any way of syncing the vault works: Obsidian Sync, iCloud, Syncthing and others. Let the sync finish before writing on the other device; a notebook whose ink did not load cleanly opens read-only until it has.",
     where: "Use the vault's own sync; FineNotes needs no setup for it.",
     notes: "Keyboard shortcuts and AI keys stay on each device; they do not sync.",
+    seen: "notebook lost after sync, sync conflict, pages missing on other device, notebook empty on iPad, changes gone",
     settings: ["notebookOwnFolder"],
   },
   {
@@ -65,9 +66,10 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     title: "Report a bug or ask for a feature",
     words:
       "bug, broken, not working, crash, problem, issue, report, feature request, idea, suggestion, missing feature, wish, github, contact, feedback, support",
-    what: "Report bugs and ask for features on GitHub: https://github.com/Joost-8/FineNotes/issues (a bug report or a feature request). Ideas and questions also go to GitHub Discussions. For strokes that go missing or break, turn on the Input debug overlay first and describe what it shows.",
+    what: "Report bugs and ask for features on GitHub: https://github.com/Joost-8/FineNotes/issues (a bug report or a feature request). Report a bug first asks what went wrong and shows what the tips and this guide say about it, so an answer that already exists is found at once; its last row opens GitHub's bug form with the FineNotes and Obsidian versions and the device filled in. Ideas and questions also go to GitHub Discussions. For strokes that go missing or break, turn on the Input debug overlay first and describe what it shows.",
     where:
-      "Settings › Feedback and community, under the list of sections: Report a bug, Ideas and questions.",
+      "Settings › Feedback and community, under the list of sections: Report a bug, Ideas and questions. Also the command Report a bug.",
+    commands: ["report-bug"],
   },
   {
     id: "fromGoodnotes",
@@ -133,6 +135,7 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     what: "FineNotes checks once a day whether a newer release exists (nothing about you is sent) and marks the toolbar's gear with a dot; Remind me also says so under the gear. Updating itself is Obsidian's Update button for the plugin.",
     where:
       "Obsidian Settings › Community plugins › FineNotes › Update. Reminders: Settings › General › Updates.",
+    seen: "new version not showing, update not available, still on the old version",
     settings: ["checkForUpdates", "updateReminders"],
   },
   {
@@ -175,6 +178,7 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     what: "Hides Obsidian's title bar, status bar, ribbon and sidebars so FineNotes looks like an app of its own; the tabs stay. While it is on, the buttons under it (or the ⌄ beside Simple look on Home's folder rail) bring back parts one by one: Left sidebar, Right sidebar, Ribbon, Status bar (all off by default; a sidebar brought back starts closed, behind its own button, for other plugins' panels such as a calendar or a timer). With the left sidebar back, Home's folder rail steps aside. Turn the look off to bring everything back.",
     where:
       "Settings › General › Simple look, and the buttons under it. Also Home › folder rail › ⌄ beside Simple look, Notebook settings (gear), the Welcome, and the command Simple look: hide or show….",
+    seen: "left panel disappears, left sidebar gone, side panels disappear, update kills the side panels, sidebars missing after update, panels hidden, cannot open settings, ribbon gone, status bar missing, menus disappeared, file explorer gone",
     settings: ["simpleLook", "simpleLookShow"],
     commands: ["toggle-simple-look"],
     feature: "simpleLook",
@@ -186,6 +190,7 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     words: "hints, nudges, popups, suggestions, hint, stop hints, annoying",
     what: "After you do something the slow way a few times, FineNotes names the faster way once. Turn off to stop these hints.",
     where: "Settings › General › Hints for faster ways",
+    seen: "popups keep appearing, annoying messages, hints will not go away",
     settings: ["gestureHints"],
   },
   {
@@ -216,6 +221,7 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     what: "Double-tap with two fingers to undo; with three fingers to redo. On by default.",
     where: "Settings › Writing › Two-finger double-tap to undo",
     notes: "Does nothing while the notebook is read-only.",
+    seen: "two finger double tap does not undo, accidental undo",
     settings: ["fingerTapUndo"],
     feature: "undo",
   },
@@ -236,6 +242,7 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     words: "text box width, drag text box, size text box, resize text box, fixed width text",
     what: "Off (default, as in Goodnotes): every new text box fits its text as you type. On: with the Text tool, drag to draw a box's size; a tap still makes a box.",
     where: "Settings › Writing › Drag to size text boxes",
+    seen: "text box will not resize, cannot make a text box bigger",
     settings: ["textDragSize"],
     feature: "textDragSize",
   },
@@ -249,6 +256,7 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     where: "Settings › Writing › Stylus side button",
     notes:
       "Apple Pencil has no side button, so the click choice is hidden on iPad and iPhone. Holding the button while writing may not work on Android tablets; Erase, also hovering does.",
+    seen: "side button does not erase, S Pen button not working, barrel button does nothing",
     settings: ["barrelButton", "stylusButtonClick"],
   },
   {
@@ -259,6 +267,7 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
       "pressure, pressure sensitivity, thickness, line width varies, fountain pen pressure, brush pressure",
     what: "Off by default. On: the fountain pen widens as you press and the brush pen swells and tapers more; the ball pen stays even. Writing can feel a little less smooth with it on.",
     where: "Settings › Writing › Pressure-sensitive pens",
+    seen: "lines all the same thickness, no pressure, pressure not working, strokes too thick",
     settings: ["pressureWidth"],
     feature: "pressure",
   },
@@ -280,6 +289,7 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     what: "The pointer shown over the page while a pen is in hand: Ink dot (default), Crosshair, Arrow or None.",
     where: "Settings › Writing › Cursor over the page",
     notes: "Desktop only: there is no pointer on a tablet.",
+    seen: "cursor not showing, arrow instead of pen cursor, no dot under the pen",
     settings: ["penCursor"],
   },
   {
@@ -537,6 +547,7 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     what: "Prints the raw pen and touch events over the page. Turn it on when reporting strokes that go missing or break.",
     where:
       "Settings › Troubleshooting › Input debug overlay, or the command Show or hide the input debug overlay.",
+    seen: "lag, laggy, slow, choppy, stutter, delay, strokes missing, ink appears late",
     settings: ["debugHud"],
     commands: ["toggle-input-debug-overlay"],
   },
@@ -550,6 +561,7 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     where:
       "iPad Settings › Apple Pencil › Scribble. FineNotes' settings show this as a note on the iPad until dismissed.",
     notes: "iPad only.",
+    seen: "strokes missing, pen skips, strokes disappear, letters dropped, ink cut short, handwriting turns into text",
   },
   {
     id: "penTool",
@@ -857,6 +869,7 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     words: "eraser size, big eraser, small eraser, eraser width",
     what: "Three size presets drawn as eraser footprints; the ⌄ opens a slider with preview and a reset to default sizes. A preset keeps the size the slider gave it.",
     where: "Toolbar › Eraser › pill › size buttons / ⌄ (Eraser size)",
+    seen: "eraser size does not stay, eraser size resets, custom eraser size lost",
     settings: ["eraserSize", "eraserPresets"],
   },
   {
@@ -1098,6 +1111,7 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     what: 'Only the pen acts on the page; a resting hand moves neither ink nor page. Button lights while on. Turned off for the while when "Draw with finger" is on.',
     where: "Toolbar › More tools › Stylus only (the button shows Stylus only: on/off).",
     notes: "(meant for touch devices)",
+    seen: "finger draws lines, finger writes instead of scrolling, cannot draw with finger, finger does nothing",
     settings: ["onlyStylusMode"],
     commands: ["toggle-only-stylus-mode"],
     feature: "stylusOnly",
@@ -1597,6 +1611,7 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     where:
       'With the Pen or Highlighter (or the Shapes tool), draw the shape and keep the Pencil still for a moment. Switch: pen\'s options › Pen settings › Pen gestures › "Make shapes" ("When I hold the pen still" / "When I lift the pen, too"), plus "How curved a stroke may be and still snap".',
     notes: "(any pen, mouse or Pencil; not a finger unless Draw with finger is on)",
+    seen: "lines turn into shapes, shapes snap by themselves, snaps too fast, shape does not snap",
     settings: ["snapMode", "snapCurvatureThreshold", "drawAndHold", "penAutoShape"],
     feature: "hold",
   },
@@ -1608,6 +1623,7 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     what: 'With "When I lift the pen, too", a stroke that reads as a shape also snaps when the pen lifts, without holding still. The Shapes tool\'s "Auto-shape" button does the same for the Shapes tool.',
     where:
       'Pen settings › Pen gestures › Make shapes › "When I lift the pen, too". Shapes tool: "Auto-shape: draw any shape and it snaps clean".',
+    seen: "lines turn into shapes when I lift, shapes appear by themselves",
     settings: ["snapMode"],
   },
   {
@@ -1772,6 +1788,7 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     what: "Anything that is not a finger writes; while a stroke is open, a finger that lands is the writing hand and is ignored. If a palm moved the page just before the pen landed, the page jumps back.",
     where: "Automatic.",
     notes: "touch only",
+    seen: "palm draws lines, hand leaves marks, stray marks, page moves when resting my hand",
     settings: ["onlyStylusMode"],
   },
   {
@@ -3158,6 +3175,7 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     what: "Hides Obsidian's title bar, status bar, left ribbon and sidebars (tabs stay) so FineNotes looks like its own app; Home then shows its folder rail.",
     where:
       'Settings › General › Simple look; gear (Notebook settings) › Simple look; Home\'s card "Only here for FineNotes?"; welcome; command palette "Simple look: hide or show Obsidian\'s tabs, sidebars and menus"',
+    seen: "left panel disappears, side panels gone, sidebars missing, ribbon gone, menus disappeared",
     settings: ["simpleLook"],
     commands: ["toggle-simple-look"],
   },

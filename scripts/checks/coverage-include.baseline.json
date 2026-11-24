@@ -1,0 +1,13 @@
+{
+  "directories": [
+    "src/export",
+    "src/i18n",
+    "src/import",
+    "src/ink",
+    "src/model",
+    "src/model/algebra",
+    "src/search",
+    "src/util"
+  ],
+  "unlisted": []
+}
