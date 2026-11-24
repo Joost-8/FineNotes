@@ -24,7 +24,7 @@
 
 import { type App, Modal, Notice } from "obsidian";
 import type { Stroke } from "../model/document";
-import { type RuleBlock, measureHand, measureLines } from "../ink/tidy";
+import { ASKED_LEVEL_SLOPE, type RuleBlock, measureHand, measureLines } from "../ink/tidy";
 import { t } from "../i18n/translate";
 import { MIN_PRACTICE_LINES } from "../recognition/hwr/learned-model";
 import type { LineReading } from "../recognition/hwr/recognizer";
@@ -203,7 +203,8 @@ export class NeatenService {
       (s) => request.selected.has(s.id) && s.tool === "pen" && !s.shape,
     );
     const byId = new Map(selected.map((s) => [s.id, s]));
-    const lines = measureLines(selected).map((line) =>
+    // Lines found as Tidy you ask for finds them: a line climbing up to 30 degrees is one line.
+    const lines = measureLines(selected, ASKED_LEVEL_SLOPE).map((line) =>
       line.strokes.map((id) => byId.get(id)).filter((s): s is Stroke => !!s),
     );
     const profile = measureHand(request.strokes.filter((s) => s.tool === "pen" && !s.shape));

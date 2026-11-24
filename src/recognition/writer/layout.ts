@@ -15,7 +15,7 @@
  * PURE: no DOM, no Obsidian.
  */
 
-import { type HandProfile, measureLines } from "../../ink/tidy";
+import { ASKED_LEVEL_SLOPE, type HandProfile, measureLines } from "../../ink/tidy";
 import type { PageInk } from "../hwr/lines";
 import { median } from "./rows";
 import type { WrittenStroke } from "./rows";
@@ -93,7 +93,8 @@ const xsOf = (pts: ArrayLike<number>): number[] => every(pts, 0);
 function homeOf(
   strokes: readonly PageInk[],
 ): { slope: number; level: number; xHeight: number } | null {
-  const fits = measureLines(strokes);
+  // Found as Beautify finds them: a line climbing up to the asked slope is one line, not pieces.
+  const fits = measureLines(strokes, ASKED_LEVEL_SLOPE);
   if (fits.length === 0) return null;
   return [...fits].sort((a, b) => b.strokes.length - a.strokes.length)[0];
 }

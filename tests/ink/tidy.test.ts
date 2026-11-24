@@ -588,6 +588,15 @@ describe("tidyInk the user asked for (maxLevelSlope)", () => {
     }
   });
 
+  it("measures a long climbing line as one line when asked (Beautify finds the lines it rewrites so)", () => {
+    for (const deg of [10, 20, 30]) {
+      const strokes = page([{ x: 20, y: 600, slope: -tan(deg), wave: [3, 250] }]);
+      const lines = measureLines(strokes, ASKED_LEVEL_SLOPE);
+      expect(lines).toHaveLength(1);
+      expect(lines[0].strokes.sort()).toEqual([...all(strokes)].sort());
+    }
+  });
+
   it("leaves a line steeper than 30 degrees as written", () => {
     const strokes = page([{ x: 20, y: 600, slope: -tan(35) }]);
     const result = tidyInk(strokes, { ...ASKED, only: all(strokes) });
