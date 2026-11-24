@@ -9,6 +9,7 @@ import {
   placeOfWord,
   placeWord,
   plainMarkdown,
+  readsAs,
   wordsOfLines,
   writableText,
   type WrittenWord,
@@ -227,6 +228,19 @@ describe("placeAnswer", () => {
 
   it("writes nothing for nothing", () => {
     expect(placeAnswer([], { x: 0, baseline: 0, height: 10 })).toEqual([]);
+  });
+});
+
+describe("readsAs", () => {
+  it("takes an answer read back exactly, spaces aside", () => {
+    expect(readsAs("$1,250.50", "$1,250.50")).toBe(true);
+    expect(readsAs("12.5%", "12.5 %")).toBe(true);
+  });
+
+  it("refuses one figure or mark off", () => {
+    expect(readsAs("$1,250.50", "$1,250.40")).toBe(false);
+    expect(readsAs("12.5%", '12.5 ".')).toBe(false);
+    expect(readsAs("-42", "42")).toBe(false);
   });
 });
 

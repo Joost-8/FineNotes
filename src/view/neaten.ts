@@ -34,6 +34,7 @@ import type { WriterClient } from "../recognition/writer/client";
 import { type LineToPlace, placeLines } from "../recognition/writer/layout";
 import { proseLike } from "../recognition/writer/pool";
 import { neatenLine } from "../recognition/writer/repair";
+import { readsAs } from "../recognition/writer/known-layout";
 import { type TaggedLine, type WrittenStroke, levelledStrokes } from "../recognition/writer/rows";
 import { DEFAULT_TRIES } from "../recognition/writer/flow-meta";
 import { type WriterKind, WRITER_KINDS, kindFor } from "../recognition/writer/kinds";
@@ -58,6 +59,8 @@ import { ModelNotDownloadedError, type HandwritingReader } from "./handwriting";
 import type { ModelRegistry } from "./model-downloads";
 import { type LearningHost, readAllPracticeLines, writePracticePage } from "./handwriting-learning";
 
+/** How many times an exact line (an answer) is written before the glyphs are left to write it. */
+const EXACT_ATTEMPTS = 3;
 /** Practice lines looked at beyond the ones shown, in case some cannot be tied to their letters. */
 const SPARE_LINES = 4;
 /** How often the menu may ask for the model's files to be looked for again. */
@@ -465,7 +468,8 @@ export class NeatenService {
    */
   async writeKnown(
     texts: readonly string[],
-    options: { stop?: () => boolean; seed?: number } = {},
+    /** `exact`: a line counts only when Grape reads it back as the text (an answer); else null. */
+    options: { stop?: () => boolean; seed?: number; exact?: boolean } = {},
   ): Promise<{ lines: WrittenStroke[][]; sample: InkStroke[] } | null> {
     if (texts.length === 0) return null;
     // One writing at a time, Beautify's included: wait for one in progress.
@@ -511,16 +515,25 @@ export class NeatenService {
       });
       const lines: WrittenStroke[][] = [];
       for (const [n, text] of texts.entries()) {
-        const done = await neatenLine(
-          text,
-          refs[n],
-          n,
-          (t, r, seed, id, low) => writer.write(t, r, seed, id, low, guidance),
-          (written) => this.host.handwriting.readRows(written),
-          { seed: options.seed ?? 0, tries, repair: true, stop },
-        );
-        if (!done || stop()) return null;
-        lines.push(levelledStrokes(done.written, done.written.char, text));
+        let kept: Awaited<ReturnType<typeof neatenLine>> = null;
+        // Exact: written again from other noise until it reads back as the text.
+        for (let attempt = 0; attempt < (options.exact ? EXACT_ATTEMPTS : 1); attempt++) {
+          const done = await neatenLine(
+            text,
+            refs[n],
+            n,
+            (t, r, seed, id, low) => writer.write(t, r, seed, id, low, guidance),
+            (written) => this.host.handwriting.readRows(written),
+            { seed: (options.seed ?? 0) + attempt * 7919, tries, repair: true, stop },
+          );
+          if (!done || stop()) return null;
+          if (!options.exact || readsAs(text, done.read)) {
+            kept = done;
+            break;
+          }
+        }
+        if (!kept) return null;
+        lines.push(levelledStrokes(kept.written, kept.written.char, text));
       }
       return { lines, sample: pool.flatMap((line) => line.strokes) };
     } finally {

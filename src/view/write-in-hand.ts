@@ -53,7 +53,7 @@ export interface KnownWriter {
   writes(ch: string): boolean;
   writeKnown(
     texts: readonly string[],
-    options?: { stop?: () => boolean; seed?: number },
+    options?: { stop?: () => boolean; seed?: number; exact?: boolean },
   ): Promise<{ lines: WrittenStroke[][]; sample: InkStroke[] } | null>;
 }
 
@@ -285,7 +285,8 @@ export class WriteInHand {
   ): Promise<number[][] | null> {
     if (!numericAnswer(text) || !this.writer.readyNow()) return null;
     try {
-      const written = await this.writer.writeKnown([text], { seed: freshSeed() });
+      // Only figures Grape reads back exactly: a wrong answer is worse than drawn figures.
+      const written = await this.writer.writeKnown([text], { seed: freshSeed(), exact: true });
       const line = written?.lines[0];
       return line && line.length > 0 ? placeAnswer(line, at) : null;
     } catch (error) {

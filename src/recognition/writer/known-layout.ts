@@ -418,6 +418,11 @@ export function placeAnswer(
     });
 }
 
+/** Whether `read` (what Grape read in written ink) is `text`, spaces aside: an answer must be exactly its figures. */
+export function readsAs(text: string, read: string): boolean {
+  return text.replace(/\s+/g, "") === read.replace(/\s+/g, "");
+}
+
 /** Whether an answer may be written by the writer model: plain numbers only, never symbolic maths. */
 export function numericAnswer(text: string): boolean {
   return /^-?\$?[0-9][0-9.,]*%?$/.test(text) || /^-?\$?\.[0-9]+%?$/.test(text);
