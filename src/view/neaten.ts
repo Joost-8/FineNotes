@@ -294,9 +294,10 @@ export class NeatenService {
       const tagged = await this.host.handwriting.tagLines(
         missing.map((line) => ({ text: line.text, strokes: line.strokes })),
       );
-      missing.forEach((line, i) =>
-        this.tagged.set(line.key, tagged[i] ? calm(tagged[i] as TaggedLine, meta.hold) : null),
-      );
+      missing.forEach((line, i) => {
+        const done = tagged[i];
+        this.tagged.set(line.key, done ? calm(done, meta.hold) : null);
+      });
     }
     return picked
       .map((line) => this.tagged.get(line.key) ?? null)
