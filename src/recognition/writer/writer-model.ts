@@ -12,10 +12,9 @@
  * as needing an update and the download replaces it, as the OCR's and
  * Grape's do.
  *
- * NOT PUBLISHED YET: where the files are hosted is Joost's decision. Until
- * then the URLs name its release in its own repository (Joost-8/Dostoyev, tag v1.0;
- * Joost's decision, 2026-11-24)
- * and Neaten is offered only where a copy is already in the folder.
+ * Published as release v1.0 of its own repository, Joost-8/Dostoyev
+ * (Apache 2.0; Joost's decision, 2026-11-24); every file there was checked
+ * against the size and hash below.
  *
  * PURE: data only.
  */
@@ -28,10 +27,11 @@ import { WRITER_FORMAT } from "./manifest";
 const RELEASE = "https://github.com/Joost-8/Dostoyev/releases/download/v1.0";
 
 /**
- * Whether the files are published at `RELEASE`. Until they are, Neaten is
- * offered only where a copy is already in the folder (a development copy).
+ * Whether the files are published at `RELEASE`: Neaten is then offered
+ * everywhere, and its first use offers the download. False would offer it
+ * only where a copy is already in the folder (a development copy).
  */
-export const WRITER_HOSTED = false;
+export const WRITER_HOSTED = true;
 
 const file = (name: string, bytes: number, sha256: string) => ({
   name,
