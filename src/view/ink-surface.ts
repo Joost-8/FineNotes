@@ -15385,6 +15385,8 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     const image = crop || group ? null : this.liveImageSelection();
     const connector = crop || group || image ? null : this.liveConnector();
     const press = crop || group || image || connector ? null : this.pressMenu;
+    // A snippet's chip steps aside while its picture is selected or cropped.
+    this.slideDots.setAside(crop?.image ?? image?.image ?? null);
     const pageId =
       crop?.pageId ?? group?.pageId ?? image?.pageId ?? connector?.pageId ?? press?.pageId ?? "";
     const box = this.boxForPage(pageId);
@@ -15500,6 +15502,23 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     const can = (to: ImageLayer): boolean =>
       page !== undefined && canReorderImage(page, sel.image, to);
     const actions = this.pictureActions(sel, can);
+    const slide = sel.image.slide;
+    if (slide && !this.fixedPages && this.callbacks.onOpenSlide) {
+      // A snippet: the way back to its slide, in place of the chip that steps
+      // aside while it is selected (slide-dots.ts).
+      actions.unshift({
+        id: "open-slide",
+        icon: "presentation",
+        label: t("surface.snippet.openSlideOf", {
+          page: slide.page + 1,
+          name: this.callbacks.slideTabName?.(slide.tab) ?? "PDF",
+        }),
+        group: "crop",
+        bar: true,
+        menu: "none",
+        run: () => this.callbacks.onOpenSlide?.(slide),
+      });
+    }
     const note = sel.image.sticky;
     if (!note) return actions;
     // A sticky note is paper, not a picture: its colour in place of the
@@ -21355,7 +21374,8 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     if (this.imageDrag) {
       // A second finger beside the one dragging it: a turn of the picture.
       if (finger && this.imageDrag.finger === true) this.addFrameFinger(this.imageFrameEl, event);
-      this.imageDrag.crowded = true;
+      // The second finger may have begun a turn, which takes the drag over.
+      if (this.imageDrag) this.imageDrag.crowded = true;
       return;
     }
     const box = this.boxForPage(sel.pageId);

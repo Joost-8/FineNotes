@@ -1452,6 +1452,9 @@ select.goodobsidian-choice-select {
   font-weight: var(--font-semibold, 600);
   grid-column: 2;
   text-align: center;
+  /* Text only. "Select all" is wider than its 44 px column and runs under
+     the title, which would otherwise take the taps on its right half. */
+  pointer-events: none;
 }
 
 .goodobsidian-pagesidebar .goodobsidian-pagesidebar-close.clickable-icon {
@@ -12133,8 +12136,9 @@ button.goodobsidian-color-delete.clickable-icon {
     position: absolute;
     z-index: 2;
     min-width: 0;
-    width: 22px;
-    height: 22px;
+    /* WCAG's 24 px target floor; only a mouse shows them (the row swipes on a tablet). */
+    width: 24px;
+    height: 24px;
     padding: 0;
     border: 1px solid var(--gob-line);
     border-radius: 50%;
