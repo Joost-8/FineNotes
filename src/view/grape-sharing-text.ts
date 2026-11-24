@@ -40,19 +40,19 @@ const TEXT = {
   "count.equation.one": "{count} equation",
   "consent.sentHeading": "What is sent",
   "consent.sent":
-    "For each item: the pen strokes (their shape, pressure and timing) and the text they say. With them: FineNotes' version, the Grape you read with, the kind of device, and a random number made on this device that tells your items apart from other people's. Later practice sheets, corrections and equations are shared too, when you press Share in settings.",
+    "For each item: the pen strokes (their shape, pressure and timing) and the text they say. With them: FineNotes' version, the Grape you read with, the kind of device, and a random number made on this device that tells your items apart from other people's. Later practice sheets, corrections and equations, sums or graphs whose reading you used are shared too, when you press Share in settings.",
   "consent.neverHeading": "What is never sent",
   "consent.never":
-    "Note and vault names, where on a page anything was written, the rest of your notes, words you only marked as real words (often names), your AI transcriptions, your name and your email. The server does not store your IP address.",
+    "Note and vault names, where on a page anything was written, the rest of your notes, words you only marked as real words (often names), your AI transcriptions, ink FineNotes wrote for you (neatened or rewritten words), your name and your email. The server does not store your IP address.",
   "consent.honestHeading": "Good to know",
   "consent.identifies":
     "Handwriting can identify you, like a signature. It is treated as personal data.",
   "consent.who":
-    "It is kept on a server in the Netherlands run by Joost, who makes FineNotes, and used to train Grape and to test it on writers it has never seen. It may also be used in his research on handwriting recognition at TU Eindhoven.",
+    "It is kept on a server in the Netherlands run by Joost, who makes FineNotes, and used to train Grape and to test it on writers it has never seen, and to train FineNotes' handwriting writer: a model that neatens handwriting in its writer's own style, rewrites a word you corrected in your hand, and writes made-up lines that teach Grape more words. Training may run on Google Cloud computers in the EU; their copies are deleted when the run ends. It may also be used in his research on handwriting at TU Eindhoven.",
   "consent.licence":
-    "Your items stay private. They are never published as a dataset; they are only used to train and test Grape, and in Joost's research. To check that each label matches its ink, an item may be shown to Claude, an AI by Anthropic (USA): only a picture of the ink and its text, nothing that says who wrote it. Anthropic may not train on it, and deletes it within 30 days. Only Grape itself is released, free under Apache 2.0.",
+    "Your items stay private. They are never published as a dataset; they are only used to train and test Grape and the writer, and in Joost's research. To check that each label matches its ink, an item may be shown to Claude, an AI by Anthropic (USA): only a picture of the ink and its text, nothing that says who wrote it. Anthropic may not train on it, and deletes it within 30 days. Only Grape and the writer themselves are released, free under Apache 2.0. The writer keeps no one's handwriting and no list of contributors' styles: it takes a style only from ink it is given, on the device using it. Lines it writes in contributors' styles stay private, like your items, and may be checked by Claude in the same way.",
   "consent.control":
-    "Review first shows every item, and lets you keep any of them. Stop at any time, and delete everything you shared from the server. A Grape that was already released cannot unlearn what it learned from your items; Grapes trained after the delete never see them.",
+    "Review first shows every item, and lets you keep any of them. Stop at any time, and delete everything you shared from the server. A Grape or writer that was already released cannot unlearn what it learned from your items; models trained after the delete never see them.",
   "consent.policy": "Privacy notice",
   "consent.cancel": "Not now",
   "consent.review": "Review first",
@@ -60,6 +60,22 @@ const TEXT = {
   "consent.share.one": "Share {count} item",
   "consent.nothing":
     "There is nothing to share yet. Correct a few words, or copy a practice sheet, and come back.",
+
+  // Shown above the terms to someone who agreed to an older version: only
+  // what changed since then (consentChanges in sharing.ts).
+  "changed.title": "The terms changed",
+  "changed.anthropic":
+    "To check that each label matches its ink, an item may be shown to Claude, an AI by Anthropic: only a picture of the ink and its text.",
+  "changed.writer":
+    "Your items may also train FineNotes' handwriting writer, which neatens writing and rewrites corrected words in their writer's hand. It is released like Grape and keeps no one's handwriting.",
+  "changed.madeUp":
+    "The writer may write made-up lines in contributors' styles to teach Grape. Those stay private.",
+  "changed.used":
+    "An equation, sum or graph FineNotes read counts as labelled once you used what it read.",
+  "changed.cloud": "Training may run on Google Cloud computers in the EU.",
+  "changed.covers": "This covers what you already shared too. Everything else is as you agreed.",
+  "changed.stop": "Stop sharing",
+  "changed.agree": "Agree",
 
   "kind.practice": "Practice sheets",
   "kind.word": "Corrected words",

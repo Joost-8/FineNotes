@@ -1081,6 +1081,12 @@ export interface PracticeInfo {
   device?: string;
   /** How: "pen", "mouse" or "touch", from the last stroke written. */
   input?: string;
+  /**
+   * A drawn sheet (recognition/practice-draw.ts): the pool version its lines
+   * came from and the seed that broke ties. The lines themselves are the
+   * printed prompts, ids included.
+   */
+  draw?: { pool: number; seed: number };
 }
 
 export interface InkDocument {

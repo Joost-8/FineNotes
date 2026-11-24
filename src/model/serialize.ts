@@ -916,6 +916,12 @@ function normalizePractice(raw: unknown): PracticeInfo | undefined {
     set,
     ...(typeof raw.device === "string" && raw.device ? { device: raw.device } : {}),
     ...(typeof raw.input === "string" && raw.input ? { input: raw.input } : {}),
+    ...(isRecord(raw.draw) &&
+    Number.isInteger(raw.draw.pool) &&
+    (raw.draw.pool as number) > 0 &&
+    Number.isInteger(raw.draw.seed)
+      ? { draw: { pool: raw.draw.pool as number, seed: raw.draw.seed as number } }
+      : {}),
   };
 }
 

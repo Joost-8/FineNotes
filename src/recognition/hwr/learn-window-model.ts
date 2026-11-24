@@ -14,6 +14,7 @@ import {
   type PracticeSheet,
   fewerMistakes,
   nextSheetAction,
+  textSheets,
 } from "./learned-model";
 
 /** How a learning run ended, as the window tells it. */
@@ -218,33 +219,41 @@ export function learnWindow(facts: LearnWindowFacts): LearnWindowView {
   };
 }
 
-/** Sheets 1 to `sets` as marks: done, started, the next to write, or still to come. */
+/**
+ * The text sheets as marks, numbered in order: done, started, the next to
+ * write, or still to come, at least `sets` of them (every new sheet is
+ * drawn, so the number is only how many there are).
+ */
 function sheetMarks(
   sheets: readonly PracticeSheet[],
   sets: number,
   next: ReturnType<typeof nextSheetAction>,
 ): SheetMark[] {
-  // The set the next step is on: the sheet to continue, else the first not made yet.
-  const nextSet =
-    next.kind === "continue"
-      ? (sheets.find((sheet) => sheet.path === next.path)?.set ?? null)
-      : (Array.from({ length: sets }, (_, i) => i + 1).find(
-          (set) => !sheets.some((sheet) => sheet.set === set),
-        ) ?? null);
-  const marks: SheetMark[] = [];
-  for (let set = 1; set <= sets; set++) {
-    const own = sheets.filter((sheet) => sheet.set === set);
-    const written = own.reduce((sum, sheet) => sum + sheet.written, 0);
-    const prompts = own.reduce((sum, sheet) => sum + sheet.prompts, 0);
-    if (prompts > 0 && written >= prompts) {
-      marks.push({ set, state: "done", detail: tn("ai.learn.lines", written) });
-    } else if (written > 0) {
-      marks.push({ set, state: "started", detail: t("ai.learn.ofCount", { written, prompts }) });
-    } else if (set === nextSet) {
-      marks.push({ set, state: "next", detail: t("ai.learn.toWrite") });
-    } else {
-      marks.push({ set, state: "todo", detail: "" });
+  const text = textSheets(sheets, sets);
+  const marks: SheetMark[] = text.map((sheet, i) => {
+    const set = i + 1;
+    if (sheet.prompts > 0 && sheet.written >= sheet.prompts) {
+      return { set, state: "done", detail: tn("ai.learn.lines", sheet.written) };
     }
+    if (sheet.written > 0) {
+      return {
+        set,
+        state: "started",
+        detail: t("ai.learn.ofCount", { written: sheet.written, prompts: sheet.prompts }),
+      };
+    }
+    if (next.kind === "continue" && next.path === sheet.path) {
+      return { set, state: "next", detail: t("ai.learn.toWrite") };
+    }
+    return { set, state: "todo", detail: "" };
+  });
+  for (let set = marks.length + 1; set <= sets; set++) {
+    const isNext = next.kind === "write" && set === text.length + 1;
+    marks.push(
+      isNext
+        ? { set, state: "next", detail: t("ai.learn.toWrite") }
+        : { set, state: "todo", detail: "" },
+    );
   }
   return marks;
 }

@@ -177,6 +177,7 @@ export default defineConfig({
         "src/recognition/hwr/tune.ts",
         "src/recognition/hwr/bundle-write.ts",
         "src/recognition/practice.ts",
+        "src/recognition/practice-draw.ts",
         "src/model/calc-note.ts",
         "src/model/calc-ink.ts",
         "src/model/calc-layout.ts",
