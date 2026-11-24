@@ -88,7 +88,7 @@ export class HwrWorkerClient {
         reject(new Error(`the recogniser did not answer within ${Math.round(timeoutMs / 1000)} s`));
       }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer, onProgress });
-      this.worker.postMessage({ [HWR_TAG]: true, id, ...request }, transfer);
+      this.worker.postMessage({ ...request, [HWR_TAG]: true, id }, transfer);
     });
   }
 

@@ -52,15 +52,21 @@ export function neatenCommandFor(
   const added = changes.added.flatMap((s, i): Stroke[] => {
     const pen = style[s.line];
     if (!pen) return [];
-    const stroke: Stroke = {
-      id: nextId(),
-      color: pen.color,
-      size: pen.size,
-      tool: pen.tool,
-      pts: [...s.pts],
-    };
+    // Every field of the pen (nib, tip, the sticky note it is on, fields added
+    // later), but what belongs to that one stroke's points and identity.
+    const {
+      id: _id,
+      pts: _pts,
+      t0,
+      samples: _samples,
+      tilt: _tilt,
+      join: _join,
+      shape: _shape,
+      ...kind
+    } = pen;
+    const stroke: Stroke = { ...kind, id: nextId(), pts: [...s.pts] };
     // Written where the line was written, in order.
-    if (pen.t0 !== undefined) stroke.t0 = pen.t0 + i;
+    if (t0 !== undefined) stroke.t0 = t0 + i;
     return [stroke];
   });
   const moved = [...changes.moved].flatMap(([id, pts]): StrokePoints[] => {

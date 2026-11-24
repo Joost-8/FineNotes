@@ -99,6 +99,33 @@ describe("neatenCommandFor", () => {
     expect(doc.pages[0].strokes[2].pts).not.toBe(c.added[0].pts);
   });
 
+  it("keeps the pen's nib, tip and sticky note, and drops its own samples, tilt, mirror and shape", () => {
+    const { a } = page();
+    const doc = docWith([a]);
+    const pen = stroke("s9", [0, 0, 0.5, 1, 1, 0.5], {
+      nib: 0.6,
+      tip: "chisel" as Stroke["tip"],
+      onSticky: "note-1",
+      samples: [1, 2],
+      tilt: [0.1, 0.2],
+      join: "p2/s9",
+      t0: 50,
+    });
+    const command = neatenCommandFor(
+      "p1",
+      doc.pages[0].strokes,
+      { removed: ["a"], added: [{ pts: [7, 7, 0.5], line: 0 }], moved: new Map() },
+      [pen],
+      ids(),
+    );
+    command?.apply(doc);
+    const made = doc.pages[0].strokes.find((s) => s.id === "new1") as Stroke;
+    expect(made).toMatchObject({ nib: 0.6, tip: "chisel", onSticky: "note-1", t0: 50 });
+    expect(made.samples).toBeUndefined();
+    expect(made.tilt).toBeUndefined();
+    expect(made.join).toBeUndefined();
+  });
+
   it("leaves t0 off when the style stroke has none", () => {
     const p = page();
     const doc = docWith(Object.values(p));

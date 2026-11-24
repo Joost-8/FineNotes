@@ -1321,6 +1321,8 @@ export interface InkSurfaceCallbacks {
   onCorrectWord?: (index: number, strokeIds: string[]) => void;
   /** Neaten the selected handwriting (view/neaten.ts); the surface applies a "done". */
   onNeaten?: (request: NeatenRequest) => Promise<NeatenOutcome>;
+  /** Whether Neaten is offered (its model can be had on this device). */
+  canNeaten?: () => boolean;
   /** Whether handwriting can be read here, so "Correct" is offered. */
   canCorrectWords?: () => boolean;
   /**
@@ -15880,10 +15882,10 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
         run: () => this.tidySelection(),
       });
       // Neaten: the same writing rewritten in the writer's own hand (view/neaten.ts).
-      if (this.callbacks.onNeaten) {
+      if (this.callbacks.onNeaten && this.callbacks.canNeaten?.() !== false) {
         actions.push({
           id: "neaten",
-          icon: "signature",
+          icon: "feather",
           label: t("surface.selectionBar.neaten"),
           group: "edit",
           run: () => void this.neatenSelection(),
@@ -19421,12 +19423,6 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
   }
 
   /**
-   * Tidy the selected handwriting (`ink/tidy.ts`): nothing is read and nothing
-   * is redrawn, the strokes are only moved, so no word can change. The hand
-   * it tidies toward is measured from the whole page, and on ruled paper the
-   * lines are set on the rules. One undo step; the selection stays.
-   */
-  /**
    * Neaten the selection: the writing rewritten in the writer's own hand
    * (view/neaten.ts). The frame shows it is working; leaving the selection,
    * or any edit meanwhile, ends the work with nothing changed. One undo step.
@@ -19443,6 +19439,8 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
       const now = this.selection;
       return (
         this.history.latest !== latest ||
+        this.groupDrag !== null ||
+        this.callbacks.isLocked?.() === true ||
         !now ||
         now.pageId !== sel.pageId ||
         now.strokes.length !== chosen.size ||
@@ -19454,6 +19452,7 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     let outcome: NeatenOutcome;
     try {
       outcome = await run({
+        pageId: page.id,
         strokes,
         selected: new Set(sel.strokes.map((stroke) => stroke.id)),
         rules: writingLines(page.backdrop, page.geometry),
@@ -19475,6 +19474,12 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     this.changed([page.id]);
   }
 
+  /**
+   * Tidy the selected handwriting (`ink/tidy.ts`): nothing is read and nothing
+   * is redrawn, the strokes are only moved, so no word can change. The hand
+   * it tidies toward is measured from the whole page, and on ruled paper the
+   * lines are set on the rules. One undo step; the selection stays.
+   */
   private tidySelection(): void {
     const sel = this.liveSelection();
     if (!sel || this.groupDrag || this.callbacks.isLocked?.()) return;

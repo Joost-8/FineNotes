@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { CharReading } from "../../../src/recognition/hwr/char-readings";
 import {
   SURE_BARS,
+  applyAnswers,
   joinPunctuation,
   sureWords,
   wordCore,
@@ -25,6 +26,38 @@ function readings(
 }
 
 const writable = (ch: string): boolean => /[a-z,.\s0-9]/i.test(ch);
+
+describe("applyAnswers", () => {
+  const words = ["from", "the", "Bezout", "lemma"];
+  const ink = [["s1", "s2"], ["s3"], ["s4", "s5", "s6"], ["s7", "s8"]];
+
+  it("gives a misread word the writer's text and makes it known", () => {
+    const got = applyAnswers(words, ink, [{ kind: "misread", text: "form", ids: ["s2", "s1"] }]);
+    expect(got.words).toEqual(["form", "the", "Bezout", "lemma"]);
+    expect([...got.known]).toEqual([0]);
+  });
+
+  it("lists a word the writer said is as written (mistake, ignore)", () => {
+    const got = applyAnswers(words, ink, [
+      { kind: "ignore", text: "Bezout", ids: ["s4", "s5", "s6"] },
+      { kind: "mistake", text: "lemma", ids: ["s7", "s8"] },
+    ]);
+    expect(got.words).toEqual(words);
+    expect([...got.listed].sort()).toEqual(["bezout", "lemma"]);
+    expect(got.known.size).toBe(0);
+  });
+
+  it("needs most of the word's strokes to be the answered word's", () => {
+    const got = applyAnswers(words, ink, [{ kind: "misread", text: "Bezout", ids: ["s4"] }]);
+    expect(got.words).toEqual(words);
+    expect(got.known.size).toBe(0);
+  });
+
+  it("ignores a misread answer of several words", () => {
+    const got = applyAnswers(words, ink, [{ kind: "misread", text: "for m", ids: ["s1", "s2"] }]);
+    expect(got.words[0]).toBe("from");
+  });
+});
 
 describe("joinPunctuation", () => {
   it("joins a comma read apart to the word before it, rewritten only if both were", () => {

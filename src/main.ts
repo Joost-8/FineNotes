@@ -556,7 +556,8 @@ export default class GoodObsidianPlugin extends Plugin {
     handwriting: this.handwriting,
     lexicon: () => this.wordCheck.lexicon(),
     learningHost: () => this.learningHost(),
-    releaseOcr: () => this.ocr.releaseModel(),
+    answers: (note, pageId) => this.wordCheck.answersOn(note, pageId),
+    pauseOcr: () => this.ocr.pause(),
   });
 
   /** "Help improve Grape", in a build that has it (`view/sharing-load.ts`); else null. */

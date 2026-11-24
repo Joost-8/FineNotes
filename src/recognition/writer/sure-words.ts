@@ -113,6 +113,45 @@ export function sureWords(
   return out;
 }
 
+/** An answer the writer gave about a word (corrections.json): what it is, and its strokes. */
+export interface WordAnswer {
+  kind: "misread" | "mistake" | "ignore";
+  text: string;
+  ids: readonly string[];
+}
+
+/**
+ * The line's words with the writer's answers applied. A word whose strokes
+ * are mostly an answered word's takes that answer: "misread" gives its text
+ * (Grape read it wrong; the writer said what it is) and makes it `known`;
+ * "mistake" and "ignore" mean the word is as written though not in the word
+ * list, so it counts as `listed`.
+ */
+export function applyAnswers(
+  words: readonly string[],
+  ink: readonly (readonly string[])[],
+  answers: readonly WordAnswer[],
+): { words: string[]; known: Set<number>; listed: Set<string> } {
+  const out = [...words];
+  const known = new Set<number>();
+  const listed = new Set<string>();
+  ink.forEach((ids, i) => {
+    if (ids.length === 0) return;
+    for (const answer of answers) {
+      const theirs = new Set(answer.ids);
+      const shared = ids.filter((id) => theirs.has(id)).length;
+      if (shared * 2 <= Math.max(ids.length, theirs.size)) continue;
+      if (answer.kind === "misread") {
+        if (/\s/.test(answer.text.trim()) || !answer.text.trim()) continue;
+        out[i] = answer.text.trim();
+        known.add(i);
+      } else listed.add(wordCore(out[i]).toLowerCase());
+      break;
+    }
+  });
+  return { words: out, known, listed };
+}
+
 /** A line's words with their strokes and whether each is rewritten. */
 export interface LineWords {
   words: string[];

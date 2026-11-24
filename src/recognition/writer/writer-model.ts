@@ -19,6 +19,12 @@ import { OCR_MODEL, OCR_WASM_FILE } from "../ocr/ocr-model";
 
 const RELEASE = "https://github.com/Joost-8/Grape/releases/download/writer-1.0";
 
+/**
+ * Whether the files are published at `RELEASE`. Until they are, Neaten is
+ * offered only where a copy is already in the folder (a development copy).
+ */
+export const WRITER_HOSTED = false;
+
 /** The graphs' and the numbers' files, by role. */
 export const WRITER_FILES = {
   encode: "encode.int8.onnx",

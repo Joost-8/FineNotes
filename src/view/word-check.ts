@@ -183,6 +183,17 @@ export class WordCheck {
     );
   }
 
+  /** The answers given on page `pageId` of `note`: what each answered word is, by its strokes (Neaten). */
+  async answersOn(
+    note: string,
+    pageId: string,
+  ): Promise<{ kind: CorrectionKind; text: string; ids: string[] }[]> {
+    await this.load();
+    return this.corrections.corrections
+      .filter((c) => c.note === note && c.page === pageId)
+      .map((c) => ({ kind: c.kind, text: c.text, ids: c.strokes.map((s) => s.id) }));
+  }
+
   /** The word list, for suggestions (lexicon.ts); null without one. */
   lexicon(): { version: number; words: () => string[] } | null {
     const words = this.words;
