@@ -264,8 +264,11 @@ export class HandwritingReader {
   }
 
   /** Neaten: copied lines as the writer is shown them (writer/grape-rows.ts). */
-  tagLines(lines: { text: string; strokes: InkStroke[] }[]): Promise<(TaggedLine | null)[]> {
-    return this.withClient((client) => client.tagLines(lines));
+  tagLines(
+    lines: { text: string; strokes: InkStroke[] }[],
+    rows: { tol: number; norm: string },
+  ): Promise<{ lines: (TaggedLine | null)[]; rowsMatch: boolean }> {
+    return this.withClient((client) => client.tagLines(lines, rows));
   }
 
   /** Neaten: what the model reads in a written line's rows. */

@@ -34,7 +34,7 @@ import type { WriterClient } from "../recognition/writer/client";
 import { type LineToPlace, placeLines } from "../recognition/writer/layout";
 import { proseLike } from "../recognition/writer/pool";
 import { neatenLine } from "../recognition/writer/repair";
-import { type TaggedLine, calm, levelledStrokes } from "../recognition/writer/rows";
+import { type TaggedLine, levelledStrokes } from "../recognition/writer/rows";
 import { type WriterKind, WRITER_KINDS, kindFor } from "../recognition/writer/kinds";
 import {
   type ManifestProblem,
@@ -210,6 +210,18 @@ export class NeatenService {
     if (jobs.length === 0) return { kind: "nothing" };
     if (request.stop()) return { kind: "stopped" };
 
+    // What the model is shown for each line, before it is loaded: the reader must make its rows.
+    const refs: unknown[] = [];
+    for (const job of jobs) {
+      const shown = await this.shownFor(job.text, pool, manifest, kind);
+      if (!shown) {
+        new Notice(problemText({ kind: "rows", detail: "the reader's curves differ" }), 8000);
+        return { kind: "stopped" };
+      }
+      refs.push(kind.reference(job.text, shown, manifest));
+    }
+    if (request.stop()) return { kind: "stopped" };
+
     // The writer, alone in memory with Grape.
     await pauseOcr();
     const writer = await this.writerClient();
@@ -222,8 +234,7 @@ export class NeatenService {
     });
     const placing: LineToPlace<Stroke>[] = [];
     for (const [n, job] of jobs.entries()) {
-      const shown = await this.shownFor(job.text, pool, manifest, kind);
-      const ref = kind.reference(job.text, shown, manifest);
+      const ref = refs[n];
       if (!ref) continue;
       const done = await neatenLine(
         job.text,
@@ -303,33 +314,30 @@ export class NeatenService {
 
   /**
    * The copied lines to show for `text`, as the model's kind picks them,
-   * tied to their letters by Grape when first needed; a line that cannot be
-   * is passed over for the next.
+   * tied to their letters by Grape when first needed, in the kind's order (a
+   * line that cannot be is left out; the kind takes as many as it shows).
+   * Null when the reader does not make the rows the model was trained on.
    */
   private async shownFor(
     text: string,
     pool: PoolLine[],
     manifest: WriterManifest,
     kind: WriterKind,
-  ): Promise<TaggedLine[]> {
-    const want = manifest.reference.lines;
-    const picked = kind.pick(text, pool, want + SPARE_LINES);
+  ): Promise<TaggedLine[] | null> {
+    const picked = kind.pick(text, pool, manifest.reference.lines + SPARE_LINES);
     const missing = picked.filter((line) => !this.tagged.has(line.key));
     if (missing.length > 0) {
+      const { tol, norm } = manifest.rows;
       const tagged = await this.host.handwriting.tagLines(
         missing.map((line) => ({ text: line.text, strokes: line.strokes })),
+        { tol, norm },
       );
-      missing.forEach((line, i) => {
-        const done = tagged[i];
-        // Kept as the writer wrote it; the kind holds long pen jumps when it shows the line.
-        this.tagged.set(line.key, done ?? null);
-      });
+      if (!tagged.rowsMatch) return null;
+      missing.forEach((line, i) => this.tagged.set(line.key, tagged.lines[i] ?? null));
     }
     return picked
       .map((line) => this.tagged.get(line.key) ?? null)
-      .filter((line): line is TaggedLine => line !== null)
-      .slice(0, want)
-      .map((line) => calm(line, manifest.reference.hold));
+      .filter((line): line is TaggedLine => line !== null);
   }
 
   /**
@@ -353,7 +361,7 @@ export class NeatenService {
     const parsed = parseManifest(json, new Set(WRITER_KINDS.keys()));
     if ("problem" in parsed) return parsed;
     const found = kindFor(parsed.manifest);
-    if ("problem" in found) return { problem: { kind: "invalid", detail: found.problem } };
+    if ("problem" in found) return found;
     this.model = { manifest: parsed.manifest, kind: found.kind, key: text };
     return this.model;
   }

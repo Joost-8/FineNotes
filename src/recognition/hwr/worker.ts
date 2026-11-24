@@ -15,7 +15,7 @@ import { HWR_TAG, type HwrReply, type HwrRequest, type HwrResult } from "./proto
 import { readLine, readPage } from "./recognizer";
 import { writeBundle } from "./bundle-write";
 import { tune } from "./tune";
-import { readRows, tagLine } from "../writer/grape-rows";
+import { readRows, rowsMatch, tagLine } from "../writer/grape-rows";
 
 interface WorkerScope {
   onmessage: ((event: MessageEvent<{ [HWR_TAG]: true; id: number } & HwrRequest>) => void) | null;
@@ -130,9 +130,11 @@ function handle(request: HwrRequest, id: number): HwrResult {
   }
   const model = bundle;
   if (request.type === "tag") {
+    if (!rowsMatch(model, request.rows)) return { type: "tag", lines: [], rowsMatch: false };
     return {
       type: "tag",
       lines: request.lines.map((line) => tagLine(model, line.strokes, line.text)),
+      rowsMatch: true,
     };
   }
   if (request.type === "rows") return { type: "rows", text: readRows(model, request.rows) };

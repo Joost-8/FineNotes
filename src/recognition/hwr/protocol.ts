@@ -52,7 +52,12 @@ export type HwrRequest =
       reread?: boolean;
     }
   /** Neaten: copied lines as the writer is shown them, curve rows tied to their letters (writer/grape-rows.ts). */
-  | { type: "tag"; lines: { text: string; strokes: InkStroke[] }[] }
+  | {
+      type: "tag";
+      lines: { text: string; strokes: InkStroke[] }[];
+      /** The curve settings the writer was trained on: nothing is tagged when the reader's differ. */
+      rows: { tol: number; norm: string };
+    }
   /** Neaten: what the model reads in written curve rows. */
   | { type: "rows"; rows: Rows }
   /**
@@ -123,7 +128,7 @@ export type HwrResult =
   | { type: "page"; reading: PageReading }
   | { type: "lines"; readings: LineReading[] }
   /** One per line asked; null where the text could not be laid over the ink. */
-  | { type: "tag"; lines: (TaggedLine | null)[] }
+  | { type: "tag"; lines: (TaggedLine | null)[]; rowsMatch: boolean }
   | { type: "rows"; text: string }
   | { type: "lexicon"; size: number }
   /**

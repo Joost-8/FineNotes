@@ -150,10 +150,13 @@ export class HwrWorkerClient {
   }
 
   /** Neaten: copied lines as curve rows tied to their letters (null where they could not be). */
-  async tagLines(lines: { text: string; strokes: InkStroke[] }[]): Promise<(TaggedLine | null)[]> {
-    const result = await this.send({ type: "tag", lines }, READ_TIMEOUT_MS);
+  async tagLines(
+    lines: { text: string; strokes: InkStroke[] }[],
+    rows: { tol: number; norm: string },
+  ): Promise<{ lines: (TaggedLine | null)[]; rowsMatch: boolean }> {
+    const result = await this.send({ type: "tag", lines, rows }, READ_TIMEOUT_MS);
     if (result.type !== "tag") throw new Error("unexpected reply");
-    return result.lines;
+    return { lines: result.lines, rowsMatch: result.rowsMatch };
   }
 
   /** Neaten: what the model reads in written curve rows. */

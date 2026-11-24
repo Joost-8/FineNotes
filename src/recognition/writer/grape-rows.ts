@@ -75,6 +75,19 @@ export function tagLine(
 }
 
 /** What Grape reads in written rows (best path, as the research's gate read them). */
+/**
+ * Whether the reader makes the rows a writer was trained on: the same
+ * curve tolerance and normalisation (Grape and the writer update apart).
+ */
+export function rowsMatch(bundle: HwrBundle, rows: { tol: number; norm: string }): boolean {
+  const input = bundle.meta.input;
+  return (
+    input?.kind === "curves" &&
+    Math.abs(input.tol - rows.tol) < 1e-9 &&
+    bundle.meta.features.norm === rows.norm
+  );
+}
+
 export function readRows(bundle: HwrBundle, r: Rows): string {
   if (r.n === 0) return "";
   const logp = forward(bundle.net, padded(bundle, r), r.n);

@@ -31,7 +31,7 @@ let configured = false;
 async function load(request: Extract<WriterRequest, { type: "load" }>): Promise<WriterResult> {
   const t0 = performance.now();
   const found = kindFor(request.manifest);
-  if ("problem" in found) throw new Error(found.problem);
+  if ("problem" in found) throw new Error(JSON.stringify(found.problem));
   if (!configured) {
     configured = true;
     ort.env.wasm.numThreads = 1;

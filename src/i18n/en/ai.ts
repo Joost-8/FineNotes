@@ -582,7 +582,7 @@ export const ai = {
   "ai.ocr.purpose":
     "It reads the printed text of scanned PDF pages on this device, so search, the text-snapping highlighter and Copy text work on them; the pages never leave the device.",
   // --- Neaten: the handwriting writer ----------------------------------------
-  "ai.neaten.modelLabel": "Handwriting writer (Neaten model)",
+  "ai.neaten.modelLabel": "Dostoyev (handwriting writer model)",
   "ai.neaten.modelPurpose":
     "It rewrites the handwriting you select neater, in your own hand, on this device; your ink never leaves it.",
   "ai.neaten.needsSheetTitle": "Neaten needs your handwriting",
@@ -591,9 +591,9 @@ export const ai = {
   "ai.neaten.writeSheet": "Write practice sheet",
   "ai.neaten.nothingSure": "No word here is clear enough to rewrite",
   "ai.neaten.modelNewer":
-    "This handwriting writer needs a newer FineNotes. Update FineNotes to use it.",
+    "This version of Dostoyev needs a newer FineNotes. Update FineNotes to use it.",
   "ai.neaten.modelBroken":
-    "The handwriting writer on this device is damaged. Download it again in Settings, Models on this device.",
+    "Dostoyev, the handwriting writer, is damaged on this device. Download it again in Settings, Models on this device.",
   "ai.neaten.failed": "Neaten could not finish. Try again.",
   "ai.ocr.tierFast": "Fast",
   "ai.ocr.tierAccurate": "Accurate",
