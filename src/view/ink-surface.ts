@@ -377,7 +377,7 @@ import { FrameRun } from "../canvas/frame-run";
 import { type RunBox, type RunMark, boundsSince, unionBox } from "../ink/run-window";
 import { TILT_MAX_FACTOR, tiltFactor, tiltShapes } from "../ink/tilt";
 import { lineOfHighlight } from "../ink/straighten";
-import { lineOfStroke, measureHand, tidyInk } from "../ink/tidy";
+import { ASKED_LEVEL_SLOPE, lineOfStroke, measureHand, tidyInk } from "../ink/tidy";
 import { SetStrokePoints } from "../model/tidy-commands";
 import { LINE_LEVEL_RISE, levelLine, levelTurn } from "../ink/level-line";
 import { explainShape, recognizeAtZoom, styleOfShape } from "../ink/shape-recognizer";
@@ -19427,7 +19427,9 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
    * line). The rest of the page's ink is given too, held where it is, so a
    * tidied line keeps clear of its neighbours and an underline or highlight
    * on it follows. Mirrors of joined pages are left to their owners. One undo
-   * step. False when nothing moved.
+   * step. Tidy the user asked for: steeper lines are levelled than an
+   * automatic tidy would (design rulings, 2026-11-24). When nothing moves far
+   * enough to be seen, nothing changes and a notice says so. False then.
    */
   private tidyStrokes(pageId: string, strokes: readonly Stroke[]): boolean {
     const page = this.doc.pages.find((candidate) => candidate.id === pageId);
@@ -19438,12 +19440,16 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
       profile: measureHand(own),
       rules: writingLines(page.backdrop, page.geometry),
       only: new Set(strokes.filter((stroke) => !isMirror(stroke)).map((stroke) => stroke.id)),
+      maxLevelSlope: ASKED_LEVEL_SLOPE,
     });
     const changes = own.flatMap((stroke) => {
       const pts = result.pts.get(stroke.id);
       return pts ? [{ stroke, pts }] : [];
     });
-    if (changes.length === 0) return false;
+    if (changes.length === 0 || !result.seen) {
+      new Notice(t("surface.notice.nothingToTidy"));
+      return false;
+    }
     const moved = changes.map((change) => change.stroke);
     const before = moved.map(strokeBounds).reduce<Bounds | null>(unionBounds, null);
     this.history.push(this.doc, new SetStrokePoints(pageId, changes));
@@ -19467,6 +19473,7 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     const ids = lineOfStroke(
       page.strokes.filter((stroke) => !isMirror(stroke)),
       ink.id,
+      ASKED_LEVEL_SLOPE,
     );
     if (!ids) return null;
     return {

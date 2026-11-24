@@ -44,7 +44,7 @@
  * height (columns, the cells of a table), a line a tall stroke runs through
  * (a table's rule), a line with an equals sign or with ink stacked above ink
  * (a formula, a fraction, an index), and a line steeper than
- * {@link MAX_LEVEL_SLOPE}. A line too short for its tilt to be measured only
+ * {@link TidyOptions.maxLevelSlope}. A line too short for its tilt to be measured only
  * moves as a whole. Strokes that are not writing (an underline, a highlight)
  * follow the one line they lie on.
  *
@@ -116,6 +116,13 @@ export interface TidyOptions {
    * absent.
    */
   only?: ReadonlySet<string>;
+  /**
+   * The steepest line that is levelled (tan); a steeper one was written at an
+   * angle on purpose and keeps its tilt. Default {@link MAX_LEVEL_SLOPE}, for
+   * tidying the user did not ask for; Tidy asked for passes
+   * {@link ASKED_LEVEL_SLOPE}.
+   */
+  maxLevelSlope?: number;
 }
 
 /** Per line, whether `only` leaves it where it is. */
@@ -131,6 +138,12 @@ function heldLines(
 export interface TidyResult {
   /** New points for every stroke that moved, by stroke id; same length as before. */
   pts: Map<string, number[]>;
+  /**
+   * Whether any point moved far enough to be seen ({@link SEEN} of an
+   * x-height). Smoothing alone never does: Tidy that changed only that
+   * changed nothing the user can see, and says so.
+   */
+  seen: boolean;
   before: Neatness;
   after: Neatness;
 }
@@ -138,6 +151,13 @@ export interface TidyResult {
 export const DEFAULT_STRENGTH = 1;
 /** A line steeper than this (tan, about 10 degrees) is written at an angle on purpose: not levelled. */
 export const MAX_LEVEL_SLOPE = 0.18;
+/**
+ * The same for Tidy the user asks for on chosen ink (the lasso's Tidy, the
+ * brush on a held word): tan 30 degrees, just under the steepest slope a
+ * line is measured at (0.6, in fitLineOf). Its lines are found along the
+ * writing's own slope (linesOf), so a line climbing this much is one line.
+ */
+export const ASKED_LEVEL_SLOPE = 0.58;
 /** How far along a line, in x-heights, ink is gathered to say where the baseline is, and what the lean is. */
 const BASE_WINDOW = 12;
 const SLANT_WINDOW = 30;
@@ -188,6 +208,8 @@ const BAR_SAG = 0.25;
  * would not move.
  */
 const SETTLED = 0.03;
+/** A move of a tenth of an x-height can be seen (about a pixel on screen at a size people write). */
+export const SEEN = 0.1;
 const ROUNDS = 4;
 const PULL = { baseline: 1, level: 1, margin: 1, pitch: 1, bar: 1 } as const;
 
@@ -787,8 +809,110 @@ function beside(a: LineFit<PageInk>, b: LineFit<PageInk>): { gap: number; level:
   return { gap, level: ya !== null && yb !== null && Math.abs(ya - yb) <= 0.5 * core };
 }
 
-function fitLines<S extends PageInk>(strokes: readonly S[]): LineFit<S>[] {
-  const page = segmentPage(withStrokeTimes(strokes), { rows: true });
+/**
+ * The pen's runs along lines: the strokes in the order they were written, cut
+ * where the pen goes back left past the run's ink, or jumps up or down by more
+ * than a steep line climbs between two words (a new line). Strokes that are
+ * not writing are left out.
+ */
+function penRuns<S extends PageInk>(strokes: readonly S[]): { s: S; box: Box }[][] {
+  const items = withStrokeTimes(strokes)
+    .filter((s) => s.tool === "pen" && s.shape == null && s.pts.length >= 3)
+    .map((s) => ({ s, box: boxOfPts(s.pts) }));
+  if (items.length === 0) return [];
+  const heights = items.map((it) => it.box[3] - it.box[1]).filter((h) => h > 1.5);
+  const xh = heights.length ? median(heights) : 10;
+  // Stable: without times, the page's order is the order they were put there.
+  const order = [...items].sort((a, b) => (a.s.t0 ?? 0) - (b.s.t0 ?? 0));
+  const runs: { s: S; box: Box }[][] = [];
+  let right = -Infinity;
+  let y = 0;
+  for (const it of order) {
+    const cy = (it.box[1] + it.box[3]) / 2;
+    if (runs.length === 0 || it.box[0] < right - 3 * xh || Math.abs(cy - y) > 2.5 * xh) {
+      runs.push([]);
+      right = -Infinity;
+    }
+    runs[runs.length - 1].push(it);
+    right = Math.max(right, it.box[2]);
+    y = cy;
+  }
+  return runs;
+}
+
+/**
+ * How steeply the writing in these strokes runs (tan, y down): the slope of
+ * the pen's runs along their lines, the longer runs counting more. 0 when no
+ * run is long enough to tell.
+ */
+function skewOf(strokes: readonly PageInk[]): number {
+  const fits: { slope: number; weight: number }[] = [];
+  for (const run of penRuns(strokes)) {
+    if (run.length < 5) continue;
+    const [slope] = robustLine(
+      run.map((it) => (it.box[0] + it.box[2]) / 2),
+      run.map((it) => (it.box[1] + it.box[3]) / 2),
+    );
+    fits.push({ slope, weight: run.length });
+  }
+  if (fits.length === 0) return 0;
+  fits.sort((a, b) => a.slope - b.slope);
+  const half = fits.reduce((sum, f) => sum + f.weight, 0) / 2;
+  let seen = 0;
+  for (const f of fits) {
+    seen += f.weight;
+    if (seen >= half) return f.slope;
+  }
+  return fits[fits.length - 1].slope;
+}
+
+/** Points with every y moved by `-skew * x`: ink climbing at `skew` runs level. */
+function sheared(pts: ArrayLike<number>, skew: number): number[] {
+  const out = Array.from(pts);
+  for (let i = 0; i + 1 < out.length; i += 3) out[i + 1] -= skew * out[i];
+  return out;
+}
+
+/**
+ * Below this (tan) writing is found as it stands; Tidy on steeper writing
+ * finds its lines along the writing's own slope.
+ */
+const SKEW_FLOOR = 0.05;
+
+/**
+ * The page's lines of writing, as the recogniser's line finder sees them. That
+ * finder follows the pen within about an x-height of the line's height, so a
+ * long line climbing more than about 10 degrees comes back in pieces, and
+ * levelled piece by piece it would turn into stairs. So when steep writing is
+ * tidied (`steep`), its lines are found on a sheared copy that runs level, and
+ * the rest of the page as it stands; the lines keep the real strokes.
+ */
+function linesOf<S extends PageInk>(
+  strokes: readonly S[],
+  steep: { only: ReadonlySet<string>; max: number } | undefined,
+): InkLine<S>[] {
+  const find = (ink: readonly S[]): InkLine<S>[] =>
+    ink.length ? segmentPage(withStrokeTimes(ink), { rows: true }).lines : [];
+  if (!steep) return find(strokes);
+  const chosen = strokes.filter((s) => steep.only.has(s.id));
+  const skew = skewOf(chosen);
+  if (Math.abs(skew) < SKEW_FLOOR || Math.abs(skew) > steep.max) return find(strokes);
+  const real = new Map(chosen.map((s) => [s.id, s]));
+  const level = find(chosen.map((s) => ({ ...s, pts: sheared(s.pts, skew) }))).map((line) => {
+    const words = line.words.map((w) => {
+      const own = w.strokes.map((s) => real.get(s.id) ?? s);
+      return { strokes: own, box: unionOf(own.map((s) => boxOfPts(s.pts))) };
+    });
+    return { words, box: unionOf(words.map((w) => w.box)), xHeight: line.xHeight };
+  });
+  return [...find(strokes.filter((s) => !steep.only.has(s.id))), ...level];
+}
+
+function fitLines<S extends PageInk>(
+  strokes: readonly S[],
+  steep?: { only: ReadonlySet<string>; max: number },
+): LineFit<S>[] {
+  const page = { lines: linesOf(strokes, steep) };
   const found = regroup(page.lines);
   let out: LineFit<S>[] = [];
   for (const line of found) {
@@ -982,10 +1106,18 @@ export function measureLines(strokes: readonly PageInk[]): LineGeometry[] {
  * The ids of the strokes on the same line of running text as `strokeId`, for
  * tidying the line a held word is on (the press menu). Null when the stroke
  * is on no such line: a formula, a table, a lone mark, a line too short to
- * have a baseline.
+ * have a baseline. Writing that climbs up to `maxLevelSlope` is found along
+ * its slope, from the pen's run the stroke was written in, as Tidy will find
+ * it (`TidyOptions.maxLevelSlope`).
  */
-export function lineOfStroke(strokes: readonly PageInk[], strokeId: string): string[] | null {
-  for (const line of fitLines(strokes)) {
+export function lineOfStroke(
+  strokes: readonly PageInk[],
+  strokeId: string,
+  maxLevelSlope = MAX_LEVEL_SLOPE,
+): string[] | null {
+  const run = penRuns(strokes).find((r) => r.some((it) => it.s.id === strokeId));
+  const steep = run ? { only: new Set(run.map((it) => it.s.id)), max: maxLevelSlope } : undefined;
+  for (const line of fitLines(strokes, steep)) {
     const ids = line.pieces.flatMap((p) => p.strokes.map((s) => s.id));
     if (ids.includes(strokeId)) return line.based ? ids : null;
   }
@@ -1164,13 +1296,14 @@ function moveFor(
   lineDy: number,
   give: number,
   push: number,
+  maxSlope: number,
 ): LineMove {
   const flat = line.knots.map(() => 0);
   const pivot = median(line.pieces.map((p) => p.cx));
   if (!line.based) {
     return { moves: false, knots: line.knots, dy: flat, turn: 0, pivot, dx: 0 };
   }
-  const levelled = line.long && Math.abs(line.slope) <= MAX_LEVEL_SLOPE;
+  const levelled = line.long && Math.abs(line.slope) <= maxSlope;
   const turn = levelled ? strength * PULL.level * give * line.slope : 0;
   const middle = line.slope * pivot + line.level;
   let shift = lineDy;
@@ -1330,7 +1463,16 @@ function tidyRound<S extends PageInk>(
   const give = lines.map((_, li): number => (held[li] ? 0 : 1));
   const push = lines.map(() => 0);
   const moveOf = (li: number): LineMove =>
-    moveFor(lines[li], strength, options.rules ?? null, lineDx[li], lineDy[li], give[li], push[li]);
+    moveFor(
+      lines[li],
+      strength,
+      options.rules ?? null,
+      lineDx[li],
+      lineDy[li],
+      give[li],
+      push[li],
+      options.maxLevelSlope ?? MAX_LEVEL_SLOPE,
+    );
   const boxesAfter = (li: number): Box[] => {
     const move = moveOf(li);
     return lines[li].pieces.map((p) =>
@@ -1461,11 +1603,14 @@ export function tidyInk<S extends PageInk>(
   options: TidyOptions = {},
 ): TidyResult {
   const strength = clamp(options.strength ?? DEFAULT_STRENGTH, 0, 1);
-  let lines = fitLines(strokes);
+  const steep = options.only
+    ? { only: options.only, max: options.maxLevelSlope ?? MAX_LEVEL_SLOPE }
+    : undefined;
+  let lines = fitLines(strokes, steep);
   const before = neatnessOf(lines);
   const profile = options.profile ?? profileOf(lines);
   if (strength === 0 || !profile || lines.length === 0) {
-    return { pts: new Map<string, number[]>(), before, after: before };
+    return { pts: new Map<string, number[]>(), seen: false, before, after: before };
   }
   // The ink as it stands after each round; a part strength is one round, or it would add up to the whole.
   let now: S[] = [...strokes];
@@ -1492,7 +1637,7 @@ export function tidyInk<S extends PageInk>(
       }
       return { ...s, pts: next };
     });
-    lines = fitLines(now);
+    lines = fitLines(now, steep);
     if (far < SETTLED * profile.xHeight) break;
   }
   const after = neatnessOf(lines);
@@ -1525,5 +1670,13 @@ export function tidyInk<S extends PageInk>(
     const next = inside.get(s.id) ?? (now[i].pts === s.pts ? null : Array.from(now[i].pts));
     if (next && differs(next, s.pts)) pts.set(s.id, next);
   });
-  return { pts, before, after };
+  let far = 0;
+  for (const s of strokes) {
+    const next = pts.get(s.id);
+    if (!next) continue;
+    for (let i = 0; i + 1 < next.length; i += 3) {
+      far = Math.max(far, Math.hypot(next[i] - s.pts[i], next[i + 1] - s.pts[i + 1]));
+    }
+  }
+  return { pts, seen: far >= SEEN * profile.xHeight, before, after };
 }

@@ -32,8 +32,15 @@ import { StrokeIndex } from "../../src/view/stroke-index";
 import { SizeWait } from "../../src/view/surface-size";
 import { type SelectionAction, barItems, menuLayout } from "../../src/view/selection-bar-model";
 
+/** Notices shown, newest last. */
+const notices = vi.hoisted((): string[] => []);
+
 vi.mock("obsidian", () => ({
-  Notice: class {},
+  Notice: class {
+    constructor(message: string) {
+      notices.push(message);
+    }
+  },
   Platform: {},
   setIcon: () => {},
 }));
@@ -3606,13 +3613,13 @@ describe("the lasso on a PDF's tab", () => {
 
 describe("Tidy on a selection", () => {
   /** One written line that climbs: letters as small zigzags, 24 of them in six words. */
-  function climbingLine(): Stroke[] {
+  function climbingLine(slope = 0.06): Stroke[] {
     const strokes: Stroke[] = [];
     let x = 40;
     let t0 = 0;
     for (let word = 0; word < 6; word++) {
       for (let letter = 0; letter < 4; letter++) {
-        const base = 300 - 0.06 * (x - 40);
+        const base = 300 - slope * (x - 40);
         const pts: number[] = [];
         const corners = [
           [0, -12],
@@ -3696,8 +3703,36 @@ describe("Tidy on a selection", () => {
     run(locked.surface, "tidySelection");
     expect(locked.calls.changed).toBe(0);
     const one = tidySurface([line("only", 100, 140, 200)]);
+    notices.length = 0;
     run(one.surface, "tidySelection");
     expect(one.calls.changed).toBe(0);
     expect(one.history.undo(one.doc)).toBeNull();
+    // Never silent: the user asked, so a notice says nothing was there to tidy.
+    expect(notices).toEqual(["Nothing to tidy: already level, or not a line of writing."]);
+  });
+
+  it("levels a line climbing 16 degrees: steeper than an automatic tidy would", () => {
+    const strokes = climbingLine(Math.tan((16 * Math.PI) / 180));
+    const { surface, page: p } = tidySurface(strokes);
+    notices.length = 0;
+    run(surface, "tidySelection");
+    const spread = (v: number[]): number => Math.max(...v) - Math.min(...v);
+    expect(spread(p.strokes.map(bottomOf))).toBeLessThan(5);
+    expect(notices).toEqual([]);
+  });
+
+  it("offers the brush on a held word of a 16 degree line, and none on a lone word", () => {
+    const strokes = climbingLine(Math.tan((16 * Math.PI) / 180));
+    const steep = tidySurface(strokes);
+    const action = run<SelectionAction | null>(
+      steep.surface,
+      "tidyLineAction",
+      steep.page,
+      strokes[5],
+    );
+    expect(action?.id).toBe("tidy-line");
+    const word = strokes.slice(0, 4);
+    const lone = tidySurface(word);
+    expect(run(lone.surface, "tidyLineAction", lone.page, word[1])).toBeNull();
   });
 });

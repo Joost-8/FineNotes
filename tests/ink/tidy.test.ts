@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ASKED_LEVEL_SLOPE,
   DEFAULT_STRENGTH,
   lineOfStroke,
   measureHand,
@@ -552,6 +553,102 @@ describe("tidyInk", () => {
     expect(Math.abs(dy(0.5))).toBeGreaterThan(1);
     expect(Math.abs(dy(0.5))).toBeLessThan(Math.abs(dy(1)));
     expect(tidyInk(strokes, { strength: 0.5 }).after.tilt).toBeLessThan(neatness(strokes).tilt);
+  });
+});
+
+describe("tidyInk the user asked for (maxLevelSlope)", () => {
+  const tan = (deg: number): number => Math.tan((deg * Math.PI) / 180);
+  const all = (strokes: readonly PageInk[]): Set<string> => new Set(strokes.map((s) => s.id));
+  const ASKED = { ...GEOMETRY, maxLevelSlope: ASKED_LEVEL_SLOPE } as const;
+
+  it("levels a line climbing 16 degrees, which the default leaves as written", () => {
+    // Joost's line on his iPad (2026-11-24) climbed 16 degrees and Tidy did nothing.
+    const strokes = page([{ x: 20, y: 600, slope: -tan(16), wave: [3, 250] }]);
+    const only = all(strokes);
+    const auto = tidyInk(strokes, { ...GEOMETRY, only });
+    expect(auto.after.tilt).toBeCloseTo(auto.before.tilt, 0);
+    const asked = tidyInk(strokes, { ...ASKED, only });
+    expect(asked.before.tilt).toBeGreaterThan(15);
+    expect(asked.after.tilt).toBeLessThan(0.3);
+    expect(spread(feet(strokes))).toBeGreaterThan(100);
+    expect(spread(feet(apply(strokes, asked.pts)))).toBeLessThan(0.4 * H);
+    expect(asked.seen).toBe(true);
+  });
+
+  it("finds a long climbing line in one piece: levelled, never turned into stairs", () => {
+    // Followed along the page, a long line past 10 degrees came back in two
+    // pieces, each set level on its own: a step in the middle of the line.
+    for (const deg of [10, 20, 30]) {
+      for (const lean of [0, 0.25]) {
+        const strokes = page([{ x: 20, y: 600, slope: -tan(deg), lean, wave: [3, 250] }]);
+        const result = tidyInk(strokes, { ...ASKED, only: all(strokes) });
+        expect(result.before.lines).toBe(1);
+        expect(spread(feet(apply(strokes, result.pts)))).toBeLessThan(0.4 * H);
+      }
+    }
+  });
+
+  it("leaves a line steeper than 30 degrees as written", () => {
+    const strokes = page([{ x: 20, y: 600, slope: -tan(35) }]);
+    const result = tidyInk(strokes, { ...ASKED, only: all(strokes) });
+    expect(result.pts.size).toBe(0);
+    expect(result.seen).toBe(false);
+  });
+
+  it("levels each line of a paragraph written at an angle", () => {
+    const strokes = page([
+      { x: 20, y: 300, slope: -tan(20), words: 3 },
+      { x: 20 + PITCH * tan(20), y: 300 + PITCH, slope: -tan(20), words: 3 },
+      { x: 20 + 2 * PITCH * tan(20), y: 300 + 2 * PITCH, slope: -tan(20), words: 3 },
+    ]);
+    const result = tidyInk(strokes, { ...ASKED, only: all(strokes) });
+    const after = apply(strokes, result.pts);
+    for (const k of [0, 1, 2]) {
+      expect(spread(feet(strokes, k))).toBeGreaterThan(3 * H);
+      expect(spread(feet(after, k))).toBeLessThan(0.4 * H);
+    }
+  });
+
+  it("levels a steep line among level ones, and moves none of them", () => {
+    const strokes = page([
+      { x: 20, y: 100 },
+      { x: 20, y: 330, slope: -tan(20), words: 3 },
+      { x: 20, y: 400 },
+    ]);
+    const steep = inLine(strokes, 1);
+    const result = tidyInk(strokes, { ...ASKED, only: all(steep) });
+    expect([...result.pts.keys()].every((id) => lineOf.get(id) === 1)).toBe(true);
+    const after = apply(strokes, result.pts);
+    expect(spread(feet(after, 1))).toBeLessThan(0.4 * H);
+    expect(room(after, 0, 1)).toBeGreaterThan(0);
+    expect(room(after, 1, 2)).toBeGreaterThan(0);
+  });
+
+  it("a lone word moves nothing, and says so: nothing to see", () => {
+    const strokes = page([{ x: 400, y: 300, words: 1, letters: 5 }]);
+    const result = tidyInk(strokes, { only: all(strokes), maxLevelSlope: ASKED_LEVEL_SLOPE });
+    expect(result.pts.size).toBe(0);
+    expect(result.seen).toBe(false);
+    expect(lineOfStroke(strokes, strokes[1].id, ASKED_LEVEL_SLOPE)).toBeNull();
+  });
+
+  it("ink already tidied is not seen to change again, even where strokes are smoothed", () => {
+    const strokes = page([{ x: 20, y: 300, slope: -tan(8), wave: [4, 300] }]);
+    const options = { only: all(strokes), maxLevelSlope: ASKED_LEVEL_SLOPE };
+    const once = tidyInk(strokes, options);
+    expect(once.seen).toBe(true);
+    expect(tidyInk(apply(strokes, once.pts), options).seen).toBe(false);
+  });
+
+  it("a held word on a steep line gives the whole line", () => {
+    const strokes = page([
+      { x: 20, y: 100 },
+      { x: 20, y: 400, slope: -tan(20), words: 4 },
+    ]);
+    const steep = inLine(strokes, 1);
+    expect(lineOfStroke(strokes, steep[9].id, ASKED_LEVEL_SLOPE)?.sort()).toEqual(
+      steep.map((s) => s.id).sort(),
+    );
   });
 });
 

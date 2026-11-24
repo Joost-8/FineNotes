@@ -24,7 +24,9 @@ extracted from the matching section of this file by `release.yml`.
   lines are set level (on the paper's rules when it has them), a wandering
   baseline is straightened, lines that start together share a margin, and
   shaky strokes are smoothed. Nothing is read or redrawn, so no word can
-  change; formulas and tables are left alone. One undo puts it back.
+  change; formulas and tables are left alone. Lines written at a slant of up
+  to about 30° are levelled too, and when there is nothing to tidy a notice
+  says so. One undo puts it back.
 - **Insert space on boards, and on paper without lines**
   ([discussion #276](https://github.com/Joost-8/FineNotes/discussions/276)).
   With the lasso on **By line**, press anywhere on a board and drag down: everything

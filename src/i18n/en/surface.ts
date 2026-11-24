@@ -303,6 +303,7 @@ export const surface = {
   "surface.notice.clipboardUnreadable": "FineNotes: couldn't read the clipboard here.",
   "surface.notice.clipboardHidden":
     "FineNotes: this device won't hand the clipboard's picture to FineNotes. Add it with Insert image › Photos.",
+  "surface.notice.nothingToTidy": "Nothing to tidy: already level, or not a line of writing.",
   "surface.notice.imageLocked": "FineNotes: image locked. To unlock it, hold the lasso on it.",
   "surface.readout.nothingToRedo": "Nothing to redo",
   "surface.readout.nothingToUndo": "Nothing to undo",
