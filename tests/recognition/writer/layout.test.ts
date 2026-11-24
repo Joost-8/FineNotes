@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { measureHand, measureLines } from "../../../src/ink/tidy";
@@ -184,5 +186,60 @@ describe("placeLines", () => {
     expect(Math.min(...both[1].added.flatMap((s) => ys(s.pts)))).toBeGreaterThan(
       Math.max(...both[0].added.flatMap((s) => ys(s.pts))),
     );
+  });
+});
+
+describe("placeLines on Joost's line alone on the page (his iPad, 24 November)", () => {
+  // "testing the new beautify", "the" and "new" rewritten. Alone on a page, his hand
+  // measures a word gap of half an x-height, and the words he left were trimmed at
+  // gaps inside them: "the" and "new" were drawn on top of "testing", pieces of his
+  // old "the" and "new" stayed behind.
+  const real = JSON.parse(
+    readFileSync(join(__dirname, "fixtures", "joost-line-alone.json"), "utf8"),
+  ) as { strokes: { id: string; t0: number; pts: number[] }[]; words: string[][] };
+  const strokes = real.strokes.map((s) => ({ ...s, tool: "pen", shape: null }));
+  const hand = measureHand(strokes);
+  if (!hand) throw new Error("no hand");
+  const [line] = placeLines(
+    [
+      {
+        strokes,
+        words: real.words,
+        rewrite: [false, true, true, false],
+        written: writtenLine(4, 3),
+      },
+    ],
+    hand,
+  );
+  const ptsOf = (id: string): number[] => strokes.find((t) => t.id === id)?.pts ?? [];
+  const span = (all: number[]): [number, number] => [Math.min(...all), Math.max(...all)];
+  const keptSpan = (w: number) =>
+    span(real.words[w].flatMap((id) => xs(ptsOf(id)).map((x) => x + (line.kept.get(id) ?? 0))));
+  const newSpan = (w: number) =>
+    span(line.added.filter((s) => s.word === w).flatMap((s) => xs(s.pts)));
+
+  it("measures a word gap of under one x-height from this line alone (the trap)", () => {
+    expect(hand.wordGap).toBeLessThan(1);
+  });
+
+  it("takes away every stroke of the rewritten words and keeps all of the others", () => {
+    expect(new Set(line.removed)).toEqual(new Set([...real.words[1], ...real.words[2]]));
+    for (const id of [...real.words[0], ...real.words[3]]) expect(line.kept.has(id)).toBe(true);
+  });
+
+  it("lays the words out left to right without overlapping", () => {
+    const order = [keptSpan(0), newSpan(1), newSpan(2), keptSpan(3)];
+    for (let i = 1; i < order.length; i++) expect(order[i][0]).toBeGreaterThan(order[i - 1][1]);
+  });
+
+  it("writes the new words as wide, together, as his were", () => {
+    const width = ([a, b]: [number, number]): number => b - a;
+    const his = [1, 2].reduce(
+      (sum, w) => sum + width(span(real.words[w].flatMap((id) => xs(ptsOf(id))))),
+      0,
+    );
+    const made = [1, 2].reduce((sum, w) => sum + width(newSpan(w)), 0);
+    expect(made / his).toBeGreaterThan(0.95);
+    expect(made / his).toBeLessThan(1.05);
   });
 });

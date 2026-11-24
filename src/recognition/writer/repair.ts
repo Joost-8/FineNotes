@@ -135,6 +135,19 @@ export function rejected(text: string, read: string): Map<number, Set<number>> {
   return out;
 }
 
+/**
+ * Which words stay rewritten once the written line has been read back: a
+ * word the reader does not find as written keeps the writer's own ink.
+ */
+export function readBackRewrite(
+  text: string,
+  read: string,
+  rewrite: readonly boolean[],
+): boolean[] {
+  const misread = rejected(text, read);
+  return rewrite.map((r, w) => r && !misread.has(w));
+}
+
 /** The positions in `text` of word `wi`'s letters. */
 export function wordSpan(text: string, wi: number): Set<number> {
   const { words, starts } = wordStarts(text);

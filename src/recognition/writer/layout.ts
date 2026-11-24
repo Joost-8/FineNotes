@@ -3,14 +3,13 @@
  * gen/neaten_demo.mts, which the 2026-11-24 demo settled in five runs.
  *
  * Each line is written in the model's units (`rows.levelledStrokes`, words
- * already stood level). Its size comes from its own levelled ink, measured
- * the way Tidy measures a line, scaled to the writer's x-height but held
- * within 20 % of the factor the other lines got (a line's own measure is
- * noisy: a line of capitals reads tall). It stands at the original line's
- * left edge on its baseline. Then its words are laid out left to right with
- * the writer's usual word gap; a word that is not rewritten keeps the
- * writer's own strokes, moved only along the line. Tidy runs over the result
- * afterwards (the caller's step).
+ * already stood level). Its size makes the rewritten words as wide, together,
+ * as the writer's own were (a line with no such width falls back to Tidy's
+ * x-height measure), held within 20 % of the factor the other lines got. It
+ * stands at the original line's left edge on its baseline. Then its words are
+ * laid out left to right with the word gap the writer left on that line; a
+ * word that is not rewritten keeps the writer's own strokes, moved only along
+ * the line. Tidy runs over the result afterwards (the caller's step).
  *
  * PURE: no DOM, no Obsidian.
  */
@@ -26,6 +25,8 @@ export const MODEL_X_HEIGHT = 0.389;
 export const SIZE_SPREAD = 1.2;
 /** A piece of a word's ink this far (in word gaps) from the rest of it is not part of it. */
 export const BODY_GAP = 0.5;
+/** ... and never nearer than this (in x-heights): a gap between letters of one word. */
+export const LETTER_REACH = 0.9;
 
 /**
  * A word's own run of ink along the line: its strokes grouped where their x
@@ -124,7 +125,34 @@ export function placeLines<S extends PageInk>(
     }),
   );
   const fits = scaled.map((made) => (made.length ? homeOf(made) : null));
-  const raw = fits.map((f) => (f && f.xHeight > 0 ? profile.xHeight / f.xHeight : null));
+  // Each word's own run of ink: pieces the reading gave it from elsewhere on the line
+  // (the commas of "March, April, May," given to "June") are loose ink instead. A gap
+  // inside a word is at most about a letter wide, whatever this page's word gap measures
+  // (one short line measures a word gap of half an x-height: 24 November, Joost's iPad).
+  const reach = Math.max(BODY_GAP * gap, LETTER_REACH * profile.xHeight);
+  const bodies = lines.map((line) => {
+    const byId = new Map(line.strokes.map((s) => [s.id, s]));
+    return line.words.map((ids) => bodyOf(ids, byId, reach));
+  });
+  // Size: the written words take the room the writer's own took (their widths summed).
+  // A height measure fails on a hand with tall t's and long loops: it read Joost's
+  // x-height as 20 px where his letters are 12, and the words came out half again too big.
+  const raw = lines.map((line, li) => {
+    const byId = new Map(line.strokes.map((s) => [s.id, s]));
+    let his = 0;
+    let made = 0;
+    line.words.forEach((_, w) => {
+      if (!line.rewrite[w]) return;
+      const own = bodies[li][w].flatMap((id) => xsOf(byId.get(id)?.pts ?? []));
+      const out = scaled[li].filter((s) => s.word === w).flatMap((s) => xsOf(s.pts));
+      if (own.length === 0 || out.length === 0) return;
+      his += Math.max(...own) - Math.min(...own);
+      made += Math.max(...out) - Math.min(...out);
+    });
+    if (his > 0 && made > 0) return his / made;
+    const fit = fits[li];
+    return fit && fit.xHeight > 0 ? profile.xHeight / fit.xHeight : null;
+  });
   const known = raw.filter((f): f is number => f !== null);
   const pageF = known.length ? median(known) : 1;
   return lines.map((line, li) => {
@@ -155,9 +183,17 @@ export function placeLines<S extends PageInk>(
     });
     // Words left to right, each as one unit: written strokes, or the writer's own.
     const byId = new Map(line.strokes.map((s) => [s.id, s]));
-    // Each word's own run of ink: pieces the reading gave it from elsewhere on the line
-    // (the commas of "March, April, May," given to "June") are loose ink instead.
-    const words = line.words.map((ids) => bodyOf(ids, byId, BODY_GAP * gap));
+    const words = bodies[li];
+    // The word gap of this line as the writer left it (between their own words), else the page's.
+    const spans = words.flatMap((ids) => {
+      const xs = ids.flatMap((id) => xsOf(byId.get(id)?.pts ?? []));
+      return xs.length ? [{ x0: Math.min(...xs), x1: Math.max(...xs) }] : [];
+    });
+    const gaps = spans
+      .slice(1)
+      .map((s, i) => s.x0 - spans[i].x1)
+      .filter((g) => g > 0);
+    const lineGap = gaps.length ? median(gaps) : gap;
     const units: { word: number; written: boolean; x0: number; x1: number }[] = [];
     words.forEach((ids, w) => {
       const xs = line.rewrite[w]
@@ -172,7 +208,7 @@ export function placeLines<S extends PageInk>(
     let right = -Infinity;
     let prev: (typeof units)[number] | null = null;
     for (const u of units) {
-      const space = prev && !prev.written && !u.written ? u.x0 - prev.x1 : gap;
+      const space = prev && !prev.written && !u.written ? u.x0 - prev.x1 : lineGap;
       const s = right === -Infinity ? left - u.x0 : right + space - u.x0;
       shift.set(u.word, s);
       right = u.x1 + s;

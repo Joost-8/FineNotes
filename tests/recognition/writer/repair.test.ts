@@ -4,6 +4,7 @@ import {
   errorRate,
   neatenLine,
   opcodes,
+  readBackRewrite,
   rejected,
   wordSpan,
   type Opcode,
@@ -192,6 +193,22 @@ describe("rejected", () => {
       [0, [0]],
       [1, [2]],
       [2, [4]],
+    ]);
+  });
+});
+
+describe("readBackRewrite", () => {
+  it("keeps the writer's ink for a word read back as another (Joost's iPad: simple written as single)", () => {
+    expect(
+      readBackRewrite("test again but simple", "test ag ain but single", [false, true, true, true]),
+    ).toEqual([false, false, true, false]);
+  });
+
+  it("leaves every word rewritten when the line reads back right, and never rewrites a kept one", () => {
+    expect(readBackRewrite("the new one", "the new one", [true, false, true])).toEqual([
+      true,
+      false,
+      true,
     ]);
   });
 });
