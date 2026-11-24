@@ -885,7 +885,9 @@ const SKEW_FLOOR = 0.05;
  * long line climbing more than about 10 degrees comes back in pieces, and
  * levelled piece by piece it would turn into stairs. So when steep writing is
  * tidied (`steep`), its lines are found on a sheared copy that runs level, and
- * the rest of the page as it stands; the lines keep the real strokes.
+ * the rest of the page as it stands; the lines keep the real strokes. The
+ * chosen ink is taken with the whole of each pen run it lies in, so a lasso
+ * round part of a line still tidies the whole line, as on level ink.
  */
 function linesOf<S extends PageInk>(
   strokes: readonly S[],
@@ -894,7 +896,11 @@ function linesOf<S extends PageInk>(
   const find = (ink: readonly S[]): InkLine<S>[] =>
     ink.length ? segmentPage(withStrokeTimes(ink), { rows: true }).lines : [];
   if (!steep) return find(strokes);
-  const chosen = strokes.filter((s) => steep.only.has(s.id));
+  const ids = new Set(steep.only);
+  for (const run of penRuns(strokes)) {
+    if (run.some((it) => steep.only.has(it.s.id))) for (const it of run) ids.add(it.s.id);
+  }
+  const chosen = strokes.filter((s) => ids.has(s.id));
   const skew = skewOf(chosen);
   if (Math.abs(skew) < SKEW_FLOOR || Math.abs(skew) > steep.max) return find(strokes);
   const real = new Map(chosen.map((s) => [s.id, s]));
@@ -905,7 +911,7 @@ function linesOf<S extends PageInk>(
     });
     return { words, box: unionOf(words.map((w) => w.box)), xHeight: line.xHeight };
   });
-  return [...find(strokes.filter((s) => !steep.only.has(s.id))), ...level];
+  return [...find(strokes.filter((s) => !ids.has(s.id))), ...level];
 }
 
 function fitLines<S extends PageInk>(

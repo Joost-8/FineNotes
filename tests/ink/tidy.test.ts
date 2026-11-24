@@ -609,6 +609,16 @@ describe("tidyInk the user asked for (maxLevelSlope)", () => {
     }
   });
 
+  it("a lasso round half of a climbing line levels the whole line: no step at its edge", () => {
+    // The reviewer's finding (2026-11-24): only the lassoed half was found and levelled.
+    for (const deg of [8, 12, 20]) {
+      const strokes = page([{ x: 20, y: 600, slope: -tan(deg), words: 6 }]);
+      const half = new Set(strokes.slice(0, strokes.length / 2).map((s) => s.id));
+      const result = tidyInk(strokes, { ...ASKED, only: half });
+      expect(spread(feet(apply(strokes, result.pts)))).toBeLessThan(0.4 * H);
+    }
+  });
+
   it("levels a steep line among level ones, and moves none of them", () => {
     const strokes = page([
       { x: 20, y: 100 },
