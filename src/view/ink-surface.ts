@@ -19437,7 +19437,18 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     const run = this.callbacks.onNeaten;
     if (!sel || !page || !run || this.callbacks.isLocked?.()) return;
     const latest = this.history.latest;
-    const stop = (): boolean => this.liveSelection() !== sel || this.history.latest !== latest;
+    const chosen = new Set(sel.strokes);
+    // `liveSelection` makes a new object each time: compare what is selected, not the object.
+    const stop = (): boolean => {
+      const now = this.selection;
+      return (
+        this.history.latest !== latest ||
+        !now ||
+        now.pageId !== sel.pageId ||
+        now.strokes.length !== chosen.size ||
+        !now.strokes.every((stroke) => chosen.has(stroke))
+      );
+    };
     const strokes = page.strokes.filter((stroke) => !isMirror(stroke));
     this.selectionFrameEl.addClass("is-working");
     let outcome: NeatenOutcome;

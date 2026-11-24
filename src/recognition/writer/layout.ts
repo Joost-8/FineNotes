@@ -124,12 +124,17 @@ export function placeLines<S extends PageInk>(
         : ids.flatMap((id) => xsOf(byId.get(id)?.pts ?? []));
       if (xs.length) units.push({ word: w, written: line.rewrite[w], x0: Math.min(...xs), x1: Math.max(...xs) });
     });
+    // Between two kept words the writer's own gap stays: the reading may split one written
+    // word in two ("prepen dS"), and a word gap opened there would split it on the page.
     const shift = new Map<number, number>();
     let right = -Infinity;
+    let prev: (typeof units)[number] | null = null;
     for (const u of units) {
-      const s = right === -Infinity ? left - u.x0 : right + gap - u.x0;
+      const space = prev && !prev.written && !u.written ? u.x0 - prev.x1 : gap;
+      const s = right === -Infinity ? left - u.x0 : right + space - u.x0;
       shift.set(u.word, s);
       right = u.x1 + s;
+      prev = u;
     }
     const added = placed
       .filter((s) => s.word >= 0 && line.rewrite[s.word] && shift.has(s.word))

@@ -62,7 +62,7 @@ async function write(request: Extract<WriterRequest, { type: "write" }>): Promis
   const t0 = performance.now();
   const written = await writeLine(graphs, meta, request.text, request.ref, {
     seed: request.seed,
-    id: request.id,
+    id: request.line,
     low: new Set(request.low),
   });
   return { type: "write", written, ms: Math.round(performance.now() - t0) };

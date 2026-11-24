@@ -26,7 +26,8 @@ export type WriterRequest =
       text: string;
       ref: Reference;
       seed: number;
-      id: number;
+      /** The line's number, for its noise (not `id`: that is the message's). */
+      line: number;
       /** Positions in the text written at low guidance (the repair). */
       low: number[];
     };

@@ -76,7 +76,7 @@ export class WriterClient {
       const id = this.nextId++;
       const timer = window.setTimeout(() => this.stop(new Error("the writer's worker did not answer")), timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
-      worker.postMessage({ [WRITER_TAG]: true, id, ...request }, transfer);
+      worker.postMessage({ ...request, [WRITER_TAG]: true, id }, transfer);
     });
   }
 
@@ -95,7 +95,7 @@ export class WriterClient {
 
   /** One try of a line. The reference is copied, not handed over: the caller writes it again. */
   async write(text: string, ref: Reference, seed: number, id: number, low: ReadonlySet<number>): Promise<Written> {
-    const result = await this.send({ type: "write", text, ref, seed, id, low: [...low] }, [], WRITE_TIMEOUT_MS);
+    const result = await this.send({ type: "write", text, ref, seed, line: id, low: [...low] }, [], WRITE_TIMEOUT_MS);
     if (result.type !== "write") throw new Error("unexpected reply");
     return result.written;
   }
