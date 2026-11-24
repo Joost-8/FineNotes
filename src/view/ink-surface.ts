@@ -21355,7 +21355,8 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     if (this.imageDrag) {
       // A second finger beside the one dragging it: a turn of the picture.
       if (finger && this.imageDrag.finger === true) this.addFrameFinger(this.imageFrameEl, event);
-      this.imageDrag.crowded = true;
+      // The second finger may have begun a turn, which takes the drag over.
+      if (this.imageDrag) this.imageDrag.crowded = true;
       return;
     }
     const box = this.boxForPage(sel.pageId);

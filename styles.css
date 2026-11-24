@@ -1452,6 +1452,9 @@ select.goodobsidian-choice-select {
   font-weight: var(--font-semibold, 600);
   grid-column: 2;
   text-align: center;
+  /* Text only. "Select all" is wider than its 44 px column and runs under
+     the title, which would otherwise take the taps on its right half. */
+  pointer-events: none;
 }
 
 .goodobsidian-pagesidebar .goodobsidian-pagesidebar-close.clickable-icon {
@@ -23517,6 +23520,9 @@ button:not(.clickable-icon).goodobsidian-share-all,
   position: absolute;
   inset: 0;
   pointer-events: none;
+  /* Above a selected picture's frame: a snippet is selected right after it is
+     dropped, and its chip is the only way back to the slide. */
+  z-index: 1;
 }
 
 .goodobsidian-slide-dots.is-hidden,
