@@ -3646,7 +3646,7 @@ describe("Tidy on a selection", () => {
     const p = page("p1", strokes);
     const doc = documentOf(p);
     const history = new History();
-    const calls = { invalidated: 0, changed: 0, overlay: 0 };
+    const calls = { invalidated: 0, changed: 0, overlay: 0, indexed: 0 };
     const sel = { pageId: "p1", strokes: p.strokes, images: [], textBoxes: [] };
     const surface = surfaceWith({
       doc,
@@ -3657,6 +3657,8 @@ describe("Tidy on a selection", () => {
       boxForPage: () => boxOf(doc, 0),
       groupBounds: () => ({ minX: 0, minY: 0, maxX: 500, maxY: 400 }),
       renderer: { invalidateRegion: () => calls.invalidated++ },
+      strokeIndex: { refreshPages: () => calls.indexed++ },
+      selectionOutline: null,
       renderDry: () => undefined,
       syncSelectionOverlay: () => calls.overlay++,
       changed: () => calls.changed++,
@@ -3682,7 +3684,8 @@ describe("Tidy on a selection", () => {
       expect(s).toBe(strokes[i]);
       expect(s.pts).toHaveLength(before[i].length);
     });
-    expect(calls).toEqual({ invalidated: 1, changed: 1, overlay: 1 });
+    // The stroke index files the moved strokes again (the reviewer's finding, 24 November).
+    expect(calls).toEqual({ invalidated: 1, changed: 1, overlay: 1, indexed: 1 });
     history.undo(doc);
     p.strokes.forEach((s, i) => expect(s.pts).toEqual(before[i]));
   });

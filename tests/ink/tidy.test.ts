@@ -688,6 +688,53 @@ describe("measureLines", () => {
   });
 });
 
+describe("tidyInk with only", () => {
+  it("tidies one line of a page that drifts, keeps it clear of its neighbours, and moves nothing else", () => {
+    // Three lines written close, all drifting the same way: levelled alone, the middle one would run into the
+    // line above (the reviewer's probe on 24 November measured -0.2 px of room at this slope).
+    const strokes = page([
+      { x: 20, y: 200, slope: 0.1, words: 6 },
+      { x: 20, y: 240, slope: 0.1, words: 6 },
+      { x: 20, y: 280, slope: 0.1, words: 6 },
+    ]);
+    const middle = new Set(inLine(strokes, 1).map((s) => s.id));
+    // The bug this guards: given that line alone, Tidy levels it into the line above.
+    const alone = tidyInk(inLine(strokes, 1), { strength: 1, profile: measureHand(strokes) });
+    expect(room(apply(strokes, alone.pts), 0, 1)).toBeLessThan(0.2 * H);
+    const { pts } = tidyInk(strokes, { strength: 1, only: middle });
+    expect([...pts.keys()].every((id) => middle.has(id))).toBe(true);
+    expect(pts.size).toBeGreaterThan(0);
+    const after = apply(strokes, pts);
+    expect(room(after, 0, 1)).toBeGreaterThan(0.2 * H);
+    expect(room(after, 1, 2)).toBeGreaterThan(0.2 * H);
+  });
+
+  it("a highlight on the tidied line follows it, though it is not in the set", () => {
+    const strokes = page([{ x: 20, y: 200, slope: -0.06 }]);
+    const end = Math.max(...strokes.map(right));
+    const highlight: PageInk = {
+      id: "marker",
+      tool: "highlighter",
+      shape: null,
+      t0: clock + 500,
+      pts: Array.from({ length: 30 }, (_, i) => {
+        const x = 20 + (i / 29) * (end - 20);
+        return [x, 196 - 0.06 * (x - 20), 0.5];
+      }).flat(),
+    };
+    const writing = new Set(strokes.map((s) => s.id));
+    const { pts } = tidyInk([...strokes, highlight], { strength: 1, only: writing });
+    const moved = pts.get("marker") as number[];
+    expect(moved).toBeDefined();
+    expect(Math.abs(moved[1] - moved[moved.length - 2])).toBeLessThan(2.5);
+  });
+
+  it("leaves everything alone when no stroke of the set is on a line", () => {
+    const strokes = page([{ x: 20, y: 200, slope: -0.06 }]);
+    expect(tidyInk(strokes, { strength: 1, only: new Set(["nowhere"]) }).pts.size).toBe(0);
+  });
+});
+
 describe("lineOfStroke", () => {
   it("gives every stroke of the held word's line, and nothing of the other lines", () => {
     const strokes = page([

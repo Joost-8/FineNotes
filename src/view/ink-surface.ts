@@ -19415,31 +19415,43 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
   private tidySelection(): void {
     const sel = this.liveSelection();
     if (!sel || this.groupDrag || this.callbacks.isLocked?.()) return;
-    if (this.tidyStrokes(sel.pageId, sel.strokes)) this.syncSelectionOverlay();
+    if (!this.tidyStrokes(sel.pageId, sel.strokes)) return;
+    // The loop was drawn round the ink as it stood; the frame now follows the tidied ink.
+    this.selectionOutline = null;
+    this.syncSelectionOverlay();
   }
 
   /**
-   * Tidy these strokes of a page toward the hand measured from the whole
-   * page (`tidySelection`, and the press menu's Tidy for a held word's line).
-   * One undo step. False when nothing moved.
+   * Tidy the lines holding these strokes toward the hand measured from the
+   * whole page (`tidySelection`, and the press menu's Tidy for a held word's
+   * line). The rest of the page's ink is given too, held where it is, so a
+   * tidied line keeps clear of its neighbours and an underline or highlight
+   * on it follows. Mirrors of joined pages are left to their owners. One undo
+   * step. False when nothing moved.
    */
   private tidyStrokes(pageId: string, strokes: readonly Stroke[]): boolean {
     const page = this.doc.pages.find((candidate) => candidate.id === pageId);
     const box = this.boxForPage(pageId);
-    const before = strokes.map(strokeBounds).reduce<Bounds | null>(unionBounds, null);
-    if (!page || !box || !before) return false;
-    const result = tidyInk(strokes, {
-      profile: measureHand(page.strokes),
+    if (!page || !box) return false;
+    const own = page.strokes.filter((stroke) => !isMirror(stroke));
+    const result = tidyInk(own, {
+      profile: measureHand(own),
       rules: writingLines(page.backdrop, page.geometry),
+      only: new Set(strokes.filter((stroke) => !isMirror(stroke)).map((stroke) => stroke.id)),
     });
-    const changes = strokes.flatMap((stroke) => {
+    const changes = own.flatMap((stroke) => {
       const pts = result.pts.get(stroke.id);
       return pts ? [{ stroke, pts }] : [];
     });
     if (changes.length === 0) return false;
+    const moved = changes.map((change) => change.stroke);
+    const before = moved.map(strokeBounds).reduce<Bounds | null>(unionBounds, null);
     this.history.push(this.doc, new SetStrokePoints(pageId, changes));
-    const after = strokes.map(strokeBounds).reduce<Bounds | null>(unionBounds, null);
-    this.renderer?.invalidateRegion(box.index, unionBounds(before, after ?? before) ?? before);
+    // The index files a stroke where it stood; a tidied line moved.
+    this.strokeIndex.refreshPages(this.doc.pages, [pageId]);
+    const after = moved.map(strokeBounds).reduce<Bounds | null>(unionBounds, null);
+    const region = unionBounds(before, after);
+    if (region) this.renderer?.invalidateRegion(box.index, region);
     this.renderDry();
     this.changed([pageId]);
     return true;
@@ -19450,8 +19462,12 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
    * Null when the ink is on no line of running text (`lineOfStroke`).
    */
   private tidyLineAction(page: Page, ink: Stroke): SelectionAction | null {
-    if (ink.shape || ink.tool !== "pen" || this.callbacks.isLocked?.()) return null;
-    const ids = lineOfStroke(page.strokes, ink.id);
+    if (ink.shape || ink.tool !== "pen" || isMirror(ink) || this.callbacks.isLocked?.())
+      return null;
+    const ids = lineOfStroke(
+      page.strokes.filter((stroke) => !isMirror(stroke)),
+      ink.id,
+    );
     if (!ids) return null;
     return {
       id: "tidy-line",

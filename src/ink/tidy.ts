@@ -108,6 +108,24 @@ export interface TidyOptions {
   rules?: readonly RuleBlock[] | null;
   /** Smooth tremor and straighten bars inside strokes. Default true. */
   strokes?: boolean;
+  /**
+   * Tidy only the lines holding these strokes (a lasso selection, the line a
+   * held word is on). Every other line given stays where it is, as a
+   * neighbour the tidied lines keep clear of; an underline or highlight on a
+   * tidied line follows it even when it is not in the set. All lines when
+   * absent.
+   */
+  only?: ReadonlySet<string>;
+}
+
+/** Per line, whether `only` leaves it where it is. */
+function heldLines(
+  lines: readonly LineFit<PageInk>[],
+  only: ReadonlySet<string> | undefined,
+): boolean[] {
+  return lines.map(
+    (line) => !!only && !line.pieces.some((p) => p.strokes.some((s) => only.has(s.id))),
+  );
 }
 
 export interface TidyResult {
@@ -1295,19 +1313,21 @@ function tidyRound<S extends PageInk>(
   const pts = new Map<string, number[]>();
   const followers = new Map<string, number>();
   const layout = layoutOf(lines, options.rules ? null : profile);
+  // Lines `only` leaves alone change nothing, and never give way: they are fixed neighbours.
+  const held = heldLines(lines, options.only);
   const lineDx = lines.map((line, li) => {
     const m = layout.margin[li] ?? 0;
-    return Math.abs(m) > DEAD.margin * line.core ? strength * PULL.margin * m : 0;
+    return !held[li] && Math.abs(m) > DEAD.margin * line.core ? strength * PULL.margin * m : 0;
   });
   const lineDy = lines.map((line, li) =>
-    options.rules || !line.based || Math.abs(layout.pitch[li]) <= DEAD.pitch * line.core
+    held[li] || options.rules || !line.based || Math.abs(layout.pitch[li]) <= DEAD.pitch * line.core
       ? 0
       : clamp(PULL.pitch * layout.pitch[li], -0.45 * line.core, 0.45 * line.core),
   );
   // Every line's change; then a line that would come too near a neighbour changes
   // height and tilt only as far as it can without that. Of two lines that clash,
   // the one that would travel furthest gives way first.
-  const give = lines.map(() => 1);
+  const give = lines.map((_, li): number => (held[li] ? 0 : 1));
   const push = lines.map(() => 0);
   const moveOf = (li: number): LineMove =>
     moveFor(lines[li], strength, options.rules ?? null, lineDx[li], lineDy[li], give[li], push[li]);
@@ -1417,7 +1437,7 @@ function tidyRound<S extends PageInk>(
     }
     if (byLine.size !== 1) continue;
     const [[host, weight]] = [...byLine.entries()];
-    if (weight < FOLLOW_COVER * Math.max(b[2] - b[0], 1e-6)) continue;
+    if (held[host] || weight < FOLLOW_COVER * Math.max(b[2] - b[0], 1e-6)) continue;
     // On the line or just under it: a rule above a line belongs to what is above.
     const cx = (b[0] + b[2]) / 2;
     const cy = (b[1] + b[3]) / 2;
@@ -1479,8 +1499,9 @@ export function tidyInk<S extends PageInk>(
   // Inside strokes, once, on the ink where it now stands.
   const inside = new Map<string, number[]>();
   if (options.strokes !== false) {
-    for (const line of lines) {
-      if (!line.based) continue;
+    const held = heldLines(lines, options.only);
+    for (const [li, line] of lines.entries()) {
+      if (!line.based || held[li]) continue;
       for (const piece of line.pieces) {
         for (const s of piece.strokes) {
           const kept = Array.from(s.pts);
