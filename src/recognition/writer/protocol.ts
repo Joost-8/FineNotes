@@ -5,26 +5,26 @@
  * PURE: types only.
  */
 
-import type { Reference } from "./rows";
-import type { WriterMeta, Written } from "./sampler";
+import type { WriterManifest } from "./manifest";
+import type { Written } from "./sampler";
 
 export const WRITER_TAG = "fineNotesWriter";
 
 /** The model's files, as bytes (the worker never fetches anything). */
 export interface WriterFiles {
-  encode: ArrayBuffer;
-  durations: ArrayBuffer;
-  velocity: ArrayBuffer;
+  /** Each graph's file, by its role in the manifest. */
+  graphs: Record<string, ArrayBuffer>;
   /** onnxruntime-web's WebAssembly binary (the OCR's file). */
   wasm: ArrayBuffer;
 }
 
 export type WriterRequest =
-  | { type: "load"; files: WriterFiles; meta: WriterMeta }
+  | { type: "load"; files: WriterFiles; manifest: WriterManifest }
   | {
       type: "write";
       text: string;
-      ref: Reference;
+      /** What the model is shown, as its kind made it (`kinds.ts`). */
+      ref: unknown;
       seed: number;
       /** The line's number, for its noise (not `id`: that is the message's). */
       line: number;

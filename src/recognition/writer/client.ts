@@ -19,8 +19,8 @@ import {
   type WriterRequest,
   type WriterResult,
 } from "./protocol";
-import type { Reference } from "./rows";
-import type { WriterMeta, Written } from "./sampler";
+import type { WriterManifest } from "./manifest";
+import type { Written } from "./sampler";
 
 /** A worker left idle this long is let go, with its model (as the OCR's). */
 export const IDLE_RELEASE_MS = 2 * 60_000;
@@ -96,14 +96,14 @@ export class WriterClient {
   /** Make sure the worker holds model `key`, reading its files with `read` if not. */
   async ensureModel(
     key: string,
-    read: () => Promise<{ files: WriterFiles; meta: WriterMeta }>,
+    read: () => Promise<{ files: WriterFiles; manifest: WriterManifest }>,
   ): Promise<void> {
     if (this.worker && this.loaded === key) return;
-    const { files, meta } = await read();
+    const { files, manifest } = await read();
     this.loaded = "";
     await this.send(
-      { type: "load", files, meta },
-      [files.encode, files.durations, files.velocity, files.wasm],
+      { type: "load", files, manifest },
+      [...Object.values(files.graphs), files.wasm],
       LOAD_TIMEOUT_MS,
     );
     this.loaded = key;
@@ -112,7 +112,7 @@ export class WriterClient {
   /** One try of a line. The reference is copied, not handed over: the caller writes it again. */
   async write(
     text: string,
-    ref: Reference,
+    ref: unknown,
     seed: number,
     id: number,
     low: ReadonlySet<number>,

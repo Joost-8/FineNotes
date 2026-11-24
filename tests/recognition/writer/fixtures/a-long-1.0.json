@@ -1,0 +1,277 @@
+{
+  "format": 1,
+  "id": "a-long",
+  "version": "1.0",
+  "name": "A long",
+  "kind": "dual",
+  "graphs": {
+    "encode": {
+      "file": "a-long-1.0-encode.int8.onnx",
+      "inputs": [
+        {
+          "name": "rx",
+          "type": "float32",
+          "dims": [1, "R", 10]
+        },
+        {
+          "name": "rmask",
+          "type": "bool",
+          "dims": [1, "R"]
+        },
+        {
+          "name": "rcid",
+          "type": "int64",
+          "dims": [1, "R"]
+        },
+        {
+          "name": "rk",
+          "type": "int64",
+          "dims": [1, "R"]
+        },
+        {
+          "name": "rd",
+          "type": "int64",
+          "dims": [1, "R"]
+        },
+        {
+          "name": "rsep",
+          "type": "bool",
+          "dims": [1, "R"]
+        },
+        {
+          "name": "drop",
+          "type": "bool",
+          "dims": [1]
+        }
+      ],
+      "outputs": [
+        {
+          "name": "mem",
+          "type": "float32",
+          "dims": [1, "R", 256]
+        },
+        {
+          "name": "valid",
+          "type": "bool",
+          "dims": [1, "R"]
+        },
+        {
+          "name": "g",
+          "type": "float32",
+          "dims": [1, 256]
+        }
+      ]
+    },
+    "durations": {
+      "file": "a-long-1.0-durations.int8.onnx",
+      "inputs": [
+        {
+          "name": "tid",
+          "type": "int64",
+          "dims": [1, "L"]
+        },
+        {
+          "name": "tmask",
+          "type": "bool",
+          "dims": [1, "L"]
+        },
+        {
+          "name": "g",
+          "type": "float32",
+          "dims": [1, 256]
+        }
+      ],
+      "outputs": [
+        {
+          "name": "logits",
+          "type": "float32",
+          "dims": [1, "L", 14]
+        }
+      ]
+    },
+    "velocity": {
+      "file": "a-long-1.0-velocity.int8.onnx",
+      "inputs": [
+        {
+          "name": "x",
+          "type": "float32",
+          "dims": [1, "T", 10]
+        },
+        {
+          "name": "tau",
+          "type": "float32",
+          "dims": [1]
+        },
+        {
+          "name": "mask",
+          "type": "bool",
+          "dims": [1, "T"]
+        },
+        {
+          "name": "cid",
+          "type": "int64",
+          "dims": [1, "T"]
+        },
+        {
+          "name": "k",
+          "type": "int64",
+          "dims": [1, "T"]
+        },
+        {
+          "name": "d",
+          "type": "int64",
+          "dims": [1, "T"]
+        },
+        {
+          "name": "mem",
+          "type": "float32",
+          "dims": [1, "R", 256]
+        },
+        {
+          "name": "valid",
+          "type": "bool",
+          "dims": [1, "R"]
+        },
+        {
+          "name": "g",
+          "type": "float32",
+          "dims": [1, 256]
+        }
+      ],
+      "outputs": [
+        {
+          "name": "v",
+          "type": "float32",
+          "dims": [1, "T", 10]
+        }
+      ]
+    }
+  },
+  "rows": {
+    "encoding": "grape2-raw",
+    "channels": 10,
+    "tol": 0.01,
+    "norm": "skew=0,slant=0,scale=core",
+    "mean": [
+      0.09701651334762573, -0.004017073195427656, 0.02700645662844181, 0.004006850998848677,
+      -0.03775981813669205, -0.009690672159194946, 0.27845945954322815, -0.046463411301374435,
+      0.03065359964966774, 0.21908874809741974
+    ],
+    "std": [
+      0.2388756424188614, 0.237570658326149, 0.10653979331254959, 0.11517775058746338,
+      0.11142346262931824, 0.11936979740858078, 0.3485608696937561, 0.11219682544469833,
+      0.0749591812491417, 0.41363009810447693
+    ]
+  },
+  "reference": {
+    "curves": 144,
+    "lines": 6,
+    "hold": 6.0
+  },
+  "sampling": {
+    "steps": 8,
+    "sigma": 0.7,
+    "guidance": 1.5,
+    "lowGuidance": 0.35,
+    "lowMix": 0.35,
+    "maxDur": 14
+  },
+  "chars": [
+    "<blank>",
+    " ",
+    "!",
+    "\"",
+    "#",
+    "&",
+    "'",
+    "(",
+    ")",
+    "*",
+    "+",
+    ",",
+    "-",
+    ".",
+    "/",
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    ":",
+    ";",
+    "?",
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F",
+    "G",
+    "H",
+    "I",
+    "J",
+    "K",
+    "L",
+    "M",
+    "N",
+    "O",
+    "P",
+    "Q",
+    "R",
+    "S",
+    "T",
+    "U",
+    "V",
+    "W",
+    "X",
+    "Y",
+    "Z",
+    "[",
+    "]",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h",
+    "i",
+    "j",
+    "k",
+    "l",
+    "m",
+    "n",
+    "o",
+    "p",
+    "q",
+    "r",
+    "s",
+    "t",
+    "u",
+    "v",
+    "w",
+    "x",
+    "y",
+    "z",
+    "$",
+    "%",
+    "=",
+    "<",
+    ">",
+    "@",
+    "_",
+    "^",
+    "~",
+    "|",
+    "{",
+    "}",
+    "\\",
+    "`"
+  ]
+}

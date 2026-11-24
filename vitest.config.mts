@@ -20,6 +20,8 @@ export default defineConfig({
         "src/recognition/writer/pool.ts",
         "src/recognition/writer/layout.ts",
         "src/recognition/writer/apply.ts",
+        "src/recognition/writer/manifest.ts",
+        "src/recognition/writer/kinds.ts",
         "src/model/sponsors.ts",
         "src/model/note-merge.ts",
         "src/settings-data.ts",

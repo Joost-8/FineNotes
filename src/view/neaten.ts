@@ -34,14 +34,14 @@ import type { WriterClient } from "../recognition/writer/client";
 import { type LineToPlace, placeLines } from "../recognition/writer/layout";
 import { proseLike } from "../recognition/writer/pool";
 import { neatenLine } from "../recognition/writer/repair";
+import { type TaggedLine, calm, levelledStrokes } from "../recognition/writer/rows";
+import { type WriterKind, WRITER_KINDS, kindFor } from "../recognition/writer/kinds";
 import {
-  type TaggedLine,
-  calm,
-  levelledStrokes,
-  pickLines,
-  referenceOf,
-} from "../recognition/writer/rows";
-import type { WriterMeta } from "../recognition/writer/sampler";
+  type ManifestProblem,
+  type WriterManifest,
+  manifestFormat,
+  parseManifest,
+} from "../recognition/writer/manifest";
 import {
   type WordAnswer,
   applyAnswers,
@@ -50,7 +50,7 @@ import {
   wordCore,
   wordsOf,
 } from "../recognition/writer/sure-words";
-import { WRITER_FILES, WRITER_HOSTED, WRITER_MODEL } from "../recognition/writer/writer-model";
+import { WRITER_HOSTED, WRITER_MODEL } from "../recognition/writer/writer-model";
 import { OCR_WASM_FILE } from "../recognition/ocr/ocr-model";
 import { ModelNotDownloadedError, type HandwritingReader } from "./handwriting";
 import type { ModelRegistry } from "./model-downloads";
@@ -103,7 +103,8 @@ interface PoolLine {
 
 export class NeatenService {
   private writer: WriterClient | null = null;
-  private meta: WriterMeta | null = null;
+  /** The model in the folder: its manifest and the kind that runs it (null until read). */
+  private model: { manifest: WriterManifest; kind: WriterKind; key: string } | null = null;
   /** Copied lines tied to their letters, by `PoolLine.key` (null: could not be). */
   private readonly tagged = new Map<string, TaggedLine | null>();
   private running = false;
@@ -112,7 +113,10 @@ export class NeatenService {
 
   constructor(private readonly host: NeatenHost) {
     // Listed in Settings › Models on this device from the start, like the other models.
-    void host.models.register(WRITER_MODEL).check();
+    // An older version in the folder is read for its manifest's format (needs an update).
+    const formatOf = (data: ArrayBuffer): number | null =>
+      manifestFormat(new TextDecoder().decode(data));
+    void host.models.register(WRITER_MODEL, { formatOf }).check();
   }
 
   /** Whether the menu offers Neaten: the model can be downloaded, or is already here. */
@@ -168,8 +172,13 @@ export class NeatenService {
       this.host.models.offer(WRITER_MODEL.id, "ask");
       return { kind: "needs-model" };
     }
-    const meta = await this.loadMeta();
-    const writable = (ch: string): boolean => meta.chars.indexOf(ch) > 0;
+    const model = await this.loadModel();
+    if ("problem" in model) {
+      new Notice(problemText(model.problem), 8000);
+      return { kind: "stopped" };
+    }
+    const { manifest, kind } = model;
+    const writable = (ch: string): boolean => manifest.chars.indexOf(ch) > 0;
     const pool = await this.poolOf(writable);
     if (pool.length < MIN_PRACTICE_LINES) {
       new NeedsSheetModal(
@@ -204,20 +213,17 @@ export class NeatenService {
     // The writer, alone in memory with Grape.
     await pauseOcr();
     const writer = await this.writerClient();
-    await writer.ensureModel(`${WRITER_MODEL.id}:${WRITER_MODEL.version}`, async () => ({
-      files: {
-        encode: await this.bytes(WRITER_FILES.encode),
-        durations: await this.bytes(WRITER_FILES.durations),
-        velocity: await this.bytes(WRITER_FILES.velocity),
-        wasm: await this.bytes(OCR_WASM_FILE.name),
-      },
-      meta,
-    }));
-    const index = new Map(meta.chars.map((c, i) => [c, i]));
+    await writer.ensureModel(model.key, async () => {
+      const graphs: Record<string, ArrayBuffer> = {};
+      for (const role of Object.keys(kind.graphs)) {
+        graphs[role] = await this.bytes(manifest.graphs[role].file);
+      }
+      return { files: { graphs, wasm: await this.bytes(OCR_WASM_FILE.name) }, manifest };
+    });
     const placing: LineToPlace<Stroke>[] = [];
     for (const [n, job] of jobs.entries()) {
-      const shown = await this.shownFor(job.text, pool, meta);
-      const ref = referenceOf(shown, meta.refCurves, index);
+      const shown = await this.shownFor(job.text, pool, manifest, kind);
+      const ref = kind.reference(job.text, shown, manifest);
       if (!ref) continue;
       const done = await neatenLine(
         job.text,
@@ -296,12 +302,18 @@ export class NeatenService {
   }
 
   /**
-   * The copied lines to show for `text`: those sharing most letters with it
-   * (`pickLines`), tied to their letters by Grape when first needed; a line
-   * that cannot be is passed over for the next.
+   * The copied lines to show for `text`, as the model's kind picks them,
+   * tied to their letters by Grape when first needed; a line that cannot be
+   * is passed over for the next.
    */
-  private async shownFor(text: string, pool: PoolLine[], meta: WriterMeta): Promise<TaggedLine[]> {
-    const picked = pickLines(text, pool, meta.refLines + SPARE_LINES);
+  private async shownFor(
+    text: string,
+    pool: PoolLine[],
+    manifest: WriterManifest,
+    kind: WriterKind,
+  ): Promise<TaggedLine[]> {
+    const want = manifest.reference.lines;
+    const picked = kind.pick(text, pool, want + SPARE_LINES);
     const missing = picked.filter((line) => !this.tagged.has(line.key));
     if (missing.length > 0) {
       const tagged = await this.host.handwriting.tagLines(
@@ -309,20 +321,41 @@ export class NeatenService {
       );
       missing.forEach((line, i) => {
         const done = tagged[i];
-        this.tagged.set(line.key, done ? calm(done, meta.hold) : null);
+        // Kept as the writer wrote it; the kind holds long pen jumps when it shows the line.
+        this.tagged.set(line.key, done ?? null);
       });
     }
     return picked
       .map((line) => this.tagged.get(line.key) ?? null)
       .filter((line): line is TaggedLine => line !== null)
-      .slice(0, meta.refLines);
+      .slice(0, want)
+      .map((line) => calm(line, manifest.reference.hold));
   }
 
-  private async loadMeta(): Promise<WriterMeta> {
-    if (this.meta) return this.meta;
-    const text = new TextDecoder().decode(await this.bytes(WRITER_FILES.meta));
-    this.meta = JSON.parse(text) as WriterMeta;
-    return this.meta;
+  /**
+   * The model in the folder, read from its manifest and checked against
+   * what this build runs (`manifest.ts`, `kinds.ts`); a problem says why
+   * not. Read again when the manifest file changed (an update).
+   */
+  private async loadModel(): Promise<
+    { manifest: WriterManifest; kind: WriterKind; key: string } | { problem: ManifestProblem }
+  > {
+    const data = await this.host.models.register(WRITER_MODEL).bytes();
+    if (!data) throw new Error("the writer's manifest is missing");
+    const text = new TextDecoder().decode(data);
+    if (this.model && this.model.key === text) return this.model;
+    let json: unknown;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      return { problem: { kind: "invalid", detail: "not JSON" } };
+    }
+    const parsed = parseManifest(json, new Set(WRITER_KINDS.keys()));
+    if ("problem" in parsed) return parsed;
+    const found = kindFor(parsed.manifest);
+    if ("problem" in found) return { problem: { kind: "invalid", detail: found.problem } };
+    this.model = { manifest: parsed.manifest, kind: found.kind, key: text };
+    return this.model;
   }
 
   private async bytes(name: string): Promise<ArrayBuffer> {
@@ -345,6 +378,13 @@ export class NeatenService {
     this.writer?.dispose();
     this.writer = null;
   }
+}
+
+/** What the user is told about a model this build cannot run (the detail goes to the console). */
+export function problemText(problem: ManifestProblem): string {
+  console.warn("FineNotes: the handwriting writer cannot be used", problem);
+  // A newer format or kind, or rows this build does not make: FineNotes is behind the model.
+  return problem.kind === "invalid" ? t("ai.neaten.modelBroken") : t("ai.neaten.modelNewer");
 }
 
 /** "Neaten needs your handwriting": Learn's practice sheet, the same sheet for both. */

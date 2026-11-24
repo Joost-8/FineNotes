@@ -590,6 +590,10 @@ export const ai = {
     "Copy at least {min} lines on a practice sheet. Grape learns from the same sheet.",
   "ai.neaten.writeSheet": "Write practice sheet",
   "ai.neaten.nothingSure": "No word here is clear enough to rewrite",
+  "ai.neaten.modelNewer":
+    "This handwriting writer needs a newer FineNotes. Update FineNotes to use it.",
+  "ai.neaten.modelBroken":
+    "The handwriting writer on this device is damaged. Download it again in Settings, Models on this device.",
   "ai.neaten.failed": "Neaten could not finish. Try again.",
   "ai.ocr.tierFast": "Fast",
   "ai.ocr.tierAccurate": "Accurate",

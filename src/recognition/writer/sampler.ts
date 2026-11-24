@@ -20,7 +20,7 @@
 
 import { ROW, type Reference, type Rows, runsOf } from "./rows";
 
-/** The model's own numbers (`writer.json`, written by gen/neaten_v1.py meta). */
+/** The sampler's numbers, taken from the model's manifest (`kinds.ts` `samplerMeta`). */
 export interface WriterMeta {
   /** The model's characters; index 0 is the blank, and a character's id is its index. */
   chars: string[];

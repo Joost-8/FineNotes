@@ -158,10 +158,10 @@ export function errorRate(text: string, read: string): number {
   return prev[read.length] / text.length;
 }
 
-/** Writes one try of a line (`low`: letters at low guidance), from a try's seed and the line's number. */
-export type WriteTry = (
+/** Writes one try of a line (`ref`: what the model is shown, as its kind made it) (`low`: letters at low guidance), from a try's seed and the line's number. */
+export type WriteTry<R = Reference> = (
   text: string,
-  ref: Reference,
+  ref: R,
   seed: number,
   id: number,
   low: ReadonlySet<number>,
@@ -184,11 +184,11 @@ export interface NeatenedLine {
  * line's own seed (tries are `seed * tries + s`, as in the research);
  * `stop` is asked between tries and ends the work early (null).
  */
-export async function neatenLine(
+export async function neatenLine<R = Reference>(
   text: string,
-  ref: Reference,
+  ref: R,
   id: number,
-  write: WriteTry,
+  write: WriteTry<R>,
   read: ReadBack,
   options: { seed: number; tries: number; repair: boolean; stop?: () => boolean },
 ): Promise<NeatenedLine | null> {
