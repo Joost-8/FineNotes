@@ -30,6 +30,18 @@ extracted from the matching section of this file by `release.yml`.
   tidies. Formulas and tables are left alone. One undo puts it all back. How
   neat it writes is a slider in the Lasso tool's popover, from most like your
   ink to neatest.
+  tidies. Formulas and tables are left alone. One undo puts it all back.
+- **Write it in your handwriting.** Once Beautify can write in your hand:
+  after you correct a word on the word card, the card offers to write the
+  word again in your hand in place of the old ink, on its line and at its
+  size (the rest of the line moves to fit); a word you really wrote that way
+  gets "Write “…” in my handwriting" with the closest spelling. A text box,
+  pasted or typed, turns into your handwriting with the lasso's **Turn into ›
+  Handwriting**: wrapped to the page's margins, on the rules of ruled paper,
+  below any writing already there, each line written afresh so it never looks
+  stamped; this works on an empty page too. Calculation notes write a plain
+  number answer (digits, `.` `,` `-` `%` `$`) after your "=" in your hand;
+  fractions and powers stay in the drawn figures.
 - **Insert space on boards, and on paper without lines**
   ([discussion #276](https://github.com/Joost-8/FineNotes/discussions/276)).
   With the lasso on **By line**, press anywhere on a board and drag down: everything

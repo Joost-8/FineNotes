@@ -1086,6 +1086,7 @@ export class InkView extends TextFileView {
           "calc",
         );
       },
+      handAnswer: (text, at) => plugin.writeInHand.answerInk(text, at),
     });
     this.columnNotes = new ColumnNotes({
       app: this.app,
