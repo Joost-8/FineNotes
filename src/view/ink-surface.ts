@@ -15870,7 +15870,7 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     if (menu.handwriting && sel.strokes.some((stroke) => stroke.tool === "pen" && !stroke.shape)) {
       actions.push({
         id: "tidy",
-        icon: "wand-sparkles",
+        icon: "brush-cleaning",
         label: t("surface.selectionBar.tidy"),
         group: "edit",
         run: () => this.tidySelection(),
@@ -19455,7 +19455,7 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     if (!ids) return null;
     return {
       id: "tidy-line",
-      icon: "wand-sparkles",
+      icon: "brush-cleaning",
       label: t("surface.selectionBar.tidyLine"),
       group: "press",
       // A symbol in the bar, beside Correct, so the bar keeps to its three words.
