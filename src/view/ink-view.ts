@@ -5168,6 +5168,11 @@ export class InkView extends TextFileView {
         onCorrectWord: (index, strokeIds) => void this.correctWord(index, strokeIds),
         onNeaten: (request) => this.plugin.neaten.run({ ...request, note: this.file?.path }),
         canNeaten: () => this.plugin.neaten.available(),
+        onWriteInHand: (pageId, boxId) => {
+          if (this.surface) void this.plugin.writeInHand.turnTextBox(this.surface, pageId, boxId);
+        },
+        canWriteInHand: () =>
+          this.settings.handwritingOnDevice !== false && this.plugin.writeInHand.canWrite(),
         canCorrectWords: () => this.settings.handwritingOnDevice !== false,
         onReadingPoint: (index, y) => {
           this.sidebar?.setReadingPoint(index, y);

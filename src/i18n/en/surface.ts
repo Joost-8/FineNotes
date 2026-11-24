@@ -341,6 +341,7 @@ export const surface = {
   "surface.selectionBar.beautify": "Beautify",
   "surface.selectionBar.beautifyLine": "Beautify this line",
   "surface.selectionBar.text": "Text",
+  "surface.selectionBar.handwriting": "Handwriting",
   "surface.selectionBar.copyText": "Copy text",
   "surface.selectionBar.translate": "Translate",
   "surface.selectionBar.contentsHeading": "Contents heading",

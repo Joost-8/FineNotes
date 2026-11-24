@@ -1296,6 +1296,10 @@ export interface InkSurfaceCallbacks {
    * asks what it says, then calls `turnInkIntoText` with the answer.
    */
   onTurnIntoText?: (index: number, strokeIds: string[]) => void;
+  /** Turn into › Handwriting on a lone text box: the host writes its text in the writer's hand. */
+  onWriteInHand?: (pageId: string, boxId: string) => void;
+  /** Whether the writer can write known text on this device (write-in-hand.ts). */
+  canWriteInHand?: () => boolean;
   /** Open a link's target: a finger tap on linked ink, or Open link on its selection. */
   onOpenLink?: (target: string) => void;
   /** A comment's marker was tapped (`anchor` is the marker). */
@@ -15869,6 +15873,21 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
       ? this.translateAction(sel.pageId, heading, highlighted, { fromPdf: true })
       : this.translateAction(sel.pageId, heading, boxText, { textBox: loneBox });
     if (translate) actions.push(translate);
+    // A lone text box in the writer's hand, first under Turn into (write-in-hand.ts).
+    const toHand = this.callbacks.onWriteInHand;
+    if (menu.handwriting && loneBox && boxText && toHand && this.callbacks.canWriteInHand?.()) {
+      actions.push({
+        id: "to-hand",
+        icon: "signature",
+        label: t("surface.selectionBar.handwriting"),
+        group: "turn",
+        submenu: TURN_INTO,
+        run: () => {
+          this.clearSelection();
+          toHand(sel.pageId, loneBox.id);
+        },
+      });
+    }
     // The word check's card, for any word, underlined or not.
     const correct = this.correctWordAction(index, sel.strokes);
     if (menu.handwriting && correct) actions.push(correct);
