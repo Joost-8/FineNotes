@@ -89,6 +89,33 @@ export function writableText(
 }
 
 /**
+ * A Markdown text box's text as it reads, without its marks: headings and
+ * quotes lose their `#` and `>`, a task's box goes (its dash stays, as a
+ * bullet is written), bold, italic, strike and code lose their marks, a link
+ * is its words (a wiki link its alias, else its target).
+ */
+export function plainMarkdown(text: string): string {
+  return text
+    .split("\n")
+    .map((line) =>
+      line
+        .replace(/^\s{0,3}#{1,6}\s+/, "")
+        .replace(/^\s*>\s?/, "")
+        .replace(/^(\s*[-*+])\s+\[[ xX]\]\s+/, "$1 ")
+        .replace(/^(\s*)[*+](\s+)/, "$1-$2")
+        .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2")
+        .replace(/\[\[([^\]]+)\]\]/g, "$1")
+        .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+        .replace(/(\*\*|__)(.+?)\1/g, "$2")
+        .replace(/~~(.+?)~~/g, "$1")
+        .replace(/==(.+?)==/g, "$1")
+        .replace(/(^|[\s(])[*_]([^*_\s][^*_]*?)[*_](?=[\s).,;:!?]|$)/g, "$1$2")
+        .replace(/`([^`]+)`/g, "$1"),
+    )
+    .join("\n");
+}
+
+/**
  * A line of text cut, at spaces, into pieces of at most `max` characters,
  * each written as one line by the model. A word longer than `max` is a
  * piece of its own.

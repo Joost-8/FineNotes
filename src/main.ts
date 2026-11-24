@@ -381,6 +381,8 @@ const LAST_PEN_SAVE_MS = 600;
 
 /** How long after the layout is ready a bundled Grape is written to disk: off the startup path. */
 const GRAPE_BRIDGE_DELAY_MS = 8000;
+/** How long after startup the writer's readiness is first looked at (it reads the practice sheets). */
+const WARM_WRITER_MS = 10_000;
 
 /** How long after the layout is ready the daily update check runs: off the startup path. */
 const UPDATE_CHECK_DELAY_MS = 20_000;
@@ -898,6 +900,12 @@ export default class GoodObsidianPlugin extends Plugin {
     });
     // Translation models already downloaded show in Settings › Models on this device.
     this.app.workspace.onLayoutReady(() => void this.translator.registerStored());
+    // Whether known text can be written in the writer's hand, looked at once after startup, so
+    // the first menu after a launch already offers it (write-in-hand.ts).
+    this.app.workspace.onLayoutReady(() => {
+      const timer = window.setTimeout(() => this.writeInHand.warm(), WARM_WRITER_MS);
+      this.register(() => window.clearTimeout(timer));
+    });
     const ocrStatus = new OcrStatus(this.ocr);
     this.register(() => ocrStatus.dispose());
     // A release that still bundles Grape writes it to the handwriting folder,

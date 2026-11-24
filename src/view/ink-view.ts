@@ -4431,9 +4431,18 @@ export class InkView extends TextFileView {
       },
       closed,
       asked,
-      wordInHand(this.plugin.writeInHand, surface, page.id, word.strokeIds, at, (card) => {
-        this.wordPopover = card;
-      }),
+      wordInHand(
+        this.plugin.writeInHand,
+        surface,
+        page.id,
+        word.strokeIds,
+        at,
+        (card) => {
+          this.wordPopover = card;
+        },
+        // Read-only or damaged: the card answers, but nothing is rewritten (no notice from here).
+        () => this.isDamaged() || isReadOnly(this.doc) || isReadOnly(surface.document),
+      ),
     );
   }
 
@@ -5169,11 +5178,14 @@ export class InkView extends TextFileView {
         onCorrectWord: (index, strokeIds) => void this.correctWord(index, strokeIds),
         onNeaten: (request) => this.plugin.neaten.run({ ...request, note: this.file?.path }),
         canNeaten: () => this.plugin.neaten.available(),
-        onWriteInHand: (pageId, boxId) => {
-          if (this.surface) void this.plugin.writeInHand.turnTextBox(this.surface, pageId, boxId);
-        },
-        canWriteInHand: () =>
-          this.settings.handwritingOnDevice !== false && this.plugin.writeInHand.canWrite(),
+        onWriteInHand: (pageId, boxId) =>
+          this.surface
+            ? this.plugin.writeInHand.turnTextBox(this.surface, pageId, boxId, () =>
+                this.isProtected(),
+              )
+            : Promise.resolve(),
+        canWriteInHand: (box) =>
+          this.settings.handwritingOnDevice !== false && this.plugin.writeInHand.canTurn(box),
         canCorrectWords: () => this.settings.handwritingOnDevice !== false,
         onReadingPoint: (index, y) => {
           this.sidebar?.setReadingPoint(index, y);

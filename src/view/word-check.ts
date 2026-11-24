@@ -74,6 +74,8 @@ export interface WriteWordInHand {
   offer(text: string): void;
   /** Write `text` in place of the word's ink now. */
   write(text: string): void;
+  /** Whether the model can write `text` (every letter one it has). */
+  writes(text: string): boolean;
 }
 
 export class WordCheck {
@@ -252,7 +254,7 @@ export class WordCheck {
     // The ink really says the reading, and a list word is close: that word, in the writer's hand.
     const closest = !misread && found?.words[0] ? replaceCore(read, found.words[0]) : null;
     const spelled: WordPopoverRow[] =
-      hand && closest && closest !== read
+      hand && closest && closest !== read && hand.writes(closest)
         ? [
             {
               icon: "signature",

@@ -1297,9 +1297,9 @@ export interface InkSurfaceCallbacks {
    */
   onTurnIntoText?: (index: number, strokeIds: string[]) => void;
   /** Turn into › Handwriting on a lone text box: the host writes its text in the writer's hand. */
-  onWriteInHand?: (pageId: string, boxId: string) => void;
-  /** Whether the writer can write known text on this device (write-in-hand.ts). */
-  canWriteInHand?: () => boolean;
+  onWriteInHand?: (pageId: string, boxId: string) => Promise<void>;
+  /** Whether this text box can be turned into the writer's hand on this device (write-in-hand.ts). */
+  canWriteInHand?: (box: TextBoxElement) => boolean;
   /** Open a link's target: a finger tap on linked ink, or Open link on its selection. */
   onOpenLink?: (target: string) => void;
   /** A comment's marker was tapped (`anchor` is the marker). */
@@ -4191,6 +4191,11 @@ export class InkSurface {
       this.renderer.invalidateAll();
       this.requestFrame();
     }
+  }
+
+  /** A new stroke id from the surface's own sequence, for strokes a host command adds. */
+  newStrokeId(): string {
+    return this.strokeIds.next();
   }
 
   applyCommand(command: Command): void {
@@ -15875,16 +15880,25 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     if (translate) actions.push(translate);
     // A lone text box in the writer's hand, first under Turn into (write-in-hand.ts).
     const toHand = this.callbacks.onWriteInHand;
-    if (loneBox && boxText && toHand && this.callbacks.canWriteInHand?.()) {
+    if (
+      loneBox &&
+      boxText &&
+      toHand &&
+      !this.callbacks.isLocked?.() &&
+      this.callbacks.canWriteInHand?.(loneBox)
+    ) {
       actions.push({
         id: "to-hand",
         icon: "signature",
         label: t("surface.selectionBar.handwriting"),
         group: "turn",
         submenu: TURN_INTO,
+        // The box stays selected and its frame pulses while the writer works, as Beautify's does.
         run: () => {
-          this.clearSelection();
-          toHand(sel.pageId, loneBox.id);
+          this.selectionFrameEl.addClass("is-working");
+          void toHand(sel.pageId, loneBox.id).finally(() =>
+            this.selectionFrameEl.removeClass("is-working"),
+          );
         },
       });
     }

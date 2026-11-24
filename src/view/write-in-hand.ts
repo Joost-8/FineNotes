@@ -24,7 +24,7 @@ import { AddStrokeToPage, CompositeCommand, RemoveTextBoxFromPage } from "../mod
 import { neatenCommandFor } from "../model/neaten-commands";
 import { measureHand } from "../ink/tidy";
 import { writingLines } from "../canvas/backdrop";
-import { isMirror } from "../canvas/mirrors";
+import { type MirrorElement, type MirrorKind, elementBounds, isMirror } from "../canvas/mirrors";
 import type { PageInk } from "../recognition/hwr/lines";
 import type { InkStroke } from "../recognition/hwr/features";
 import type { WrittenStroke } from "../recognition/writer/rows";
@@ -38,10 +38,10 @@ import {
   placeAnswer,
   placeOfWord,
   placeWord,
+  plainMarkdown,
   wordsOfLines,
   writableText,
 } from "../recognition/writer/known-layout";
-import { IdSequence, strokeIdsOf } from "./id-sequence";
 import type { InkSurface } from "./ink-surface";
 import type { WriteWordInHand } from "./word-check";
 import { WordPopover } from "./word-popover";
@@ -77,25 +77,58 @@ const freshSeed = (): number => Math.floor(Math.random() * 1_000_000);
 export class WriteInHand {
   constructor(private readonly writer: KnownWriter) {}
 
+  /** Look once whether the writer can write, so the first menu after a launch already knows. */
+  warm(): void {
+    void this.writer.ready();
+  }
+
   /** Whether known text can be written in the writer's hand now (the last answer, looked at again behind). */
   canWrite(): boolean {
     return this.writer.readyNow();
   }
 
   /**
+   * `text` as the model writes it (typographic marks made plain), or null
+   * when it holds a letter the model lacks (or the model is not read yet).
+   */
+  writable(text: string): string | null {
+    const out = writableText(text, (ch) => this.writer.writes(ch));
+    return out.missing.length === 0 && out.text.trim() !== "" ? out.text : null;
+  }
+
+  /**
+   * Whether a text box can be turned into handwriting: one on the page
+   * itself, level, with text (not a sticky note's or a shape's label, whose
+   * owner the ink would leave).
+   */
+  canTurn(box: TextBoxElement): boolean {
+    return (
+      this.canWrite() &&
+      box.text.trim() !== "" &&
+      !box.onSticky &&
+      !box.onShape &&
+      !box.rotation &&
+      !isMirror(box)
+    );
+  }
+
+  /**
    * The word of `wordIds` on page `pageId` rewritten as `text` in the
    * writer's hand: on its line, from where it started, at the line's size;
    * the ink after it on the line moves by the difference in width. Nothing
-   * changes if that ink changed meanwhile.
+   * changes if that ink changed meanwhile, the note became read-only
+   * (`locked`), or the line would run off the page.
    */
   async rewriteWord(
     surface: InkSurface,
     pageId: string,
     wordIds: readonly string[],
-    text: string,
+    typed: string,
+    locked: () => boolean = () => false,
   ): Promise<void> {
     const page = surface.document.pages.find((p) => p.id === pageId);
-    if (!page) return;
+    const text = this.writable(typed);
+    if (!page || text === null || locked()) return;
     const ids = new Set(wordIds);
     const word = page.strokes.filter((s) => ids.has(s.id));
     const at = placeOfWord(writingOf(page), ids);
@@ -106,8 +139,9 @@ export class WriteInHand {
     const stop = (): boolean => {
       const now = surface.document.pages.find((p) => p.id === pageId);
       const still = now?.strokes.filter((s) => watched.has(s.id)) ?? [];
-      return still.length !== before.length || still.some((s, i) => s !== before[i]);
+      return locked() || still.length !== before.length || still.some((s, i) => s !== before[i]);
     };
+    // The word's underline shows the work, as the card did.
     surface.setActiveWordFlag(pageId, wordIds);
     let written: Awaited<ReturnType<KnownWriter["writeKnown"]>> = null;
     try {
@@ -137,14 +171,21 @@ export class WriteInHand {
         );
       }
     }
-    const strokeIds = new IdSequence("s", () => surface.document);
-    strokeIds.restart(strokeIdsOf(surface.document));
+    // A wider word must not push the line off the page.
+    const right = Math.max(
+      ...placed.strokes.flatMap((pts) => boundsOf(pts).map((b) => b.x1)),
+      ...[...moved.values()].flatMap((pts) => boundsOf(pts).map((b) => b.x1)),
+    );
+    if (right > page.geometry.width) {
+      new Notice(t("ai.hand.noRoomLine"), 6000);
+      return;
+    }
     const command = neatenCommandFor(
       pageId,
       page.strokes,
       { removed: [...ids], added: placed.strokes.map((pts) => ({ pts, line: 0 })), moved },
       [word[0]],
-      () => strokeIds.next(),
+      () => surface.newStrokeId(),
       t("surface.command.writeInHand"),
     );
     if (command) surface.applyCommand(command);
@@ -154,16 +195,24 @@ export class WriteInHand {
    * The text box `boxId` on page `pageId` turned into the writer's
    * handwriting: from the box's left edge to the page's right margin (or the
    * rules' block), its paragraphs each from a new line, lines on the rules
-   * of ruled paper and below the box's top, never on ink already there. The
-   * size and word gap are the writer's on this page, or on their practice
-   * sheets when the page has no writing. When it does not all fit on the
-   * page, nothing changes.
+   * of ruled paper and below the box's top, never on anything already on the
+   * page (ink, pictures, other boxes, tables). The size and word gap are the
+   * writer's on this page, or on their practice sheets when the page has no
+   * writing; the ink is the box's colour. A box written in Markdown is
+   * written as it reads, without its marks. When it does not all fit on the
+   * page, or the note became read-only (`locked`), nothing changes.
    */
-  async turnTextBox(surface: InkSurface, pageId: string, boxId: string): Promise<void> {
+  async turnTextBox(
+    surface: InkSurface,
+    pageId: string,
+    boxId: string,
+    locked: () => boolean = () => false,
+  ): Promise<void> {
     const page = surface.document.pages.find((p) => p.id === pageId);
     const box = page?.textBoxes.find((b) => b.id === boxId);
-    if (!page || !box || !(await this.writer.ready())) return;
-    const { text, missing } = writableText(box.text, (ch) => this.writer.writes(ch));
+    if (!page || !box || locked() || !(await this.writer.ready()) || !this.canTurn(box)) return;
+    const source = box.markdown ? plainMarkdown(box.text) : box.text;
+    const { text, missing } = writableText(source, (ch) => this.writer.writes(ch));
     if (missing.length > 0) {
       new Notice(t("ai.hand.missing", { chars: missing.join(" ") }), 8000);
       return;
@@ -174,16 +223,13 @@ export class WriteInHand {
     const stop = (): boolean => {
       const now = surface.document.pages.find((p) => p.id === pageId);
       const still = now?.textBoxes.find((b) => b.id === boxId);
-      return !still || still.text !== box.text;
+      return locked() || !still || still.text !== box.text;
     };
-    const working = new Notice(t("ai.hand.writing"), 0);
     let written: Awaited<ReturnType<KnownWriter["writeKnown"]>> = null;
     try {
       written = await this.writer.writeKnown(pieces, { stop, seed: freshSeed() });
     } catch (error) {
       console.warn("FineNotes: writing in your hand stopped", error);
-    } finally {
-      working.hide();
     }
     if (stop()) return;
     if (!written) {
@@ -209,22 +255,20 @@ export class WriteInHand {
     });
     const flowed = flowWords(flowedParagraphs, {
       ...plan.frame,
-      taken: page.strokes.filter((s) => !isMirror(s)).flatMap((s) => boundsOf(s.pts)),
+      taken: takenOn(page, box.id),
       reach: { up: plan.xHeight * 2.2, down: plan.xHeight * 0.8 },
     });
     if (flowed.left > 0 || flowed.strokes.length === 0) {
       new Notice(t("ai.hand.noRoom"), 8000);
       return;
     }
-    const pen = usualPen(writing, box);
-    const strokeIds = new IdSequence("s", () => surface.document);
-    strokeIds.restart(strokeIdsOf(surface.document));
+    const pen = penFor(writing, box);
     const label = t("surface.command.writeInHand");
     surface.applyCommand(
       new CompositeCommand(label, [
         new RemoveTextBoxFromPage(pageId, boxId),
         ...flowed.strokes.map(
-          (pts) => new AddStrokeToPage(pageId, { ...pen, id: strokeIds.next(), pts }),
+          (pts) => new AddStrokeToPage(pageId, { ...pen, id: surface.newStrokeId(), pts }),
         ),
       ]),
     );
@@ -253,8 +297,9 @@ export class WriteInHand {
 
 /**
  * The word card's way to write a word in the writer's hand (`WordCheck.ask`),
- * or undefined when the writer cannot write yet (then nothing is offered).
- * The offer after an answer is a card of one row where the card was;
+ * or undefined when the writer cannot write yet or the note is read-only
+ * (`locked`; then nothing is offered). The offer after an answer is a card
+ * of one row where the card was, only for text the model can write;
  * `shown` hands it to whoever closes cards.
  */
 export function wordInHand(
@@ -264,12 +309,16 @@ export function wordInHand(
   wordIds: readonly string[],
   at: { x: number; y: number },
   shown: (card: WordPopover) => void,
+  locked: () => boolean = () => false,
 ): WriteWordInHand | undefined {
-  if (!service.canWrite()) return undefined;
-  const write = (text: string): void => void service.rewriteWord(surface, pageId, wordIds, text);
+  if (!service.canWrite() || locked()) return undefined;
+  const write = (text: string): void =>
+    void service.rewriteWord(surface, pageId, wordIds, text, locked);
   return {
     write,
-    offer: (text) =>
+    writes: (text) => service.writable(text) !== null,
+    offer: (text) => {
+      if (service.writable(text) === null || locked()) return;
       shown(
         new WordPopover(at, {
           read: text,
@@ -277,8 +326,27 @@ export function wordInHand(
           onChip: () => {},
           rows: [{ icon: "signature", label: t("ai.word.writeInHand"), run: () => write(text) }],
         }),
-      ),
+      );
+    },
   };
+}
+
+/** What written lines must keep clear of on `page`: every element but the box `except`, mirrors included. */
+function takenOn(page: Page, except: string): { x0: number; y0: number; x1: number; y1: number }[] {
+  const kinds: [MirrorKind, readonly MirrorElement[]][] = [
+    ["strokes", page.strokes],
+    ["images", page.images],
+    ["textBoxes", page.textBoxes.filter((b) => b.id !== except)],
+    ["tables", page.tables ?? []],
+    ["graphs", page.graphs ?? []],
+    ["equations", page.equations ?? []],
+  ];
+  return kinds.flatMap(([kind, list]) =>
+    list.flatMap((element) => {
+      const b = elementBounds(kind, element);
+      return b ? [{ x0: b.minX, y0: b.minY, x1: b.maxX, y1: b.maxY }] : [];
+    }),
+  );
 }
 
 /** A stroke's bounds, as `flowWords` takes them (none for a stroke without points). */
@@ -296,22 +364,21 @@ function boundsOf(pts: ArrayLike<number>): { x0: number; y0: number; x1: number;
   return Number.isFinite(x0) ? [{ x0, y0, x1, y1 }] : [];
 }
 
-/** The pen the page is mostly written with, or the box's colour at the default width. */
-function usualPen(writing: readonly Stroke[], box: TextBoxElement): Omit<Stroke, "id" | "pts"> {
+/** The box's colour, with the width and nib the page is mostly written with (the default width without writing). */
+function penFor(writing: readonly Stroke[], box: TextBoxElement): Omit<Stroke, "id" | "pts"> {
   const counts = new Map<string, { stroke: Stroke; n: number }>();
   for (const s of writing) {
-    const key = `${s.color}|${s.size}|${s.nib ?? ""}`;
+    const key = `${s.size}|${s.nib ?? ""}`;
     const c = counts.get(key);
     if (c) c.n++;
     else counts.set(key, { stroke: s, n: 1 });
   }
   const best = [...counts.values()].sort((a, b) => b.n - a.n)[0]?.stroke;
-  if (!best) return { color: box.color, size: 3, tool: "pen" };
   return {
-    color: best.color,
-    size: best.size,
+    color: box.color,
+    size: best?.size ?? 3,
     tool: "pen",
-    ...(best.nib ? { nib: best.nib } : {}),
+    ...(best?.nib ? { nib: best.nib } : {}),
   };
 }
 

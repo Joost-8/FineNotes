@@ -467,7 +467,12 @@ export class NeatenService {
     texts: readonly string[],
     options: { stop?: () => boolean; seed?: number } = {},
   ): Promise<{ lines: WrittenStroke[][]; sample: InkStroke[] } | null> {
-    if (this.running || texts.length === 0) return null;
+    if (texts.length === 0) return null;
+    // One writing at a time, Beautify's included: wait for one in progress.
+    while (this.running) {
+      if (options.stop?.()) return null;
+      await new Promise((resolve) => window.setTimeout(resolve, 100));
+    }
     this.running = true;
     let resumeOcr: (() => void) | null = null;
     const stop = options.stop ?? (() => false);

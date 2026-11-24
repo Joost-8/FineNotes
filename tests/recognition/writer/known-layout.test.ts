@@ -8,6 +8,7 @@ import {
   placeAnswer,
   placeOfWord,
   placeWord,
+  plainMarkdown,
   wordsOfLines,
   writableText,
   type WrittenWord,
@@ -25,6 +26,31 @@ describe("writableText", () => {
 
   it("lists each letter the model lacks once, in order", () => {
     expect(writableText("café naïve café", ascii).missing).toEqual(["é", "ï"]);
+  });
+});
+
+describe("plainMarkdown", () => {
+  it("writes a Markdown box as it reads, without its marks", () => {
+    const md = [
+      "# Exam week",
+      "- **Read** chapter *four*",
+      "* [ ] Redo set ~~2~~ 3",
+      "> see [[Lecture 3|the lecture]] and [notes](https://x.y)",
+      "`ATP` is __made__ in snake_case_names",
+    ].join("\n");
+    expect(plainMarkdown(md)).toBe(
+      [
+        "Exam week",
+        "- Read chapter four",
+        "- Redo set 2 3",
+        "see the lecture and notes",
+        "ATP is made in snake_case_names",
+      ].join("\n"),
+    );
+  });
+
+  it("leaves plain text alone", () => {
+    expect(plainMarkdown("2 * 3 = 6, a_b and 5 - 2")).toBe("2 * 3 = 6, a_b and 5 - 2");
   });
 });
 
