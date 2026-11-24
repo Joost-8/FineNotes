@@ -24,6 +24,40 @@ import type { WrittenStroke } from "./rows";
 export const MODEL_X_HEIGHT = 0.389;
 /** How far a line's size may stray from the other lines' (the demo's 20 %). */
 export const SIZE_SPREAD = 1.2;
+/** A piece of a word's ink this far (in word gaps) from the rest of it is not part of it. */
+export const BODY_GAP = 0.5;
+
+/**
+ * A word's own run of ink along the line: its strokes grouped where their x
+ * ranges come within `reach` of each other, and the group with the most
+ * points kept. The word ink of a reading can hold pieces from elsewhere on
+ * the line (punctuation the text left out goes to a neighbour).
+ */
+export function bodyOf(
+  ids: readonly string[],
+  byId: ReadonlyMap<string, PageInk>,
+  reach: number,
+): string[] {
+  const spans = ids
+    .map((id) => {
+      const x = every(byId.get(id)?.pts ?? [], 0);
+      return { id, x0: Math.min(...x), x1: Math.max(...x), n: x.length };
+    })
+    .filter((s) => s.n > 0)
+    .sort((a, b) => a.x0 - b.x0);
+  const groups: { ids: string[]; x1: number; n: number }[] = [];
+  for (const s of spans) {
+    const last = groups[groups.length - 1];
+    if (last && s.x0 - last.x1 <= reach) {
+      last.ids.push(s.id);
+      last.x1 = Math.max(last.x1, s.x1);
+      last.n += s.n;
+    } else groups.push({ ids: [s.id], x1: s.x1, n: s.n });
+  }
+  if (groups.length <= 1) return [...ids];
+  const body = new Set(groups.reduce((a, b) => (b.n > a.n ? b : a)).ids);
+  return ids.filter((id) => body.has(id));
+}
 
 /** One line to put back: the writer's strokes, its words, and what was written. */
 export interface LineToPlace<S extends PageInk> {
@@ -120,8 +154,11 @@ export function placeLines<S extends PageInk>(
     });
     // Words left to right, each as one unit: written strokes, or the writer's own.
     const byId = new Map(line.strokes.map((s) => [s.id, s]));
+    // Each word's own run of ink: pieces the reading gave it from elsewhere on the line
+    // (the commas of "March, April, May," given to "June") are loose ink instead.
+    const words = line.words.map((ids) => bodyOf(ids, byId, BODY_GAP * gap));
     const units: { word: number; written: boolean; x0: number; x1: number }[] = [];
-    line.words.forEach((ids, w) => {
+    words.forEach((ids, w) => {
       const xs = line.rewrite[w]
         ? placed.filter((s) => s.word === w).flatMap((s) => xsOf(s.pts))
         : ids.flatMap((id) => xsOf(byId.get(id)?.pts ?? []));
@@ -146,14 +183,29 @@ export function placeLines<S extends PageInk>(
         const dx = shift.get(s.word) as number;
         return { pts: s.pts.map((v, i) => (i % 3 === 0 ? v + dx : v)), word: s.word };
       });
-    const rewritten = new Set(line.words.flatMap((ids, w) => (line.rewrite[w] ? ids : [])));
+    const rewritten = new Set(words.flatMap((ids, w) => (line.rewrite[w] ? ids : [])));
     const kept = new Map<string, number>();
-    line.words.forEach((ids, w) => {
+    words.forEach((ids, w) => {
       if (line.rewrite[w]) return;
       for (const id of ids) kept.set(id, shift.get(w) ?? 0);
     });
-    // Ink the reading gave no word (a stray dot) stays where it is.
-    for (const s of line.strokes) if (!rewritten.has(s.id) && !kept.has(s.id)) kept.set(s.id, 0);
+    // Ink the reading gave no word (a comma, a stray dot) moves with the word to its left,
+    // keeping its distance from that word's end (the first word's start, before it).
+    const ends = words.flatMap((ids, w) => {
+      const own = ids.flatMap((id) => xsOf(byId.get(id)?.pts ?? []));
+      const unit = units.find((u) => u.word === w);
+      if (!own.length || !unit) return [];
+      const s = shift.get(w) ?? 0;
+      return [{ x0: Math.min(...own), x1: Math.max(...own), n0: unit.x0 + s, n1: unit.x1 + s }];
+    });
+    for (const s of line.strokes) {
+      if (rewritten.has(s.id) || kept.has(s.id)) continue;
+      const x = xsOf(s.pts);
+      const mid = x.length ? 0.5 * (Math.min(...x) + Math.max(...x)) : 0;
+      const left = ends.filter((e) => e.x1 <= mid).sort((a, b) => b.x1 - a.x1)[0];
+      const right = ends.filter((e) => e.x1 > mid).sort((a, b) => a.x0 - b.x0)[0];
+      kept.set(s.id, left ? left.n1 - left.x1 : right ? right.n0 - right.x0 : 0);
+    }
     return { added, kept, removed: [...rewritten] };
   });
 }

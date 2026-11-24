@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { measureHand, measureLines } from "../../../src/ink/tidy";
-import { placeLines, type LineToPlace } from "../../../src/recognition/writer/layout";
+import { bodyOf, placeLines, type LineToPlace } from "../../../src/recognition/writer/layout";
 import { median } from "../../../src/recognition/writer/rows";
 import { writerLine, writtenLine, xs, ys } from "./fixture";
 
@@ -22,6 +22,31 @@ function lineToPlace(
 
 const allX = (ids: readonly string[]): number[] =>
   first.strokes.filter((s) => ids.includes(s.id)).flatMap((s) => xs(s.pts));
+
+describe("bodyOf", () => {
+  const at = (id: string, x0: number, x1: number, n = 3) => ({
+    id,
+    tool: "pen",
+    pts: Array.from({ length: n }, (_, i) => [x0 + ((x1 - x0) * i) / (n - 1), 0, 0.5]).flat(),
+  });
+  // Three commas from earlier in the line, then the word itself (June).
+  const ink = [
+    at("c1", 0, 4),
+    at("c2", 100, 104),
+    at("j1", 200, 220, 9),
+    at("j2", 222, 240, 9),
+    at("c3", 180, 184),
+  ];
+  const byId = new Map(ink.map((s) => [s.id, s]));
+
+  it("keeps the word's own run of ink and drops pieces from elsewhere on the line", () => {
+    expect(bodyOf(["c1", "c2", "c3", "j1", "j2"], byId, 20)).toEqual(["c3", "j1", "j2"]);
+  });
+
+  it("keeps a word whose ink is all together as it is", () => {
+    expect(bodyOf(["j2", "j1"], byId, 20)).toEqual(["j2", "j1"]);
+  });
+});
 
 describe("the fixture", () => {
   it("is read as running text with a hand", () => {
@@ -95,6 +120,29 @@ describe("placeLines", () => {
     const da = placed.kept.get(a[0]) as number;
     const db = placed.kept.get(b[0]) as number;
     expect(Math.min(...allX(b)) + db - (Math.max(...allX(a)) + da)).toBeCloseTo(own, 6);
+  });
+
+  it("moves ink the reading gave no word with the word to its left", () => {
+    // The last stroke of word 1 counts as loose ink (a comma read apart, a stray dot).
+    const loose = first.words[1][first.words[1].length - 1];
+    const words = first.words.map((ids, w) => (w === 1 ? ids.slice(0, -1) : [...ids]));
+    const [placed] = placeLines(
+      [
+        {
+          strokes: first.strokes,
+          words,
+          rewrite: [true, true, true, true],
+          written: writtenLine(),
+        },
+      ],
+      profile,
+    );
+    const end1 = Math.max(...allX(words[1]));
+    const looseX = Math.min(...allX([loose]));
+    const newEnd1 = Math.max(...placed.added.filter((s) => s.word === 1).flatMap((s) => xs(s.pts)));
+    // Same distance from its word's end as before.
+    expect(looseX + (placed.kept.get(loose) as number) - newEnd1).toBeCloseTo(looseX - end1, 6);
+    expect(placed.removed).not.toContain(loose);
   });
 
   it("returns a line with nothing to rewrite unchanged", () => {

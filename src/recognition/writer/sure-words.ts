@@ -112,3 +112,50 @@ export function sureWords(
   }
   return out;
 }
+
+/** A line's words with their strokes and whether each is rewritten. */
+export interface LineWords {
+  words: string[];
+  ink: string[][];
+  rewrite: boolean[];
+}
+
+interface Part {
+  word: string;
+  ink: string[];
+  rewrite: boolean;
+}
+
+/**
+ * A word with no letter or digit (a comma Grape read apart, "May , June")
+ * joined to the word before it (leading ones join the word after), so the
+ * model writes "May," and the page keeps it beside its word instead of a
+ * word gap away. The joined word is rewritten only if every part was.
+ */
+export function joinPunctuation(line: LineWords): LineWords {
+  const parts: Part[] = [];
+  let lead: Part | null = null;
+  line.words.forEach((word, i) => {
+    const part: Part = { word, ink: line.ink[i] ?? [], rewrite: line.rewrite[i] ?? false };
+    const bare = !/[\p{L}\p{N}]/u.test(word);
+    const last = parts[parts.length - 1];
+    if (bare && last) {
+      parts[parts.length - 1] = join(last, part);
+    } else if (bare) {
+      lead = lead ? join(lead, part) : part;
+    } else {
+      parts.push(lead ? join(lead, part) : part);
+      lead = null;
+    }
+  });
+  if (lead) parts.push(lead);
+  return {
+    words: parts.map((p) => p.word),
+    ink: parts.map((p) => p.ink),
+    rewrite: parts.map((p) => p.rewrite),
+  };
+}
+
+function join(a: Part, b: Part): Part {
+  return { word: a.word + b.word, ink: [...a.ink, ...b.ink], rewrite: a.rewrite && b.rewrite };
+}

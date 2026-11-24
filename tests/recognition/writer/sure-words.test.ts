@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { CharReading } from "../../../src/recognition/hwr/char-readings";
 import {
   SURE_BARS,
+  joinPunctuation,
   sureWords,
   wordCore,
   wordsOf,
@@ -24,6 +25,47 @@ function readings(
 }
 
 const writable = (ch: string): boolean => /[a-z,.\s0-9]/i.test(ch);
+
+describe("joinPunctuation", () => {
+  it("joins a comma read apart to the word before it, rewritten only if both were", () => {
+    const got = joinPunctuation({
+      words: ["April", ",", "May", ",", "June"],
+      ink: [["a"], ["c1"], ["m"], ["c2"], ["j"]],
+      rewrite: [true, true, true, false, true],
+    });
+    expect(got).toEqual({
+      words: ["April,", "May,", "June"],
+      ink: [["a", "c1"], ["m", "c2"], ["j"]],
+      rewrite: [true, false, true],
+    });
+  });
+
+  it("joins leading punctuation to the first word, and keeps a line of punctuation alone", () => {
+    expect(
+      joinPunctuation({
+        words: ["(", "one", ")"],
+        ink: [["o"], ["w"], ["c"]],
+        rewrite: [true, true, true],
+      }).words,
+    ).toEqual(["(one)"]);
+    expect(
+      joinPunctuation({ words: ["-", "-"], ink: [["a"], ["b"]], rewrite: [false, true] }),
+    ).toEqual({
+      words: ["--"],
+      ink: [["a", "b"]],
+      rewrite: [false],
+    });
+  });
+
+  it("leaves words with letters or digits as they are", () => {
+    const line = {
+      words: ["x2", "is", "4."],
+      ink: [["a"], ["b"], ["c"]],
+      rewrite: [true, false, true],
+    };
+    expect(joinPunctuation(line)).toEqual(line);
+  });
+});
 
 describe("wordCore", () => {
   it("strips the punctuation around a word, not inside it", () => {

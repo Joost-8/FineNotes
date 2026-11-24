@@ -40,7 +40,7 @@ import {
   referenceOf,
 } from "../recognition/writer/rows";
 import type { WriterMeta } from "../recognition/writer/sampler";
-import { sureWords, wordsOf } from "../recognition/writer/sure-words";
+import { joinPunctuation, sureWords, wordsOf } from "../recognition/writer/sure-words";
 import { WRITER_FILES, WRITER_MODEL } from "../recognition/writer/writer-model";
 import { OCR_WASM_FILE } from "../recognition/ocr/ocr-model";
 import type { HandwritingReader } from "./handwriting";
@@ -212,7 +212,9 @@ export class NeatenService {
       undefined,
       inList,
     );
-    return rewrite.some(Boolean) ? { text, strokes, words, rewrite } : null;
+    const joined = joinPunctuation({ words: wordsOf(text), ink: words, rewrite });
+    if (!joined.rewrite.some(Boolean)) return null;
+    return { text: joined.words.join(" "), strokes, words: joined.ink, rewrite: joined.rewrite };
   }
 
   /** Every prose-like copied line of the vault's practice sheets, tagged (kept until a sheet changes). */
