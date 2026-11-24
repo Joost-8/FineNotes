@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { totalBytes } from "../../../src/downloads/model-manifest";
 import {
@@ -47,9 +49,17 @@ describe("the OCR model as pinned", () => {
     const pinned = pkg.dependencies["onnxruntime-web"];
     expect(pinned).toMatch(/^\d+\.\d+\.\d+$/);
     expect(OCR_WASM_FILE.url).toContain(`/ort-wasm-simd-threaded-${pinned}.wasm`);
-    const installed = JSON.parse(
-      readFileSync("node_modules/onnxruntime-web/package.json", "utf8"),
-    ) as {
+    // Resolved the way the build finds it, not from the working folder: a
+    // worktree under .claude/worktrees uses the main checkout's node_modules.
+    // The package does not export its package.json, so go up from its entry.
+    const entry = createRequire(import.meta.url).resolve("onnxruntime-web");
+    const pkgFile = path.join(
+      entry.slice(0, entry.lastIndexOf("node_modules")),
+      "node_modules",
+      "onnxruntime-web",
+      "package.json",
+    );
+    const installed = JSON.parse(readFileSync(pkgFile, "utf8")) as {
       version: string;
     };
     expect(installed.version).toBe(pinned);
