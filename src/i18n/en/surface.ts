@@ -336,6 +336,7 @@ export const surface = {
   "surface.selectionBar.editTable": "Edit table",
   "surface.selectionBar.copyStyle": "Copy style",
   "surface.selectionBar.tidy": "Tidy",
+  "surface.selectionBar.tidyLine": "Tidy this line",
   "surface.selectionBar.text": "Text",
   "surface.selectionBar.copyText": "Copy text",
   "surface.selectionBar.translate": "Translate",

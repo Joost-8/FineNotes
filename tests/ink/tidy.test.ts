@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_STRENGTH, measureHand, measureLines, neatness, tidyInk } from "../../src/ink/tidy";
+import {
+  DEFAULT_STRENGTH,
+  lineOfStroke,
+  measureHand,
+  measureLines,
+  neatness,
+  tidyInk,
+} from "../../src/ink/tidy";
 import type { PageInk } from "../../src/recognition/hwr/lines";
 
 /** x-height, letter width, gap between letters and between words, distance between lines (page px). */
@@ -678,5 +685,23 @@ describe("measureLines", () => {
     expect(measureLines([])).toEqual([]);
     const cells = page([{ x: 20, y: 100, words: 5, letters: 2, wordGap: 9 * H }]);
     expect(measureLines(cells)).toEqual([]);
+  });
+});
+
+describe("lineOfStroke", () => {
+  it("gives every stroke of the held word's line, and nothing of the other lines", () => {
+    const strokes = page([
+      { x: 20, y: 100, slope: 0.04 },
+      { x: 20, y: 100 + PITCH },
+    ]);
+    const held = inLine(strokes, 1)[5];
+    const ids = lineOfStroke(strokes, held.id);
+    expect(new Set(ids)).toEqual(new Set(inLine(strokes, 1).map((s) => s.id)));
+  });
+
+  it("gives nothing for ink that is not running text, or a stroke that is not there", () => {
+    const cells = page([{ x: 20, y: 100, words: 5, letters: 2, wordGap: 9 * H }]);
+    expect(lineOfStroke(cells, cells[0].id)).toBeNull();
+    expect(lineOfStroke(page([{ x: 20, y: 100 }]), "nowhere")).toBeNull();
   });
 });

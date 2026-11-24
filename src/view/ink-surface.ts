@@ -377,7 +377,7 @@ import { FrameRun } from "../canvas/frame-run";
 import { type RunBox, type RunMark, boundsSince, unionBox } from "../ink/run-window";
 import { TILT_MAX_FACTOR, tiltFactor, tiltShapes } from "../ink/tilt";
 import { lineOfHighlight } from "../ink/straighten";
-import { measureHand, tidyInk } from "../ink/tidy";
+import { lineOfStroke, measureHand, tidyInk } from "../ink/tidy";
 import { SetStrokePoints } from "../model/tidy-commands";
 import { LINE_LEVEL_RISE, levelLine, levelTurn } from "../ink/level-line";
 import { explainShape, recognizeAtZoom, styleOfShape } from "../ink/shape-recognizer";
@@ -16458,6 +16458,9 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
       ? this.correctWordAction(index, [press.ink], { group: "press", ...inBar })
       : null;
     if (correct) actions.unshift(correct);
+    // Beside Correct: tidy the line that word is on.
+    const tidyLine = page && press.ink ? this.tidyLineAction(page, press.ink) : null;
+    if (tidyLine) actions.splice(correct ? 1 : 0, 0, tidyLine);
     actions.push(
       {
         id: "text-here",
@@ -19412,25 +19415,61 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
   private tidySelection(): void {
     const sel = this.liveSelection();
     if (!sel || this.groupDrag || this.callbacks.isLocked?.()) return;
-    const page = this.doc.pages.find((candidate) => candidate.id === sel.pageId);
-    const box = this.boxForPage(sel.pageId);
-    const before = this.groupBounds(sel);
-    if (!page || !box || !before) return;
-    const result = tidyInk(sel.strokes, {
+    if (this.tidyStrokes(sel.pageId, sel.strokes)) this.syncSelectionOverlay();
+  }
+
+  /**
+   * Tidy these strokes of a page toward the hand measured from the whole
+   * page (`tidySelection`, and the press menu's Tidy for a held word's line).
+   * One undo step. False when nothing moved.
+   */
+  private tidyStrokes(pageId: string, strokes: readonly Stroke[]): boolean {
+    const page = this.doc.pages.find((candidate) => candidate.id === pageId);
+    const box = this.boxForPage(pageId);
+    const before = strokes.map(strokeBounds).reduce<Bounds | null>(unionBounds, null);
+    if (!page || !box || !before) return false;
+    const result = tidyInk(strokes, {
       profile: measureHand(page.strokes),
       rules: writingLines(page.backdrop, page.geometry),
     });
-    const changes = sel.strokes.flatMap((stroke) => {
+    const changes = strokes.flatMap((stroke) => {
       const pts = result.pts.get(stroke.id);
       return pts ? [{ stroke, pts }] : [];
     });
-    if (changes.length === 0) return;
-    this.history.push(this.doc, new SetStrokePoints(sel.pageId, changes));
-    const after = this.groupBounds(sel);
+    if (changes.length === 0) return false;
+    this.history.push(this.doc, new SetStrokePoints(pageId, changes));
+    const after = strokes.map(strokeBounds).reduce<Bounds | null>(unionBounds, null);
     this.renderer?.invalidateRegion(box.index, unionBounds(before, after ?? before) ?? before);
     this.renderDry();
-    this.syncSelectionOverlay();
-    this.changed([sel.pageId]);
+    this.changed([pageId]);
+    return true;
+  }
+
+  /**
+   * The press menu's Tidy, beside Correct: the line the held word is on.
+   * Null when the ink is on no line of running text (`lineOfStroke`).
+   */
+  private tidyLineAction(page: Page, ink: Stroke): SelectionAction | null {
+    if (ink.shape || ink.tool !== "pen" || this.callbacks.isLocked?.()) return null;
+    const ids = lineOfStroke(page.strokes, ink.id);
+    if (!ids) return null;
+    return {
+      id: "tidy-line",
+      icon: "wand-sparkles",
+      label: t("surface.selectionBar.tidyLine"),
+      group: "press",
+      // A symbol in the bar, beside Correct, so the bar keeps to its three words.
+      bar: true,
+      menu: "none",
+      run: () => {
+        const line = new Set(ids);
+        this.clearSelection();
+        this.tidyStrokes(
+          page.id,
+          page.strokes.filter((stroke) => line.has(stroke.id)),
+        );
+      },
+    };
   }
 
   /** Abandon a selection drag without committing it (a reload, an undo, a tool change). */

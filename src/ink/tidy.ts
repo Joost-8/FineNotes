@@ -961,6 +961,20 @@ export function measureLines(strokes: readonly PageInk[]): LineGeometry[] {
 }
 
 /**
+ * The ids of the strokes on the same line of running text as `strokeId`, for
+ * tidying the line a held word is on (the press menu). Null when the stroke
+ * is on no such line: a formula, a table, a lone mark, a line too short to
+ * have a baseline.
+ */
+export function lineOfStroke(strokes: readonly PageInk[], strokeId: string): string[] | null {
+  for (const line of fitLines(strokes)) {
+    const ids = line.pieces.flatMap((p) => p.strokes.map((s) => s.id));
+    if (ids.includes(strokeId)) return line.based ? ids : null;
+  }
+  return null;
+}
+
+/**
  * How much of a correction is made for something `off` from where it belongs,
  * when nothing is corrected past `reach`: all of it up to half of `reach`,
  * then less and less. A rule that stops dead at its reach would decide
