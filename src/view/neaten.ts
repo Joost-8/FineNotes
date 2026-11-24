@@ -122,8 +122,8 @@ export class NeatenService {
   private lookedAt = 0;
   /** Prose-like practice lines at the last Beautify (null: none yet this session). */
   private practiceLines: number | null = null;
-  /** The last answer of `ready`, and when it was given (0: never). */
-  private readyAt = { at: 0, ready: false };
+  /** When `ready` last counted the practice lines (0: never). */
+  private countedAt = 0;
 
   constructor(private readonly host: NeatenHost) {
     // Listed in Settings › Models on this device from the start, like the other models.
@@ -418,37 +418,37 @@ export class NeatenService {
   }
 
   /**
-   * Whether known text can be written in the writer's hand now: the model is
-   * here and the writer has copied enough practice lines (Beautify's rule).
-   * Looked at again at most every {@link RECHECK_MS}; `readyNow` gives the
-   * last answer at once, for menus built without waiting.
+   * Whether known text can be written in the writer's hand now: Beautify's
+   * own rule (`writesInHand`), with the practice lines counted, not assumed.
+   * The count is Beautify's (`practiceLines`); it is taken again at most
+   * every {@link RECHECK_MS}. `readyNow` gives the last answer at once, for
+   * menus built without waiting.
    */
   async ready(): Promise<boolean> {
     const now = Date.now();
-    if (this.readyAt.at > 0 && now - this.readyAt.at < RECHECK_MS) return this.readyAt.ready;
-    this.readyAt = { at: now, ready: this.readyAt.ready };
-    try {
-      const store = this.host.models.register(WRITER_MODEL);
-      await store.check(true);
-      let ready = false;
-      if (store.state.kind === "ready") {
-        const model = await this.loadModel();
-        if (!("problem" in model)) {
-          const writable = (ch: string): boolean => model.manifest.chars.indexOf(ch) > 0;
-          ready = (await this.poolOf(writable)).length >= MIN_PRACTICE_LINES;
+    if (now - this.countedAt >= RECHECK_MS) {
+      this.countedAt = now;
+      try {
+        const store = this.host.models.register(WRITER_MODEL);
+        await store.check(true);
+        if (store.state.kind === "ready") {
+          const model = await this.loadModel();
+          if (!("problem" in model)) {
+            const writable = (ch: string): boolean => model.manifest.chars.indexOf(ch) > 0;
+            this.practiceLines = (await this.poolOf(writable)).length;
+          }
         }
+      } catch (error) {
+        console.warn("FineNotes: could not count the practice lines", error);
       }
-      this.readyAt = { at: Date.now(), ready };
-    } catch {
-      this.readyAt = { at: Date.now(), ready: false };
     }
-    return this.readyAt.ready;
+    return this.readyNow(false);
   }
 
-  /** The last answer of {@link ready}, and a look again in the background when it is old. */
-  readyNow(): boolean {
-    void this.ready();
-    return this.readyAt.ready;
+  /** The last answer of {@link ready}: false while the lines were never counted; a count again behind when it is old. */
+  readyNow(look = true): boolean {
+    if (look && Date.now() - this.countedAt >= RECHECK_MS) void this.ready();
+    return this.practiceLines !== null && this.writesInHand();
   }
 
   /** Whether the model writes character `ch` (null until the model was read). */
