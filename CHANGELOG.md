@@ -60,6 +60,10 @@ extracted from the matching section of this file by `release.yml`.
   title next to it was drawn over its right half and took those taps.
 - **Pinching a selected picture no longer raises an error** in the
   background; the picture turned as before.
+- **A selected snippet opens its slide from its action bar.** Right after a
+  snippet is dropped it is selected, and its chip sat under the frame, out
+  of reach. While selected, the chip now steps aside and the bar offers the
+  slide; the top-right handle resizes as before.
 - **Small handwriting keeps its letters on older iPads** (#275). On iPadOS
   before 26.2 the Pencil arrives rounded to whole pixels, and the smoothing
   that steadies it could flatten letters written small, as on a Learn your

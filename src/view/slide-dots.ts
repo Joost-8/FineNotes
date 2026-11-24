@@ -7,6 +7,10 @@
  * `onTap` takes the finger, the Pencil and the mouse alike and keeps the pen
  * from writing under the chip (its target is 32 px or more). Only the live
  * view has them: exports and previews draw the picture, never the chip.
+ *
+ * While its snippet is selected or cropped the chip steps aside: the picture's
+ * own action bar offers "Open slide" then, and the chip would sit over the
+ * frame's top-right handle, where it took presses meant for a resize.
  */
 
 import { setIcon } from "obsidian";
@@ -26,6 +30,10 @@ export class SlideDots {
   private readonly chips: Array<{ button: HTMLButtonElement; number: HTMLElement }> = [];
   /** What each pooled chip stands for now, read at tap time. */
   private targets: SlideRef[] = [];
+  /** The picture whose chip steps aside (selected or cropped), if any. */
+  private aside: ImageElement | null = null;
+  /** The last sync's arguments, to sync again when `aside` changes. */
+  private last: Parameters<SlideDots["sync"]> | null = null;
 
   constructor(
     parent: HTMLElement,
@@ -46,12 +54,13 @@ export class SlideDots {
     scale: number,
     shown: boolean,
   ): void {
+    this.last = [boxes, pageAt, scale, shown];
     const targets: SlideRef[] = [];
     if (shown) {
       const inset = { x: CHIP_INSET_X_PX / scale, y: CHIP_INSET_Y_PX / scale };
       for (const box of boxes) {
         for (const image of pageAt(box.index)?.images ?? []) {
-          if (!image.slide || isFolded(image)) continue;
+          if (!image.slide || isFolded(image) || image === this.aside) continue;
           const at = chipPoint(image, inset);
           const chip = this.chip(targets.length);
           targets.push(image.slide);
@@ -76,6 +85,16 @@ export class SlideDots {
     for (let i = targets.length; i < this.chips.length; i++)
       this.chips[i].button.addClass("is-hidden");
     this.el.toggleClass("is-hidden", targets.length === 0);
+  }
+
+  /**
+   * The picture that is selected or cropped now, or `null`: its chip steps
+   * aside until it is let go. Cheap when nothing changed.
+   */
+  setAside(image: ImageElement | null): void {
+    if (image === this.aside) return;
+    this.aside = image;
+    if (this.last) this.sync(...this.last);
   }
 
   /** The pooled chip `i`, made on first use. */
