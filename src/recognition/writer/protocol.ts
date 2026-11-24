@@ -30,6 +30,8 @@ export type WriterRequest =
       line: number;
       /** Positions in the text written at low guidance (the repair). */
       low: number[];
+      /** Guidance for the rest of the line (the neatness dial); the model's own when absent. */
+      guidance?: number;
     };
 
 export type WriterResult =

@@ -26,6 +26,12 @@ import { WRITER_MODEL } from "../../../src/recognition/writer/writer-model";
 /** A long's manifest as released (research/handwriting-rig/gen/neaten_v1.py `release`). */
 const aLongText = readFileSync(join(__dirname, "fixtures", "dostoyev-1.0.json"), "utf8");
 const aLong = (): Record<string, unknown> => JSON.parse(aLongText) as Record<string, unknown>;
+/** C2 long's (gen/neaten_v1.py `c2`), Beautify's writer since 24 November. */
+const c2 = (): Record<string, unknown> =>
+  JSON.parse(readFileSync(join(__dirname, "fixtures", "dostoyev-2.0.json"), "utf8")) as Record<
+    string,
+    unknown
+  >;
 
 const tensor = (role: string, type: "float32" | "int64" | "bool", dims: (number | string)[]) => ({
   role,
@@ -35,17 +41,17 @@ const tensor = (role: string, type: "float32" | "int64" | "bool", dims: (number 
 });
 
 /**
- * A pieces model (C2), as a stub of its own: one graph that takes a line's
+ * A model of another shape, as a stub of its own: one graph that takes a line's
  * letters and the writer's letter pieces and writes the rows in one pass.
  * None of A long's sections (no sampling, no row statistics, no whole-line
  * reference size): only what every kind has.
  */
-function piecesManifest(): Record<string, unknown> {
+function stubManifest(): Record<string, unknown> {
   return {
     format: 1,
-    id: "pieces-stub",
+    id: "stub",
     version: "2.0",
-    kind: "pieces",
+    kind: "stub",
     graphs: {
       write: {
         file: "dostoyev-2.0-write.onnx",
@@ -59,12 +65,12 @@ function piecesManifest(): Record<string, unknown> {
   };
 }
 
-/** What the stub pieces kind shows its model: the letters of the text found in the writer's lines. */
+/** What the stub kind shows its model: the letters of the text found in the writer's lines. */
 interface Pieces {
   letters: string;
 }
 
-const PIECES_KIND: WriterKind<Pieces> = {
+const STUB_KIND: WriterKind<Pieces> = {
   graphs: {
     write: {
       inputs: [
@@ -97,7 +103,7 @@ const PIECES_KIND: WriterKind<Pieces> = {
   },
 };
 
-const BOTH = new Map<string, WriterKind>([...WRITER_KINDS, ["pieces", PIECES_KIND as WriterKind]]);
+const BOTH = new Map<string, WriterKind>([...WRITER_KINDS, ["stub", STUB_KIND as WriterKind]]);
 
 function parsed(json: unknown, kinds: ReadonlySet<string> = new Set(BOTH.keys())): WriterManifest {
   const out = parseManifest(json, kinds);
@@ -113,15 +119,15 @@ describe("parseManifest", () => {
     expect(kindFor(m)).toEqual({ kind: DUAL_KIND });
   });
 
-  it("reads a pieces model's manifest, which has none of A long's sections, and the pieces kind runs it", () => {
-    const m = parsed(piecesManifest());
+  it("reads a stub model's manifest, which has none of A long's sections, and the stub kind runs it", () => {
+    const m = parsed(stubManifest());
     expect(m.sampling).toBeUndefined();
-    expect(kindFor(m, BOTH)).toEqual({ kind: PIECES_KIND });
+    expect(kindFor(m, BOTH)).toEqual({ kind: STUB_KIND });
   });
 
   it("refuses a kind this build does not have (not run as another kind)", () => {
-    expect(parseManifest(piecesManifest(), new Set(WRITER_KINDS.keys()))).toEqual({
-      problem: { kind: "unknown-kind", modelKind: "pieces" },
+    expect(parseManifest(stubManifest(), new Set(WRITER_KINDS.keys()))).toEqual({
+      problem: { kind: "unknown-kind", modelKind: "stub" },
     });
   });
 
@@ -199,11 +205,11 @@ describe("kindFor", () => {
     expect(kindFor(parsed(json))).toMatchObject({ problem: { kind: "layout" } });
   });
 
-  it("leaves a kind's own sections to the kind: A long without sampling is refused, the pieces model needs none", () => {
+  it("leaves a kind's own sections to the kind: A long without sampling is refused, a stub model needs none", () => {
     const json = aLong();
     delete json.sampling;
     expect(kindFor(parsed(json))).toEqual({ problem: { kind: "invalid", detail: "sampling" } });
-    expect("kind" in kindFor(parsed(piecesManifest()), BOTH)).toBe(true);
+    expect("kind" in kindFor(parsed(stubManifest()), BOTH)).toBe(true);
   });
 });
 
@@ -236,7 +242,7 @@ describe("one Neaten for both shapes", () => {
           if (o.role === "valid") return { type: "bool", data: new Uint8Array(4), dims: [1, 4] };
           if (o.role === "memory")
             return { type: "float32", data: new Float32Array(4 * 256), dims: [1, 4, 256] };
-          // velocity, or the pieces model's rows: one row per input row or letter
+          // velocity, or the stub's rows: one row per input row or letter
           const T = inputs[0].dims[1];
           return { type: "float32", data: new Float32Array(T * ROW), dims: [1, T, ROW] };
         }),
@@ -246,7 +252,8 @@ describe("one Neaten for both shapes", () => {
 
   it.each([
     ["A long (dual)", aLong, new Map([["dual", DUAL_KIND as WriterKind]])],
-    ["a pieces model (stub)", piecesManifest, BOTH],
+    ["C2 (pieces)", c2, WRITER_KINDS],
+    ["a model of another shape (stub)", stubManifest, BOTH],
   ])(
     "picks, shows, writes and repairs a line with %s, through its kind alone",
     async (_name, make, kinds) => {
@@ -258,7 +265,7 @@ describe("one Neaten for both shapes", () => {
       const run = runner(m, log);
       const picked = kind.pick("bad", pool, m.reference.lines + 2);
       expect(picked.length).toBeGreaterThan(0);
-      const ref = kind.reference("bad", picked, m);
+      const ref = kind.reference("bad", picked, m, 1);
       expect(ref).not.toBeNull();
       const done = await neatenLine(
         "bad",
@@ -284,11 +291,12 @@ describe("versions of the writer in its folder", () => {
       ...current,
       "dostoyev-0.9.json",
       "dostoyev-0.9-encode.int8.onnx",
-      "dostoyev-2.0.json",
+      "dostoyev-1.0.json",
+      "dostoyev-3.0.json",
     ];
     const found = storedVersions(WRITER_MODEL, names);
     expect(found.current).toBe(true);
-    expect(found.others.map((o) => o.version)).toEqual(["2.0", "0.9"]);
+    expect(found.others.map((o) => o.version)).toEqual(["3.0", "1.0", "0.9"]);
   });
 
   it("gives a superseded version its graphs too, so it goes whole", () => {

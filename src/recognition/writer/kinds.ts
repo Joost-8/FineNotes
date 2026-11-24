@@ -9,47 +9,34 @@
  * never names a tensor, and a manifest whose graphs are laid out otherwise
  * than the kind expects is refused by `kindFor`, not run wrongly.
  *
- * "dual" is A long (research/handwriting-rig/gen/inkdual.py): the reference
- * encoded with and without the writer, letter lengths from the summary,
- * flow-matching velocity mixed by guidance (`sampler.ts`). A pieces model
- * (C2) is another kind with its own reference; it is added here when one
- * ships.
+ * "dual" is A long (research/handwriting-rig/gen/inkdual.py): a few whole
+ * lines encoded with and without the writer, letter lengths from the
+ * summary, flow-matching velocity mixed by guidance (`sampler.ts`).
+ * "pieces" is C2 (gen/inkref.py, `pieces.ts`): one whole line, then words
+ * and lone letters cut from the writer's other lines, with the same sampler.
  *
  * PURE: no DOM, no Obsidian.
  */
 
-import {
-  type ManifestProblem,
-  type TensorType,
-  type WriterManifest,
-  isCount,
-  isNum,
-} from "./manifest";
+import { flowCheck, samplerMeta } from "./flow-meta";
+import type { ManifestProblem, WriterManifest } from "./manifest";
+import { PIECES_KIND } from "./pieces";
 import { type Reference, ROW, type TaggedLine, calm, pickLines, referenceOf } from "./rows";
+import { type Encoded, type Graphs, type WriteOptions, type Written, writeLine } from "./sampler";
 import {
-  type Encoded,
-  type Graphs,
-  type WriteOptions,
-  type WriterMeta,
-  type Written,
-  writeLine,
-} from "./sampler";
+  type GraphRunner,
+  type Slot,
+  type Tensorish,
+  bools,
+  f32,
+  i64,
+  need,
+  ones,
+  slot,
+} from "./tensors";
 
-/** A tensor going into or coming out of a graph. */
-export interface Tensorish {
-  type: TensorType;
-  data: Float32Array | BigInt64Array | Uint8Array;
-  dims: number[];
-}
-
-/** Runs the model's graph `role` on inputs given in the manifest's order; outputs in its order. */
-export type GraphRunner = (role: string, inputs: Tensorish[]) => Promise<Tensorish[]>;
-
-/** One input or output as a kind passes or reads it, by position. */
-export interface Slot {
-  role: string;
-  type: TensorType;
-}
+export type { GraphRunner, Slot, Tensorish } from "./tensors";
+export { samplerMeta } from "./flow-meta";
 
 /** What a kind of model needs and does. `R` is what its model is shown for one line. */
 export interface WriterKind<R = unknown> {
@@ -59,8 +46,12 @@ export interface WriterKind<R = unknown> {
   check(m: WriterManifest): string | null;
   /** The writer's copied lines to look at for `text`, best first, at most `count` (the caller ties them to their letters). */
   pick<L extends { text: string }>(text: string, pool: readonly L[], count: number): L[];
-  /** What the model is shown for `text`, from the lines picked (in order) and tied to their letters; null for none. */
-  reference(text: string, lines: readonly TaggedLine[], m: WriterManifest): R | null;
+  /**
+   * What the model is shown for `text`, from the lines picked (in order) and
+   * tied to their letters; null for none. `seed` varies a kind's random
+   * choices (the pieces kind's) from one line to the next.
+   */
+  reference(text: string, lines: readonly TaggedLine[], m: WriterManifest, seed: number): R | null;
   /** One try of a line. */
   write(
     run: GraphRunner,
@@ -70,43 +61,6 @@ export interface WriterKind<R = unknown> {
     options: WriteOptions,
   ): Promise<Written>;
 }
-
-function need<T>(value: T | undefined, what: string): T {
-  if (value === undefined) throw new Error(`the model's manifest has no ${what}`);
-  return value;
-}
-
-/** The sampler's numbers, from a manifest the dual kind has checked. */
-export function samplerMeta(m: WriterManifest): WriterMeta {
-  const s = need(m.sampling, "sampling");
-  return {
-    chars: m.chars,
-    mean: need(m.rows.mean, "rows.mean"),
-    std: need(m.rows.std, "rows.std"),
-    maxDur: s.maxDur,
-    refCurves: need(m.reference.curves, "reference.curves"),
-    steps: s.steps,
-    sigma: s.sigma,
-    guidance: s.guidance,
-    lowGuidance: s.lowGuidance,
-    lowMix: s.lowMix,
-    hold: need(m.reference.hold, "reference.hold"),
-    refLines: m.reference.lines,
-  };
-}
-
-const f32 = (data: Float32Array, dims: number[]): Tensorish => ({ type: "float32", data, dims });
-const i64 = (v: ArrayLike<number>, dims: number[]): Tensorish => ({
-  type: "int64",
-  data: BigInt64Array.from(Array.from(v, (n) => BigInt(n))),
-  dims,
-});
-const bools = (v: ArrayLike<number>, dims: number[]): Tensorish => ({
-  type: "bool",
-  data: Uint8Array.from(v, (n) => (n ? 1 : 0)),
-  dims,
-});
-const ones = (n: number): Uint8Array => new Uint8Array(n).fill(1);
 
 /** An encoded reference as the dual model's velocity takes it. */
 export interface DualEncoded extends Encoded {
@@ -158,8 +112,6 @@ export function dualGraphs(run: GraphRunner): Graphs<DualEncoded> {
   };
 }
 
-const slot = (role: string, type: TensorType): Slot => ({ role, type });
-
 /** A long's kind. */
 export const DUAL_KIND: WriterKind<Reference> = {
   graphs: {
@@ -194,28 +146,7 @@ export const DUAL_KIND: WriterKind<Reference> = {
       outputs: [slot("velocity", "float32")],
     },
   },
-  check(m) {
-    const { rows, reference, sampling: s } = m;
-    if (
-      !Array.isArray(rows.mean) ||
-      !Array.isArray(rows.std) ||
-      rows.mean.length !== rows.channels ||
-      rows.std.length !== rows.channels ||
-      !rows.mean.every(isNum) ||
-      !rows.std.every((v) => isNum(v) && v > 0)
-    )
-      return "rows mean and std";
-    if (!isCount(reference.curves) || !isNum(reference.hold) || reference.hold < 0)
-      return "reference curves and hold";
-    if (
-      !s ||
-      !isCount(s.steps) ||
-      !isCount(s.maxDur) ||
-      ![s.sigma, s.guidance, s.lowGuidance, s.lowMix].every(isNum)
-    )
-      return "sampling";
-    return null;
-  },
+  check: flowCheck,
   pick: (text, pool, count) => pickLines(text, pool, count),
   reference: (_text, lines, m) =>
     referenceOf(
@@ -232,6 +163,7 @@ export const DUAL_KIND: WriterKind<Reference> = {
 /** Every kind this build runs, by the manifest's `kind`. */
 export const WRITER_KINDS: ReadonlyMap<string, WriterKind> = new Map<string, WriterKind>([
   ["dual", DUAL_KIND],
+  ["pieces", PIECES_KIND],
 ]);
 
 /**

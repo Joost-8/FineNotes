@@ -8609,6 +8609,24 @@ textarea.goodobsidian-chat-input:focus-visible {
   width: min(320px, calc(100vw - 24px));
 }
 
+/* Beautify's neatness: a pen, the tool bar's slider, Beautify's brush. */
+.goodobsidian-neatness {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.goodobsidian-neatness .goodobsidian-width-slider {
+  flex: 1;
+  margin: 0;
+}
+
+.goodobsidian-neatness-end {
+  display: flex;
+  flex: none;
+  color: var(--text-muted);
+}
+
 .goodobsidian-popover-title {
   font-size: var(--font-ui-medium);
   font-weight: var(--font-semibold, 600);

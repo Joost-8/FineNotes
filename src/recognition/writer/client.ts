@@ -116,9 +116,10 @@ export class WriterClient {
     seed: number,
     id: number,
     low: ReadonlySet<number>,
+    guidance?: number,
   ): Promise<Written> {
     const result = await this.send(
-      { type: "write", text, ref, seed, line: id, low: [...low] },
+      { type: "write", text, ref, seed, line: id, low: [...low], guidance },
       [],
       WRITE_TIMEOUT_MS,
     );

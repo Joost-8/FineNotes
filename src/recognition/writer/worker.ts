@@ -65,6 +65,7 @@ async function write(request: Extract<WriterRequest, { type: "write" }>): Promis
     seed: request.seed,
     id: request.line,
     low: new Set(request.low),
+    guidance: request.guidance,
   });
   return { type: "write", written, ms: Math.round(performance.now() - t0) };
 }

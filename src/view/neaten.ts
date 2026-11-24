@@ -35,7 +35,9 @@ import { type LineToPlace, placeLines } from "../recognition/writer/layout";
 import { proseLike } from "../recognition/writer/pool";
 import { neatenLine } from "../recognition/writer/repair";
 import { type TaggedLine, levelledStrokes } from "../recognition/writer/rows";
+import { DEFAULT_TRIES } from "../recognition/writer/flow-meta";
 import { type WriterKind, WRITER_KINDS, kindFor } from "../recognition/writer/kinds";
+import { guidanceAt } from "../recognition/writer/neatness";
 import {
   type ManifestProblem,
   type WriterManifest,
@@ -56,8 +58,6 @@ import { ModelNotDownloadedError, type HandwritingReader } from "./handwriting";
 import type { ModelRegistry } from "./model-downloads";
 import { type LearningHost, readAllPracticeLines, writePracticePage } from "./handwriting-learning";
 
-/** Tries per line, kept by what Grape reads back (the research's best of 3). */
-const TRIES = 3;
 /** Practice lines looked at beyond the ones shown, in case some cannot be tied to their letters. */
 const SPARE_LINES = 4;
 /** How often the menu may ask for the model's files to be looked for again. */
@@ -74,6 +74,8 @@ export interface NeatenHost {
   learningHost(): LearningHost;
   /** Pause the OCR and let its model go; the returned function lets it carry on. */
   pauseOcr(): Promise<() => void>;
+  /** Where Beautify's neatness slider sits, 0 (most like the writer's ink) to 1 (neatest). */
+  neatness(): number;
 }
 
 /** What the surface asks for: a page's strokes and the selected ones. */
@@ -222,14 +224,19 @@ export class NeatenService {
 
     // What the model is shown for each line, before it is loaded: the reader must make its rows.
     const refs: unknown[] = [];
-    for (const job of jobs) {
+    for (const [n, job] of jobs.entries()) {
       const shown = await this.shownFor(job.text, pool, manifest, kind);
       if (!shown) {
         new Notice(problemText({ kind: "rows", detail: "the reader's curves differ" }), 8000);
         return { kind: "tidy" };
       }
-      refs.push(kind.reference(job.text, shown, manifest));
+      refs.push(kind.reference(job.text, shown, manifest, n + 1));
     }
+    // The neatness dial moves the model's own guidance (`neatness.ts`).
+    const guidance = manifest.sampling
+      ? guidanceAt(this.host.neatness(), manifest.sampling.guidance)
+      : undefined;
+    const tries = manifest.sampling?.tries ?? DEFAULT_TRIES;
     if (request.stop()) return { kind: "stopped" };
 
     // The writer, alone in memory with Grape.
@@ -250,9 +257,9 @@ export class NeatenService {
         job.text,
         ref,
         n,
-        (text, r, seed, id, low) => writer.write(text, r, seed, id, low),
+        (text, r, seed, id, low) => writer.write(text, r, seed, id, low, guidance),
         (written) => this.host.handwriting.readRows(written),
-        { seed: 0, tries: TRIES, repair: true, stop: request.stop },
+        { seed: 0, tries, repair: true, stop: request.stop },
       );
       if (!done || request.stop()) return { kind: "stopped" };
       placing.push({

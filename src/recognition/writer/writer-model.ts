@@ -2,7 +2,7 @@
  * Dostoyev, the handwriting writer this build downloads for Neaten, pinned by size
  * and SHA-256: the model's manifest (`manifest.ts`, the main file) and the
  * graphs it names, made by research/handwriting-rig/gen/neaten_v1.py
- * (`release`). The WebAssembly binary is the OCR's own file, kept once in
+ * (`release`, `c2`). The WebAssembly binary is the OCR's own file, kept once in
  * its folder.
  *
  * A later model is a new entry here (new id or version, files and hashes)
@@ -12,9 +12,10 @@
  * as needing an update and the download replaces it, as the OCR's and
  * Grape's do.
  *
- * Published as release v1.0 of its own repository, Joost-8/Dostoyev
- * (Apache 2.0; Joost's decision, 2026-11-24); every file there was checked
- * against the size and hash below.
+ * Version 1.0 (A long, kind "dual") is release v1.0 of its own repository,
+ * Joost-8/Dostoyev (Apache 2.0; Joost's decision, 2026-11-24). Version 2.0
+ * is C2 long (kind "pieces", research gen/neaten_v1.py `c2`), Beautify's
+ * writer from 24 November; its files are to be release v2.0 there.
  *
  * PURE: data only.
  */
@@ -24,7 +25,7 @@ import { t } from "../../i18n/translate";
 import { OCR_MODEL, OCR_WASM_FILE } from "../ocr/ocr-model";
 import { WRITER_FORMAT } from "./manifest";
 
-const RELEASE = "https://github.com/Joost-8/Dostoyev/releases/download/v1.0";
+const RELEASE = "https://github.com/Joost-8/Dostoyev/releases/download/v2.0";
 
 /**
  * Whether the files are published at `RELEASE`: Neaten is then offered
@@ -48,30 +49,30 @@ export const WRITER_MODEL: ModelAsset = {
   get purpose() {
     return t("ai.neaten.modelPurpose");
   },
-  version: "1.0",
+  version: "2.0",
   format: WRITER_FORMAT,
   folder: "handwriting/writer",
   files: [
     // The manifest first: it is the main file, by which other versions are recognised.
     file(
-      "dostoyev-1.0.json",
-      4_914,
-      "a11698ec0f3cd6de7e778d95667042e0cc89343c2f62280a18d1c8a860f6963e",
+      "dostoyev-2.0.json",
+      5_224,
+      "e39e7b61f30b9d9d1910f31c5556b977f8d9732667b63a35cf854e915c24a07a",
     ),
     file(
-      "dostoyev-1.0-velocity.int8.onnx",
-      10_328_999,
-      "067d9bd0e21deaa7c07940808c09906110e57534f29f56adb53c850fb5add48b",
+      "dostoyev-2.0-velocity.int8.onnx",
+      10_181_538,
+      "51934ada4ec7f1f3298fb6f90c2ce9790427b8f42afcbb1cc675d636a2e0cb21",
     ),
     file(
-      "dostoyev-1.0-encode.int8.onnx",
-      2_112_608,
-      "b1a0d73554bd81fca047509582c1617520c58bfd8d984e8f18fe6c8a1a902991",
+      "dostoyev-2.0-encode.int8.onnx",
+      1_615_965,
+      "e4c5dd77a75c2a1898f004dc914fd51840d13b98c70187e96f67357d1eeac9b7",
     ),
     file(
-      "dostoyev-1.0-durations.int8.onnx",
-      1_634_221,
-      "b06572e0ddbc6af27ea6bdd1432f584f991f4e46b3fa2175c70ec57f09cabc9d",
+      "dostoyev-2.0-durations.int8.onnx",
+      1_636_485,
+      "d153ba8ffed365f60b3bb60fd60e5c5e8143401495291656681471a0e6a543ff",
     ),
     OCR_WASM_FILE,
   ],

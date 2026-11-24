@@ -46,6 +46,8 @@ interface Fake {
   graphs: Graphs<FakeEnc>;
   /** The summaries `durations` was given, in order. */
   durationG: number[][];
+  /** Each encode's `drop`, in order. */
+  encodes: boolean[];
   velocityCalls: {
     x: Float32Array;
     tau: number;
@@ -65,9 +67,10 @@ function fake(
   rows: (id: number, g0: number, index: number) => number,
   velocity: (x: Float32Array, drop: boolean) => Float32Array,
 ): Fake {
-  const out: Fake = { graphs: null as never, durationG: [], velocityCalls: [] };
+  const out: Fake = { graphs: null as never, durationG: [], encodes: [], velocityCalls: [] };
   out.graphs = {
     async encode(_ref, drop) {
+      out.encodes.push(drop);
       return { g: Float32Array.from([drop ? 0 : 1, drop ? 0 : 1]), drop };
     },
     async durations(ids, g) {
@@ -204,6 +207,63 @@ describe("writeLine", () => {
       [0.5, false],
       [0.5, true],
     ]);
+  });
+
+  it("at guidance 1 with nothing low, never encodes none or runs its velocity (half the passes)", async () => {
+    const f = fake(4, () => 2, constant(3, 1));
+    const meta = metaWith({
+      steps: 2,
+      guidance: 1,
+      mean: Array(ROW).fill(0),
+      std: Array(ROW).fill(1),
+    });
+    const out = await writeLine(f.graphs, meta, "ab", REF, { seed: 0, id: 0 });
+    expect(f.encodes).toEqual([false]);
+    expect(f.velocityCalls.map((c) => c.drop)).toEqual([false, false]);
+    // Two steps of v_his / 2: 3.
+    expect(out.x[0]).toBeCloseTo(3);
+  });
+
+  it("at guidance 1 still runs none for the repair's low letters, and only mixes there", async () => {
+    const f = fake(4, () => 2, constant(3, 1));
+    const meta = metaWith({
+      steps: 1,
+      guidance: 1,
+      lowGuidance: 0.5,
+      mean: Array(ROW).fill(0),
+      std: Array(ROW).fill(1),
+    });
+    const out = await writeLine(f.graphs, meta, "ab", REF, { seed: 0, id: 0, low: new Set([1]) });
+    expect(f.encodes).toEqual([false, true]);
+    expect(out.x[0]).toBeCloseTo(3); // a: 1 + 1 * (3 - 1)
+    expect(out.x[2 * ROW]).toBeCloseTo(2); // b: 1 + 0.5 * (3 - 1)
+  });
+
+  it("takes the guidance it is given over the model's (the neatness dial)", async () => {
+    const f = fake(4, () => 2, constant(3, 1));
+    const meta = metaWith({
+      steps: 1,
+      guidance: 1.5,
+      mean: Array(ROW).fill(0),
+      std: Array(ROW).fill(1),
+    });
+    const out = await writeLine(f.graphs, meta, "a", REF, { seed: 0, id: 0, guidance: 1.2 });
+    expect(out.x[0]).toBeCloseTo(1 + 1.2 * 2);
+  });
+
+  it("below guidance 1, takes the row counts from the summary mixed toward none by the same share", async () => {
+    const f = fake(4, (_id, g0) => (g0 === 1 ? 3 : 2), zero);
+    const out = await writeLine(f.graphs, metaWith({ lowMix: 0.25 }), "ab", REF, {
+      seed: 0,
+      id: 0,
+      guidance: 0.75,
+      low: new Set([1]),
+    });
+    expect(f.durationG).toEqual([
+      [0.75, 0.75],
+      [0.25, 0.25],
+    ]);
+    expect([...out.char]).toEqual([0, 0, 1, 1]);
   });
 
   it("thresholds the pen-up value to 0 or 1", async () => {

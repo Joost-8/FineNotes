@@ -45,7 +45,7 @@ export interface WriterManifest {
   /** The model family ("a-long") and this file's version. */
   id: string;
   version: string;
-  /** Which code runs it (`kinds.ts`): "dual" is A long's. */
+  /** Which code runs it (`kinds.ts`): "dual" is A long's, "pieces" C2's. */
   kind: string;
   /** The graphs by the role the kind gives them ("encode", "durations", "velocity", …). */
   graphs: Record<string, GraphSpec>;
@@ -65,8 +65,12 @@ export interface WriterManifest {
     /** For a kind that shows whole lines: rows shown, and the longest pen jump shown. */
     curves?: number;
     hold?: number;
+    /** For a kind shown pieces of lines (C2): how often a needed letter is shown on its own. */
+    letters?: number;
+    /** For the same: a letter the writer never wrote in that case is looked for in the other one. */
+    otherCase?: boolean;
   };
-  /** For a flow-matching kind (A long): steps, noise, guidance and the repair's settings. */
+  /** For a flow-matching kind (A long, C2): steps, noise, guidance and the repair's settings. */
   sampling?: {
     steps: number;
     sigma: number;
@@ -74,6 +78,8 @@ export interface WriterManifest {
     lowGuidance: number;
     lowMix: number;
     maxDur: number;
+    /** Tries of a line, the best kept (3 when not given). */
+    tries?: number;
   };
   /** The model's characters; index 0 is the blank, a character's id is its index. */
   chars: string[];

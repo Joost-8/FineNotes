@@ -1,8 +1,10 @@
 /**
- * The writer's sampler: one line of text written in a writer's hand by the
- * dual flow-matching model "A long" (research/handwriting-rig/gen/repair.py,
- * `Neatener.write`), with the model's three graphs behind {@link Graphs} so
- * this part runs anywhere (ONNX Runtime in the worker, fakes in the tests).
+ * The writer's sampler: one line of text written in a writer's hand by a
+ * flow-matching model, "A long" or C2 (research/handwriting-rig/gen/repair.py,
+ * `Neatener.write`; gen/families.py `Writer.write`), with the model's three
+ * graphs behind {@link Graphs} so this part runs anywhere (ONNX Runtime in
+ * the worker, fakes in the tests). The two kinds differ only in what they
+ * are shown and how their graphs take it (`kinds.ts`, `pieces.ts`).
  *
  * Per line: the reference is encoded twice (the writer's lines, and none);
  * each character's number of rows comes from the durations graph given the
@@ -50,10 +52,10 @@ export interface Encoded {
   g: Float32Array;
 }
 
-/** The model's three graphs (gen/export_onnx.py). */
-export interface Graphs<E extends Encoded = Encoded> {
+/** The model's three graphs (gen/export_onnx.py, gen/export_pieces.py). */
+export interface Graphs<E extends Encoded = Encoded, R extends Reference = Reference> {
   /** The reference encoded, or the null reference when `drop`. */
-  encode(ref: Reference, drop: boolean): Promise<E>;
+  encode(ref: R, drop: boolean): Promise<E>;
   /** Per character, logits over 1..maxDur rows (`L × maxDur`), given a summary. */
   durations(ids: Int32Array, g: Float32Array): Promise<Float32Array>;
   /** The velocity of normalised rows `x` (`T × ROW`) at time `tau`. */
@@ -138,35 +140,61 @@ export interface WriteOptions {
   id: number;
   /** Characters (positions in the text) to write at low guidance with mixed row counts. */
   low?: ReadonlySet<number>;
+  /**
+   * Guidance for the rest of the line instead of the model's (the
+   * neatness dial, `neatness.ts`). Below 1 the row counts are mixed toward
+   * none's by the same share, as the repair mixes them.
+   */
+  guidance?: number;
   /** Noise to start from instead of drawing it (`T × ROW`, before `sigma`), for parity checks. */
   noise?: (counts: Int32Array) => Float32Array;
 }
 
-/** Write `text` from the reference. Throws when the model has no id for a character. */
-export async function writeLine<E extends Encoded>(
-  graphs: Graphs<E>,
+/** `a` part of the writer's summary and the rest of none's. */
+function mixed(his: Float32Array, none: Float32Array, a: number): Float32Array {
+  const g = new Float32Array(his.length);
+  for (let i = 0; i < g.length; i++) g[i] = a * his[i] + (1 - a) * none[i];
+  return g;
+}
+
+/**
+ * Write `text` from the reference. Throws when the model has no id for a
+ * character. At guidance 1 `v0 + g (v - v0)` is `v`, so a line with no
+ * repaired letters at guidance 1 never encodes "none" or runs its
+ * velocity: half the passes (Carbon's finding, 24 November).
+ */
+export async function writeLine<E extends Encoded, R extends Reference = Reference>(
+  graphs: Graphs<E, R>,
   meta: WriterMeta,
   text: string,
-  ref: Reference,
+  ref: R,
   options: WriteOptions,
 ): Promise<Written> {
   const ids = textIds(text, meta);
   if (!ids || ids.length === 0) throw new Error("the writer has no letter for this text");
   const low = options.low ?? new Set<number>();
-  const his = await graphs.encode(ref, false);
-  const none = await graphs.encode(ref, true);
+  const guidance = options.guidance ?? meta.guidance;
   const L = ids.length;
   const D = meta.maxDur;
-  const dHis = await graphs.durations(ids, his.g);
-  let dMix: Float32Array | null = null;
-  if (low.size > 0) {
-    const g = new Float32Array(his.g.length);
-    for (let i = 0; i < g.length; i++)
-      g[i] = meta.lowMix * his.g[i] + (1 - meta.lowMix) * none.g[i];
-    dMix = await graphs.durations(ids, g);
-  }
+  const lowAt = (i: number): boolean => low.has(i);
+  // Guidance per character; "none" is needed only where it is not 1.
+  const gc = new Float32Array(L);
+  for (let i = 0; i < L; i++) gc[i] = lowAt(i) ? meta.lowGuidance : guidance;
+  const his = await graphs.encode(ref, false);
+  const none = gc.some((g) => g !== 1) ? await graphs.encode(ref, true) : null;
+  // Row counts: the writer's, or mixed toward none's (repaired letters; the whole line below guidance 1).
+  const share = (i: number): number => (lowAt(i) ? meta.lowMix : Math.min(1, guidance));
+  const byShare = new Map<number, Float32Array>();
   const counts = new Int32Array(L);
-  for (let i = 0; i < L; i++) counts[i] = argmaxRows(low.has(i) && dMix ? dMix : dHis, i, D);
+  for (let i = 0; i < L; i++) {
+    const a = none ? share(i) : 1;
+    let logits = byShare.get(a);
+    if (!logits) {
+      logits = await graphs.durations(ids, a === 1 || !none ? his.g : mixed(his.g, none.g, a));
+      byShare.set(a, logits);
+    }
+    counts[i] = argmaxRows(logits, i, D);
+  }
   const T = counts.reduce((s, v) => s + v, 0);
   const char = new Int32Array(T);
   for (let i = 0, t = 0; i < L; i++) for (let j = 0; j < counts[i]; j++) char[t++] = i;
@@ -192,12 +220,12 @@ export async function writeLine<E extends Encoded>(
   }
   for (let v = 0; v < x.length; v++) x[v] *= meta.sigma;
   const gw = new Float32Array(T);
-  for (let t = 0; t < T; t++) gw[t] = low.has(char[t]) ? meta.lowGuidance : meta.guidance;
+  for (let t = 0; t < T; t++) gw[t] = gc[char[t]];
 
   for (let step = 0; step < meta.steps; step++) {
     const tau = step / meta.steps;
     const v1 = await graphs.velocity(x, tau, cid, k, d, his);
-    const v0 = await graphs.velocity(x, tau, cid, k, d, none);
+    const v0 = none ? await graphs.velocity(x, tau, cid, k, d, none) : v1;
     const next = new Float32Array(x.length);
     for (let t = 0; t < T; t++) {
       for (let c = 0; c < ROW; c++) {

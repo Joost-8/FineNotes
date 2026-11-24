@@ -27,7 +27,9 @@ extracted from the matching section of this file by `release.yml`.
   paper's rules when it has them), wandering baselines are straightened,
   margins aligned and shaky strokes smoothed. Writing in your hand needs your
   practice sheets (at least 10 copied lines); without them Beautify only
-  tidies. Formulas and tables are left alone. One undo puts it all back.
+  tidies. Formulas and tables are left alone. One undo puts it all back. How
+  neat it writes is a slider in the Lasso tool's popover, from most like your
+  ink to neatest.
 - **Insert space on boards, and on paper without lines**
   ([discussion #276](https://github.com/Joost-8/FineNotes/discussions/276)).
   With the lasso on **By line**, press anywhere on a board and drag down: everything

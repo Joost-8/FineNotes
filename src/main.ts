@@ -23,6 +23,8 @@ import type { SharingFeature } from "./view/sharing-feature";
 import { loadSharing } from "./view/sharing-load";
 import { WordCheck } from "./view/word-check";
 import { NeatenService } from "./view/neaten";
+import type { NeatnessControl } from "./view/neatness-row";
+import { neatnessOf } from "./recognition/writer/neatness";
 import {
   followPairRename,
   isNotebookOwnFolder,
@@ -558,6 +560,7 @@ export default class GoodObsidianPlugin extends Plugin {
     learningHost: () => this.learningHost(),
     answers: (note, pageId) => this.wordCheck.answersOn(note, pageId),
     pauseOcr: () => this.ocr.pause(),
+    neatness: () => neatnessOf(this.settings.beautifyNeatness),
   });
 
   /** "Help improve Grape", in a build that has it (`view/sharing-load.ts`); else null. */
@@ -2716,6 +2719,18 @@ export default class GoodObsidianPlugin extends Plugin {
     if (this.fingerDrawing === on) return;
     this.fingerDrawing = on;
     for (const view of this.openNotebooks()) view.setFingerDrawing(on);
+  }
+
+  /** Beautify's neatness slider, while Beautify can write in the hand; null when it only tidies. */
+  beautifyNeatness(): NeatnessControl | null {
+    if (!this.neaten.available()) return null;
+    return {
+      get: () => this.settings.beautifyNeatness,
+      set: (neatness) => {
+        this.settings.beautifyNeatness = neatnessOf(neatness);
+        void this.saveSettings();
+      },
+    };
   }
 
   /** Remember the lasso's type and what it picks up, for the next session. */
