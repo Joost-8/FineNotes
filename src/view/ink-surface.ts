@@ -15875,7 +15875,7 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     if (translate) actions.push(translate);
     // A lone text box in the writer's hand, first under Turn into (write-in-hand.ts).
     const toHand = this.callbacks.onWriteInHand;
-    if (menu.handwriting && loneBox && boxText && toHand && this.callbacks.canWriteInHand?.()) {
+    if (loneBox && boxText && toHand && this.callbacks.canWriteInHand?.()) {
       actions.push({
         id: "to-hand",
         icon: "signature",
