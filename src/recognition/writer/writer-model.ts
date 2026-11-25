@@ -15,7 +15,9 @@
  * Version 1.0 (A long, kind "dual") is release v1.0 of its own repository,
  * Joost-8/Dostoyev (Apache 2.0; Joost's decision, 2026-11-24). Version 2.0
  * is C2 long (kind "pieces", research gen/neaten_v1.py `c2`), Beautify's
- * writer from 24 November; its files are to be release v2.0 there.
+ * writer from 24 November, is release v2.0 there (published 2026-11-25 on
+ * Joost's word); every file there was checked against the size and hash
+ * below, and range requests answer 206.
  *
  * PURE: data only.
  */
@@ -28,13 +30,11 @@ import { WRITER_FORMAT } from "./manifest";
 const RELEASE = "https://github.com/Joost-8/Dostoyev/releases/download/v2.0";
 
 /**
- * Whether the files are published at `RELEASE`: Neaten is then offered
- * everywhere, and its first use offers the download. False offers it only
- * where a copy is already in the folder (Joost's vault, by sync). False
- * until release v2.0 is published (a public step, on Joost's word): a
- * download from it would fail.
+ * Whether the files are published at `RELEASE`: Beautify then offers the
+ * download everywhere on its first use. False offers it only where a copy
+ * is already in the folder (a development copy).
  */
-export const WRITER_HOSTED = false;
+export const WRITER_HOSTED = true;
 
 const file = (name: string, bytes: number, sha256: string) => ({
   name,
