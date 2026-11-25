@@ -854,3 +854,30 @@ describe("remaining", () => {
     expect(s.remaining).toBeNull();
   });
 });
+
+describe("speed", () => {
+  it("is the velocity's length on a snap, and falls to nothing as it ends", () => {
+    const s = wideTall();
+    s.snapTo(600, null, 0);
+    s.step(16);
+    expect(s.speed).toBeCloseTo(Math.hypot(s.velocity.x, s.velocity.y), 10);
+    expect(s.speed).toBeGreaterThan(0);
+    let t = 16;
+    while (s.step((t += 16)));
+    expect(s.speed).toBe(0);
+  });
+
+  it("is a glide's own, which the velocity does not carry", () => {
+    const s = wideTall();
+    s.glideTo(600, 0, 0);
+    // An ease-out starts at three times its mean speed and slows from there.
+    expect(s.speed).toBeCloseTo((3 * 600) / GLIDE_MS, 10);
+    s.step(GLIDE_MS / 2);
+    expect(s.speed).toBeCloseTo((0.75 * 600) / GLIDE_MS, 10);
+    const before = s.position.x;
+    s.step(GLIDE_MS / 2 + 1);
+    expect(s.position.x - before).toBeCloseTo(s.speed, 1);
+    s.step(GLIDE_MS);
+    expect(s.speed).toBe(0);
+  });
+});

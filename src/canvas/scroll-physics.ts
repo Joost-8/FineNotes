@@ -301,6 +301,19 @@ export class KineticScroller {
     );
   }
 
+  /**
+   * How fast the content is moving, px/ms: a glide's speed too, which
+   * {@link velocity} does not carry (a glide is read off the clock).
+   */
+  get speed(): number {
+    const glide = this.glide;
+    if (!glide) return Math.hypot(this.vx, this.vy);
+    // The slope of `easeOutCubic` where the last step left it.
+    const q = 1 - clamp((this.lastStepT - glide.t0) / glide.duration, 0, 1);
+    const length = Math.hypot(glide.toX - glide.fromX, glide.toY - glide.fromY);
+    return (3 * q * q * length) / glide.duration;
+  }
+
   get axisLock(): AxisLock {
     return this.drag?.lock ?? "undecided";
   }

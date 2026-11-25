@@ -6619,12 +6619,13 @@ export class InkSurface {
           ? SHARPEN_FRAME_BUDGET_MS
           : this.pace.budget(REST_FRAME_BUDGET_MS),
     );
+    // Before the frame is timed: the overlay's `peak=` counts this work too.
+    if (moving) this.prefetchCoasting(complete, zooming || settling || carrying);
     if (this.debug) this.trackFrame(t, started);
     if (moving || !complete) {
       // The next frame is the display's next: the time between them is a frame.
       this.frameFollows = true;
       this.requestFrame();
-      this.prefetchCoasting(complete, zooming || settling || carrying);
       return;
     }
     this.settleIfIdle();
@@ -6826,8 +6827,9 @@ export class InkSurface {
   private prefetchCoasting(complete: boolean, zooming: boolean): void {
     if (!this.renderer || this.renderer.isTransient) return;
     const held = this.pinch !== null || this.pressing;
-    const remaining = this.scroller.remaining;
-    if (!coasting({ remaining, complete, held, zooming: zooming || this.zoomTransient })) return;
+    const { remaining, speed } = this.scroller;
+    const still = { complete, held, zooming: zooming || this.zoomTransient };
+    if (!coasting({ remaining, speed, ...still })) return;
     const budget = this.pace.budget(PREFETCH_BUDGET_MS);
     this.renderer.prefetch(this.doc, this.inkPressure, budget, this.pagesToTurnTo());
   }
