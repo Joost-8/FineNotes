@@ -10,6 +10,7 @@
 
 import { type Editor, MarkdownView, Notice, TFile, addIcon, normalizePath } from "obsidian";
 import type GoodObsidianPlugin from "../main";
+import { t } from "../i18n/translate";
 import { emptyDocument, type Page } from "../model/document";
 import {
   INLINE_SKETCH_PREFIX,
@@ -123,7 +124,7 @@ async function resolveBackingNotebook(
     const choice = await InlineNotebookPickerModal.pick(app, {
       defaultCreateName,
       currentNotebook,
-      placeholder: "Choose a notebook for this handwriting block…",
+      placeholder: t("notebooks.handwrite.pickPlaceholder"),
     });
     if (!choice) return null;
     if (choice.kind === "existing") return { file: choice.file, created: false };
@@ -159,7 +160,7 @@ export async function insertInlineHandwriting(
 
   if (!created) {
     if (notebookIsOpen(plugin.app, notebook)) {
-      new Notice("FineNotes: close the backing notebook tab before inserting inline handwriting.");
+      new Notice(t("notebooks.handwrite.errCloseBeforeInsert"));
       return;
     }
     await editClosedNotebook(plugin.app, notebook, plugin.settings.paperWidth, (doc) => {
@@ -189,7 +190,10 @@ export function registerHandwriteHere(plugin: GoodObsidianPlugin): void {
     void insertInlineHandwriting(plugin, editor, file, { forcePick })
       .catch((error: unknown) => {
         new Notice(
-          `FineNotes: ${error instanceof Error ? error.message : "Could not insert handwriting."}`,
+          t("notebooks.handwrite.errInsertFailed", {
+            error:
+              error instanceof Error ? error.message : t("notebooks.handwrite.errInsertFallback"),
+          }),
         );
       })
       .finally(() => {
@@ -199,7 +203,7 @@ export function registerHandwriteHere(plugin: GoodObsidianPlugin): void {
 
   plugin.addCommand({
     id: "handwrite-here",
-    name: "Handwrite here",
+    name: t("notebooks.handwrite.command"),
     icon: HANDWRITE_HERE_ICON,
     editorCheckCallback: (checking, editor, ctx) => {
       const file = ctx.file;
@@ -212,7 +216,7 @@ export function registerHandwriteHere(plugin: GoodObsidianPlugin): void {
 
   plugin.addCommand({
     id: "handwrite-here-choose",
-    name: "Handwrite here (choose notebook…)",
+    name: t("notebooks.handwrite.commandChoose"),
     icon: HANDWRITE_HERE_ICON,
     editorCheckCallback: (checking, editor, ctx) => {
       const file = ctx.file;
@@ -229,7 +233,7 @@ export function registerHandwriteHere(plugin: GoodObsidianPlugin): void {
       if (!file || plugin.isInkFile(file)) return;
       menu.addItem((item) =>
         item
-          .setTitle("Handwrite here")
+          .setTitle(t("notebooks.handwrite.command"))
           .setIcon(HANDWRITE_HERE_ICON)
           .onClick(() => run(editor, file, false)),
       );

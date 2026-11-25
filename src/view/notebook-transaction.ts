@@ -1,5 +1,6 @@
 import { type App, TFile, normalizePath } from "obsidian";
 import { VIEW_TYPE_INK } from "../constants";
+import { t } from "../i18n/translate";
 import type { InkDocument } from "../model/document";
 import { idsIn, type DotClock } from "../model/dot-ids";
 import { devicePagesFolderOf, isDevicePagesPayload, notebookIdOf } from "../model/device-pages";
@@ -56,12 +57,12 @@ export async function readClosedNotebook(
       );
       const texts = await session.readFiles();
       const load = session.load(texts, paperWidth);
-      if (load.syncing) throw new Error("Notebook is still syncing; try again in a moment.");
+      if (load.syncing) throw new Error(t("notebooks.handwrite.errSyncing"));
       session.clock.raise(idsIn(load.doc));
       return load.doc;
     }
   }
-  throw new Error("Could not read notebook ink data.");
+  throw new Error(t("notebooks.handwrite.errUnreadable"));
 }
 
 /**
@@ -93,7 +94,7 @@ export async function editClosedNotebook<T>(
   await prev;
   try {
     if (notebookIsOpen(app, file)) {
-      throw new Error("Close the full notebook editor before writing inline.");
+      throw new Error(t("notebooks.handwrite.errCloseBeforeWrite"));
     }
     const raw = await app.vault.read(file);
     const parsed = parseInkFile(raw, paperWidth);
@@ -101,7 +102,7 @@ export async function editClosedNotebook<T>(
     if (parsed.doc) {
       const result = await mutate(parsed.doc);
       if (notebookIsOpen(app, file)) {
-        throw new Error("The notebook was opened in another tab while saving.");
+        throw new Error(t("notebooks.handwrite.errOpenedWhileSaving"));
       }
       const updated = buildInkFile(parsed.body, parsed.doc);
       await app.vault.modify(file, updated);
@@ -111,7 +112,7 @@ export async function editClosedNotebook<T>(
     if (parsed.payload && isDevicePagesPayload(parsed.payload)) {
       const id = notebookIdOf(parsed.payload);
       rememberNotebookId(file.path, id);
-      if (!id) throw new Error("The handwriting notebook could not be read.");
+      if (!id) throw new Error(t("notebooks.handwrite.errUnreadable"));
       const folder = devicePagesFolderOf(file.path, id);
       const session = new DevicePagesSession(
         app,
@@ -125,11 +126,11 @@ export async function editClosedNotebook<T>(
       const texts = await session.readFiles();
       const load = session.load(texts, paperWidth);
       if (load.syncing || !session.writer) {
-        throw new Error("Notebook is still syncing; try again in a moment.");
+        throw new Error(t("notebooks.handwrite.errSyncing"));
       }
       const result = await mutate(load.doc);
       if (notebookIsOpen(app, file)) {
-        throw new Error("The notebook was opened in another tab while saving.");
+        throw new Error(t("notebooks.handwrite.errOpenedWhileSaving"));
       }
       const writes = session.writer.save(load.doc, changedPageIds ?? null);
       if (writes.length > 0) {
@@ -144,7 +145,7 @@ export async function editClosedNotebook<T>(
       return result;
     }
 
-    throw new Error("The handwriting notebook could not be read.");
+    throw new Error(t("notebooks.handwrite.errUnreadable"));
   } finally {
     release();
     if (activeLocks.get(key) === next) activeLocks.delete(key);

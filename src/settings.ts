@@ -1752,8 +1752,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ),
           this.tile(
             drawnRow(
-              "Inline handwriting folder",
-              "Where Handwrite here saves notebooks; blank uses attachments folder.",
+              t("notebooks.handwrite.settingFolderName"),
+              t("notebooks.handwrite.settingFolderDesc"),
               (s) => this.drawInlineHandwriteFolder(s),
               ["inline handwriting", "handwrite here", "folder", "attachments"],
             ),
@@ -1761,8 +1761,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           ),
           this.tile(
             drawnRow(
-              "Inline handwriting notebook",
-              "How Handwrite here chooses which notebook stores each block.",
+              t("notebooks.handwrite.settingModeName"),
+              t("notebooks.handwrite.settingModeDesc"),
               (s) => this.drawInlineHandwriteMode(s),
               ["inline handwriting", "handwrite here", "notebook", "ask", "auto"],
             ),
@@ -3106,7 +3106,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   private drawInlineHandwriteFolder(setting: Setting): void {
     setting.addText((text) => {
       text
-        .setPlaceholder("Obsidian attachments folder")
+        .setPlaceholder(t("notebooks.handwrite.settingFolderPlaceholder"))
         .setValue(this.plugin.settings.inlineHandwriteFolder ?? "")
         .onChange(async (value) => {
           this.plugin.settings.inlineHandwriteFolder = normalizeFolder(value);
@@ -3122,9 +3122,9 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   private drawInlineHandwriteMode(setting: Setting): void {
     setting.addDropdown((dropdown) => {
       dropdown
-        .addOption("once", "Ask once per note")
-        .addOption("auto", "Automatic (one per note)")
-        .addOption("always", "Always ask")
+        .addOption("once", t("notebooks.handwrite.modeOnceTitle"))
+        .addOption("auto", t("notebooks.handwrite.modeAutoTitle"))
+        .addOption("always", t("notebooks.handwrite.modeAlwaysTitle"))
         .setValue(this.plugin.settings.inlineHandwriteMode ?? "once")
         .onChange(async (value) => {
           if (value === "once" || value === "auto" || value === "always") {

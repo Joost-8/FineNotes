@@ -9,6 +9,7 @@
 
 import { type App, FuzzySuggestModal, type FuzzyMatch, Modal, type TFile, setIcon } from "obsidian";
 import { NOTEBOOK_FILE_SUFFIX } from "../constants";
+import { t } from "../i18n/translate";
 import { stripInkSuffix } from "../model/new-notebook";
 
 export type InlineHandwriteMode = "once" | "auto" | "always";
@@ -16,30 +17,30 @@ export type InlineHandwriteMode = "once" | "auto" | "always";
 interface ModeOption {
   id: InlineHandwriteMode;
   icon: string;
-  title: string;
-  badge?: string;
-  desc: string;
+  title: () => string;
+  badge?: () => string;
+  desc: () => string;
 }
 
 const MODE_OPTIONS: readonly ModeOption[] = [
   {
     id: "once",
     icon: "book-marked",
-    title: "Ask once per note",
-    badge: "Recommended",
-    desc: "Choose or create a notebook the first time you handwrite in a note, then reuse it automatically.",
+    title: () => t("notebooks.handwrite.modeOnceTitle"),
+    badge: () => t("notebooks.handwrite.modeOnceBadge"),
+    desc: () => t("notebooks.handwrite.modeOnceDesc"),
   },
   {
     id: "auto",
     icon: "sparkles",
-    title: "Automatic (one per note)",
-    desc: "Never ask — automatically creates a matching notebook in your attachments folder.",
+    title: () => t("notebooks.handwrite.modeAutoTitle"),
+    desc: () => t("notebooks.handwrite.modeAutoDesc"),
   },
   {
     id: "always",
     icon: "folder-search",
-    title: "Always ask",
-    desc: "Choose which notebook to store each block in every time you run Handwrite here.",
+    title: () => t("notebooks.handwrite.modeAlwaysTitle"),
+    desc: () => t("notebooks.handwrite.modeAlwaysDesc"),
   },
 ];
 
@@ -74,16 +75,16 @@ export class HandwriteSetupModal extends Modal {
     contentEl.empty();
     this.modalEl.addClass("goodobsidian-hw-setup-modal");
     contentEl.addClass("goodobsidian-ask", "goodobsidian-hw-setup");
-    this.setTitle("Where should inline handwriting live?");
+    this.setTitle(t("notebooks.handwrite.setupTitle"));
 
     contentEl.createDiv({
       cls: "goodobsidian-hw-setup-sub",
-      text: "Each handwriting block is stored as a page inside a FineNotes notebook and embedded in your note.",
+      text: t("notebooks.handwrite.setupSub"),
     });
 
     const list = contentEl.createDiv({
       cls: "goodobsidian-hw-setup-cards",
-      attr: { role: "radiogroup", "aria-label": "Inline handwriting notebook preference" },
+      attr: { role: "radiogroup", "aria-label": t("notebooks.handwrite.setupAria") },
     });
 
     const cardButtons = new Map<InlineHandwriteMode, HTMLButtonElement>();
@@ -105,11 +106,11 @@ export class HandwriteSetupModal extends Modal {
 
       const copy = card.createDiv({ cls: "goodobsidian-hw-setup-copy" });
       const heading = copy.createDiv({ cls: "goodobsidian-hw-setup-title" });
-      heading.createSpan({ text: opt.title });
+      heading.createSpan({ text: opt.title() });
       if (opt.badge) {
-        heading.createSpan({ cls: "goodobsidian-hw-setup-badge", text: opt.badge });
+        heading.createSpan({ cls: "goodobsidian-hw-setup-badge", text: opt.badge() });
       }
-      copy.createDiv({ cls: "goodobsidian-hw-setup-desc", text: opt.desc });
+      copy.createDiv({ cls: "goodobsidian-hw-setup-desc", text: opt.desc() });
 
       card.addEventListener("click", () => {
         this.selected = opt.id;
@@ -121,13 +122,16 @@ export class HandwriteSetupModal extends Modal {
 
     contentEl.createDiv({
       cls: "goodobsidian-hw-setup-hint",
-      text: "You can change this anytime in FineNotes Settings → Pages.",
+      text: t("notebooks.handwrite.setupHint"),
     });
 
     const actions = contentEl.createDiv({ cls: "goodobsidian-ask-actions" });
-    const cancel = actions.createEl("button", { text: "Cancel" });
+    const cancel = actions.createEl("button", { text: t("common.cancel") });
     cancel.addEventListener("click", () => this.close());
-    const go = actions.createEl("button", { cls: "mod-cta", text: "Continue" });
+    const go = actions.createEl("button", {
+      cls: "mod-cta",
+      text: t("notebooks.handwrite.continue"),
+    });
     go.addEventListener("click", () => {
       this.resolved = true;
       this.onChoose(this.selected);
@@ -215,17 +219,20 @@ export class InlineNotebookPickerModal extends FuzzySuggestModal<NotebookPickCho
     if (item.kind === "create") {
       text.createDiv({
         cls: "goodobsidian-hw-pick-title",
-        text: `Create "${item.name}.notebook"`,
+        text: t("notebooks.handwrite.pickCreate", { name: item.name }),
       });
       text.createDiv({
         cls: "goodobsidian-hw-pick-sub",
-        text: "New FineNotes notebook in your inline handwriting folder",
+        text: t("notebooks.handwrite.pickCreateSub"),
       });
     } else {
       const title = text.createDiv({ cls: "goodobsidian-hw-pick-title" });
       title.createSpan({ text: stripInkSuffix(item.file.basename) });
       if (item.current) {
-        title.createSpan({ cls: "goodobsidian-hw-setup-badge", text: "Current" });
+        title.createSpan({
+          cls: "goodobsidian-hw-setup-badge",
+          text: t("notebooks.handwrite.pickCurrent"),
+        });
       }
       text.createDiv({
         cls: "goodobsidian-hw-pick-sub",

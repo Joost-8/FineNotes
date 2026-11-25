@@ -9,6 +9,7 @@
 
 import { type App, type TFile, Notice, setIcon } from "obsidian";
 import type GoodObsidianPlugin from "../main";
+import { t } from "../i18n/translate";
 import { attachmentDefaults, penPreferencesOf } from "../settings-data";
 import { PALETTE, SIZES, VIEW_TYPE_INK } from "../constants";
 import { pushRecentColor } from "../model/colors";
@@ -178,7 +179,7 @@ export class EmbedInlineEditor {
 
     try {
       if (notebookIsOpen(app, notebookFile)) {
-        throw new Error("Close the full notebook tab before editing inline.");
+        throw new Error(t("notebooks.handwrite.errCloseBeforeEdit"));
       }
       const fullDoc = await readClosedNotebook(app, notebookFile, plugin.settings.paperWidth);
       if (this.closed || this.closing || !slotEl.isConnected) {
@@ -187,7 +188,7 @@ export class EmbedInlineEditor {
       }
       const target =
         fullDoc.pages.find((p) => p.id === pageId) ?? fullDoc.pages[this.req.pageNumber - 1];
-      if (!target) throw new Error("Embedded page not found in notebook.");
+      if (!target) throw new Error(t("notebooks.handwrite.errPageNotFound"));
 
       this.imageFolder = resolveAttachmentFolder(
         fullDoc,
@@ -213,7 +214,9 @@ export class EmbedInlineEditor {
       this.mount();
     } catch (error) {
       new Notice(
-        `FineNotes: ${error instanceof Error ? error.message : "Could not open inline editor."}`,
+        t("notebooks.handwrite.errOpenFailed", {
+          error: error instanceof Error ? error.message : t("notebooks.handwrite.errOpenFallback"),
+        }),
       );
       await this.close();
     }
@@ -276,7 +279,7 @@ export class EmbedInlineEditor {
     if (expandable) {
       const handle = overlay.createDiv({
         cls: "goodobsidian-inline-resize-handle",
-        attr: { role: "separator", "aria-label": "Resize handwriting area" },
+        attr: { role: "separator", "aria-label": t("notebooks.handwrite.resizeArea") },
       });
       handle.createDiv({ cls: "goodobsidian-inline-resize-pill" });
       this.wireResizeHandle(handle);
@@ -415,9 +418,9 @@ export class EmbedInlineEditor {
         },
         onClear: () => {
           void ConfirmModal.confirm(app, {
-            title: "Clear handwriting?",
-            message: "Remove handwriting and drawn shapes in this block? You can undo this action.",
-            cta: "Clear",
+            title: t("notebooks.handwrite.clearTitle"),
+            message: t("notebooks.handwrite.clearMessage"),
+            cta: t("notebooks.handwrite.clearCta"),
           }).then((confirmed) => {
             if (confirmed) {
               this.surface?.clearStrokes();
@@ -459,7 +462,7 @@ export class EmbedInlineEditor {
       // 1. Native FineNotes Paper & Templates picker (`TemplatePickerModal`)
       const paperBtn = endGroup.createEl("button", {
         cls: "clickable-icon",
-        attr: { type: "button", "aria-label": "Paper template & background" },
+        attr: { type: "button", "aria-label": t("notebooks.handwrite.paperTemplate") },
       });
       setIcon(paperBtn, "file-spreadsheet");
       paperBtn.addEventListener("click", (e) => {
@@ -492,7 +495,7 @@ export class EmbedInlineEditor {
       // 3. Open in full notebook — jumps directly to this exact page via `pageIndex`
       const openBtn = endGroup.createEl("button", {
         cls: "clickable-icon",
-        attr: { type: "button", "aria-label": "Open in notebook" },
+        attr: { type: "button", "aria-label": t("notebooks.handwrite.openInNotebook") },
       });
       setIcon(openBtn, "external-link");
       openBtn.addEventListener("click", (e) => {
@@ -515,7 +518,7 @@ export class EmbedInlineEditor {
       // 4. Done (matching native toolbar icon button)
       const doneBtn = endGroup.createEl("button", {
         cls: "clickable-icon goodobsidian-inline-done-icon",
-        attr: { type: "button", "aria-label": "Done writing (Esc)" },
+        attr: { type: "button", "aria-label": t("notebooks.handwrite.done") },
       });
       setIcon(doneBtn, "check");
       doneBtn.addEventListener("click", (e) => {
@@ -707,7 +710,9 @@ export class EmbedInlineEditor {
       this.scheduleSave();
     } catch (err) {
       new Notice(
-        `FineNotes: could not add image (${err instanceof Error ? err.message : String(err)}).`,
+        t("notebooks.handwrite.errAddImage", {
+          error: err instanceof Error ? err.message : String(err),
+        }),
       );
     }
   }
@@ -757,7 +762,9 @@ export class EmbedInlineEditor {
           return true;
         } catch (error) {
           new Notice(
-            `FineNotes: could not save inline ink (${error instanceof Error ? error.message : String(error)})`,
+            t("notebooks.handwrite.errSaveFailed", {
+              error: error instanceof Error ? error.message : String(error),
+            }),
           );
           return false;
         }

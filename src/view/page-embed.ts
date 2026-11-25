@@ -1018,7 +1018,7 @@ class PageSlot {
     const bar = this.el.createDiv({ cls: "goodobsidian-page-embed-actions" });
     const writeBtn = bar.createEl("button", {
       cls: "clickable-icon goodobsidian-page-embed-action",
-      attr: { type: "button", "aria-label": "Write inline" },
+      attr: { type: "button", "aria-label": t("notebooks.handwrite.writeInline") },
     });
     setIcon(writeBtn, "pen-tool");
     writeBtn.addEventListener("pointerdown", (event) => event.stopPropagation());
@@ -1029,7 +1029,7 @@ class PageSlot {
     });
     const openBtn = bar.createEl("button", {
       cls: "clickable-icon goodobsidian-page-embed-action",
-      attr: { type: "button", "aria-label": "Open in notebook" },
+      attr: { type: "button", "aria-label": t("notebooks.handwrite.openInNotebook") },
     });
     setIcon(openBtn, "external-link");
     openBtn.addEventListener("pointerdown", (event) => event.stopPropagation());

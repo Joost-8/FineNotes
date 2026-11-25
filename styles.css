@@ -25612,15 +25612,15 @@ button.clickable-icon.goodobsidian-ask-window-button {
 /* --- Handwrite Here: inline embeds, active editor, setup modal & fuzzy picker --- */
 .markdown-source-view.mod-cm6 .goodobsidian-page-embed-page.is-transparent {
   border-radius: var(--gob-radius-l, 12px);
-  border: 1px solid rgba(128, 128, 128, 0.14);
-  background: rgba(128, 128, 128, 0.025);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary-alt);
   transition:
     border-color 140ms ease,
     background-color 140ms ease;
 }
 .markdown-source-view.mod-cm6 .goodobsidian-page-embed-page.is-transparent:hover {
   border-color: hsla(var(--interactive-accent-hsl), 0.42);
-  background: rgba(128, 128, 128, 0.04);
+  background: var(--background-modifier-hover);
 }
 .markdown-reading-view .goodobsidian-page-embed-page.is-transparent,
 .print .goodobsidian-page-embed-page.is-transparent {
@@ -25642,8 +25642,8 @@ button.clickable-icon.goodobsidian-ask-window-button {
   background: var(--gob-frost, var(--background-primary));
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(128, 128, 128, 0.16);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14);
+  border: 1px solid var(--background-modifier-border);
+  box-shadow: var(--shadow-s);
   opacity: 0;
   transition: opacity 140ms ease;
 }

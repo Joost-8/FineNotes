@@ -1025,7 +1025,7 @@ export class TemplatePickerModal extends Modal {
     if (this.options.allowTransparent) {
       const btn = this.swatch(
         paperRow,
-        "Transparent",
+        t("notebooks.handwrite.transparent"),
         "transparent",
         shownPaper === "transparent",
         () => set({ paper: "transparent" }),
