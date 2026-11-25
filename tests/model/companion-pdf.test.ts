@@ -531,3 +531,35 @@ it("scopes background resolve() to local candidates instead of scanning unrelate
   await controller.resolve(ID, false);
   expect(checked).not.toContain("Archive/2020/Unrelated.pdf");
 });
+
+it("keeps a queued close snapshot when a live export rejects after the view switches", async () => {
+  const s = setup();
+  let reject!: (error: Error) => void;
+  let started!: () => void;
+  const rendering = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const blocked = new Promise<Uint8Array<ArrayBuffer>>((_, fail) => {
+    reject = fail;
+  });
+  s.render.mockImplementationOnce(() => {
+    started();
+    return blocked;
+  });
+  const first = s.controller.update(ID, s.snapshot);
+  await rendering;
+  s.change("from-close");
+  const close = s.controller.update(ID, s.snapshot);
+  reject(new Error("the outgoing view is gone"));
+  await Promise.all([first, close]);
+  expect(s.entry.lastFingerprint).toBe("from-close");
+  expect(s.replace).toHaveBeenCalledOnce();
+});
+
+it("includes headers and page numbers in the portable hash payload", () => {
+  const doc = emptyDocument(1024);
+  const options = { usePressure: false, highlighterAlpha: 0.4 };
+  const before = companionContent(doc, options, []);
+  doc.furniture = { header: "{title}", numbers: "center" };
+  expect(companionContent(doc, options, [])).not.toBe(before);
+});

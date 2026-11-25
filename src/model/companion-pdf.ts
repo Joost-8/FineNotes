@@ -2,6 +2,7 @@
 import { INK_FILE_SUFFIXES } from "../constants";
 import { t } from "../i18n/translate";
 import type { InkDocument } from "./document";
+import { readFurniture } from "./furniture";
 import { stripInkSuffix } from "./new-notebook";
 
 export const COMPANION_ID_KEY = "finenotes-companion-id";
@@ -27,6 +28,9 @@ export interface CompanionEntry {
   followName: boolean;
   dirty: boolean;
   lastFingerprint?: string;
+  /** A path received in frontmatter whose PDF can arrive separately. */
+  awaitingPdf?: boolean;
+  deletedAt?: number;
   error?: string;
   transaction?: CompanionTransaction;
 }
@@ -120,10 +124,9 @@ export function companionPath(raw: string): string {
         Array.from(p).some((char) => char.charCodeAt(0) < 32),
     )
   )
-    throw new Error("Choose a vault-relative PDF path without hidden folders or parent traversal.");
+    throw new Error(t("notebooks.companion.errInvalidPath"));
   const path = parts.join("/");
-  if (!path.toLowerCase().endsWith(".pdf"))
-    throw new Error("The companion target must be a PDF file.");
+  if (!path.toLowerCase().endsWith(".pdf")) throw new Error(t("notebooks.companion.errNotPdf"));
   return path;
 }
 
@@ -155,6 +158,9 @@ export function parseCompanionStore(raw: unknown): CompanionStore {
         followName: value.followName !== false,
         dirty: value.dirty !== false,
       };
+      if (value.awaitingPdf === true) entry.awaitingPdf = true;
+      if (entry.enabled && typeof value.deletedAt === "number" && Number.isFinite(value.deletedAt))
+        entry.deletedAt = value.deletedAt;
       if (typeof value.lastFingerprint === "string") entry.lastFingerprint = value.lastFingerprint;
       if (typeof value.error === "string") entry.error = value.error;
       if (
@@ -184,6 +190,8 @@ export interface CompanionExportOptions {
   margins?: string;
 }
 
+export type CompanionDocument = Pick<InkDocument, "pages" | "furniture" | "endless">;
+
 function companionPagesPayload(doc: Pick<InkDocument, "pages">): unknown[] {
   return doc.pages.map((page) => {
     const { id: _id, bookmarked: _bookmarked, title: _title, ...visual } = page;
@@ -205,9 +213,10 @@ function companionPagesPayload(doc: Pick<InkDocument, "pages">): unknown[] {
  * Hashed into the PDF Subject so stale synced PDFs are caught without causing
  * two devices with different pen settings to rewrite each other.
  */
-export function companionContentOnly(doc: Pick<InkDocument, "pages">, resources: unknown): string {
+export function companionContentOnly(doc: CompanionDocument, resources: unknown): string {
   return JSON.stringify({
     pages: companionPagesPayload(doc),
+    furniture: doc.endless ? undefined : readFurniture(doc.furniture),
     resources,
   });
 }
@@ -218,12 +227,13 @@ export function companionContentOnly(doc: Pick<InkDocument, "pages">, resources:
  * Page is automatically fingerprinted without touching Companion PDFs.
  */
 export function companionContent(
-  doc: Pick<InkDocument, "pages">,
+  doc: CompanionDocument,
   options: CompanionExportOptions,
   resources: unknown,
 ): string {
   return JSON.stringify({
     pages: companionPagesPayload(doc),
+    furniture: doc.endless ? undefined : readFurniture(doc.furniture),
     options,
     resources,
   });
@@ -253,7 +263,7 @@ export interface CompanionIO {
   pdfContentHash?: (path: string) => Promise<string | null>;
   pdfPaths: () => string[];
   rename: (from: string, to: string) => Promise<void>;
-  replace: (entry: CompanionEntry, bytes: Uint8Array, id: string) => Promise<void>;
+  replace: (entry: CompanionEntry, bytes: Uint8Array, id: string) => Promise<boolean | void>;
   persist: () => Promise<void>;
 }
 
@@ -274,10 +284,14 @@ export class CompanionController {
     private readonly io: CompanionIO,
   ) {}
 
+  revision(id: string): number {
+    return this.revisions.get(id) ?? 0;
+  }
+
   markChanged(id: string): boolean {
     const entry = this.store.entries[id];
     if (!entry?.enabled) return false;
-    this.revisions.set(id, (this.revisions.get(id) ?? 0) + 1);
+    this.revisions.set(id, this.revision(id) + 1);
     const transitioned = !entry.dirty;
     entry.dirty = true;
     return transitioned;
@@ -286,9 +300,11 @@ export class CompanionController {
   async resolve(id: string, allowFullScan = true): Promise<string | null> {
     const entry = this.store.entries[id];
     if (!entry) return null;
-    if (this.io.exists(entry.pdfPath) && (await this.io.pdfIdentity(entry.pdfPath)) === id)
-      return entry.pdfPath;
-    if (this.chosen.has(id)) {
+    const expected = entry.pdfPath;
+    const ownedTarget = this.io.exists(expected) && (await this.io.pdfIdentity(expected)) === id;
+    if (expected !== entry.pdfPath) return this.resolve(id, allowFullScan);
+    if (ownedTarget) return expected;
+    if (entry.awaitingPdf || this.chosen.has(id)) {
       if (this.io.exists(entry.pdfPath)) throw new Error(t("notebooks.companion.errUnrelatedFile"));
       return null;
     }
@@ -315,11 +331,19 @@ export class CompanionController {
       const dir = parentOf(p);
       return dir === pdfDir || dir === noteDir || expectedNames.has(baseOf(p));
     };
-    const candidates = allowFullScan ? allCandidates : allCandidates.filter(isLikely);
+    const candidates = allowFullScan
+      ? allCandidates
+      : allCandidates
+          .filter(isLikely)
+          .sort(
+            (a, b) => Number(expectedNames.has(baseOf(b))) - Number(expectedNames.has(baseOf(a))),
+          )
+          .slice(0, 16);
     const owned: string[] = [];
     for (const path of candidates) {
       if ((await this.io.pdfIdentity(path)) === id) owned.push(path);
     }
+    if (expected !== entry.pdfPath) return this.resolve(id, allowFullScan);
     if (owned.length > 1) throw new Error(t("notebooks.companion.errMultiplePdfs"));
     if (owned.length === 1) {
       entry.pdfPath = owned[0];
@@ -340,6 +364,7 @@ export class CompanionController {
       throw new Error(t("notebooks.companion.errOwnedByOther"));
     this.store.entries[id].pdfPath = clean;
     this.store.entries[id].dirty = true;
+    delete this.store.entries[id].awaitingPdf;
     this.chosen.add(id);
   }
 
@@ -348,6 +373,11 @@ export class CompanionController {
     if (!entry) return;
     const changedName = entry.notebookPath.split("/").pop() !== notebookPath.split("/").pop();
     if ((!changedName && !force) || !entry.followName) {
+      entry.notebookPath = notebookPath;
+      await this.io.persist();
+      return;
+    }
+    if (entry.awaitingPdf) {
       entry.notebookPath = notebookPath;
       await this.io.persist();
       return;
@@ -367,6 +397,18 @@ export class CompanionController {
     await this.io.persist();
   }
 
+  async isCurrent(
+    entry: CompanionEntry,
+    target: string,
+    current: CompanionSnapshot,
+  ): Promise<boolean> {
+    if (current.contentHash && this.io.pdfContentHash) {
+      // Identity-only PDFs are refreshed once to upgrade to portable freshness.
+      return (await this.io.pdfContentHash(target)) === current.contentHash;
+    }
+    return current.fingerprint === entry.lastFingerprint;
+  }
+
   update(id: string, snapshot: () => Promise<CompanionSnapshot>, force = false): Promise<void> {
     if (!this.store.entries[id]?.enabled) return Promise.resolve();
     const existing = this.running.get(id);
@@ -383,58 +425,58 @@ export class CompanionController {
           this.pending.delete(id);
           const entry = this.store.entries[id];
           if (!entry?.enabled) break;
-          const revision = this.revisions.get(id) ?? 0;
+          const revision = this.revision(id);
           try {
             const current = await request.snapshot();
             const target = await this.resolve(id, request.force);
             if (current.resources.includes(entry.pdfPath))
               throw new Error(t("notebooks.companion.errSourceConflict"));
-            if (!request.force && target) {
-              const pdfHash = current.contentHash
-                ? await this.io.pdfContentHash?.(target)
-                : undefined;
-              const upToDate =
-                pdfHash !== null && pdfHash !== undefined
-                  ? pdfHash === current.contentHash
-                  : current.fingerprint === entry.lastFingerprint;
-              if (upToDate) {
-                const dirty = (this.revisions.get(id) ?? 0) !== revision;
-                const changed =
-                  entry.dirty !== dirty ||
-                  entry.error !== undefined ||
-                  entry.lastFingerprint !== current.fingerprint;
-                entry.dirty = dirty;
-                entry.lastFingerprint = current.fingerprint;
-                delete entry.error;
-                if (changed) await this.io.persist();
-                continue;
-              }
+            if (!request.force && target && (await this.isCurrent(entry, target, current))) {
+              const dirty = this.revision(id) !== revision;
+              const changed =
+                entry.dirty !== dirty ||
+                entry.error !== undefined ||
+                entry.awaitingPdf === true ||
+                entry.lastFingerprint !== current.fingerprint;
+              entry.dirty = dirty;
+              entry.lastFingerprint = current.fingerprint;
+              delete entry.error;
+              delete entry.awaitingPdf;
+              if (changed) await this.io.persist();
+              continue;
             }
-            if (!target && entry.lastFingerprint && !request.force)
+            if (!target && (entry.lastFingerprint || entry.awaitingPdf) && !request.force)
               throw new Error(t("notebooks.companion.errMissing"));
             this.rendered.add(id);
             const queuedNext = this.pending.get(id);
             if (queuedNext) queuedNext.force = false;
             const bytes = await current.export();
-            if (!entry.enabled) break;
-            // The PDF may have moved while it was rendered; resolve again before writing.
-            await this.resolve(id, false);
+            if (!entry.enabled || this.store.entries[id] !== entry) continue;
+            // A moved or removed target can change while the renderer yields.
+            const latestTarget = await this.resolve(id, false);
+            if (
+              !latestTarget &&
+              ((target && !this.io.exists(target)) || entry.awaitingPdf) &&
+              !request.force
+            )
+              throw new Error(t("notebooks.companion.errMissing"));
             if (current.resources.includes(entry.pdfPath))
               throw new Error(t("notebooks.companion.errSourceConflict"));
-            await this.io.replace(entry, bytes, id);
+            if (!entry.enabled || this.store.entries[id] !== entry) continue;
+            if ((await this.io.replace(entry, bytes, id)) === false) continue;
+            if (!entry.enabled || this.store.entries[id] !== entry) continue;
             this.chosen.delete(id);
+            delete entry.awaitingPdf;
             entry.lastFingerprint = current.fingerprint;
-            const latest = await request.snapshot();
-            entry.dirty =
-              latest.fingerprint !== current.fingerprint ||
-              (this.revisions.get(id) ?? 0) !== revision;
+            entry.dirty = this.pending.has(id) || this.revision(id) !== revision;
             delete entry.error;
             await this.io.persist();
           } catch (error) {
+            if (!entry.enabled || this.store.entries[id] !== entry) continue;
             entry.dirty = true;
             entry.error = error instanceof Error ? error.message : String(error);
             await this.io.persist();
-            throw error;
+            if (!this.pending.has(id)) throw error;
           }
         }
       })

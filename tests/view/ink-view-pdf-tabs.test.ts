@@ -351,3 +351,43 @@ describe("a PDF tab's contents", () => {
     expect(lastOutline(sidebar.setPdfTab)).toEqual([true, []]);
   });
 });
+
+it("queues the notebook as its companion while an attached PDF is showing", async () => {
+  const s = setup();
+  s.view.showTab("b1");
+  expect(s.surface.document.pages).toHaveLength(4);
+  const { DocumentEncoder } = await import("../../src/model/serialize");
+  const { fingerprintCompanionDoc } = await import("../../src/view/companion-pdf");
+  const id = "a3f9211234567890";
+  const update = vi.fn(async () => new Promise<void>(() => {}));
+  const view = Object.assign(s.view, {
+    encoder: new DocumentEncoder(),
+    noteBody: `---\nfinenotes-companion-id: ${id}\n---\n`,
+    plugin: {
+      settings: { paperWidth: 1024 },
+      companionPdfs: { entry: () => ({ enabled: true }), update },
+    },
+    saveNow: vi.fn(async () => {}),
+  }) as unknown as Inside & {
+    file: { path: string; basename: string };
+    app: Parameters<typeof fingerprintCompanionDoc>[0];
+    closeCompanionPdf(file: unknown): Promise<void>;
+  };
+  view.file.basename = "Algo.notebook";
+  vi.stubGlobal("window", { setTimeout, clearTimeout });
+  await view.closeCompanionPdf(view.file);
+  const [, , capture, force] = update.mock.calls[0] as unknown as [
+    string,
+    unknown,
+    () => Promise<{ contentHash?: string; resources: string[] }>,
+    boolean,
+  ];
+  const captured = await capture();
+  const expected = await fingerprintCompanionDoc(view.app, s.doc, "Algo", {
+    usePressure: false,
+    highlighterAlpha: 0.4,
+  });
+  expect(force).toBe(false);
+  expect(captured.contentHash).toBe(expected.contentHash);
+  expect(captured.resources).toEqual([]);
+});

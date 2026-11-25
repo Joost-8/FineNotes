@@ -616,6 +616,14 @@ export const notebooks = {
   "notebooks.export.page": "Page {page}",
   "notebooks.export.share": "Share…",
   "notebooks.export.open": "Open",
+  "notebooks.export.errNoPdfReader": "PDF source reader unavailable.",
+  "notebooks.export.errPageSize": "A page has no size.",
+  "notebooks.export.errEncodePage": "The page could not be encoded — it may be too large.",
+  "notebooks.export.errPdfBackdrop": "A PDF backdrop is required.",
+  "notebooks.export.errMissingPdfPage": "Missing page {page} in {path}",
+  "notebooks.export.errEmptyPdfCrop": "PDF page has an empty crop box.",
+  "notebooks.export.errPdfRotation": "Unsupported PDF page rotation.",
+  "notebooks.export.errEncodeOverlay": "PDF annotations could not be encoded.",
   "notebooks.export.pages": "Pages",
   "notebooks.export.pageAs": "Page {page}, exported as page {at}",
   "notebooks.importModal.beta": "Beta",
@@ -1607,4 +1615,25 @@ export const notebooks = {
   "notebooks.companion.errNoPages": "The notebook has no pages to export.",
   "notebooks.companion.errMissingIdentity": "Missing companion PDF identity.",
   "notebooks.companion.errNotebookChanged": "Notebook changed during companion update.",
+  "notebooks.companion.errInvalidIdentity": "Invalid companion identity.",
+  "notebooks.companion.errInvalidPath":
+    "Choose a vault-relative PDF path without hidden folders or parent traversal.",
+  "notebooks.companion.errNotPdf": "The companion target must be a PDF file.",
+  "notebooks.companion.errCreateFolder": "Cannot create PDF folder: {path}",
+  "notebooks.companion.errMissingPath": "Missing PDF: {path}",
+  "notebooks.companion.errMissingSource": "Missing export source: {path}",
+  "notebooks.companion.errTargetExists": "Another file already exists at that path: {path}",
+  "notebooks.companion.errDuplicateNotebook":
+    "Two notebooks have the same companion identity. Remove the companion ID from the copied notebook before enabling it.",
+  "notebooks.companion.errBackupPreserved":
+    "Companion replacement recovery is incomplete; the previous PDF backup is preserved.",
+  "notebooks.companion.errStageOccupied":
+    "A companion staging or backup path is occupied. Resolve it before updating.",
+  "notebooks.companion.errRefuseReplace": "Refusing to replace an unrelated PDF.",
+  "notebooks.companion.errStageInvalid": "Staged companion PDF did not validate.",
+  "notebooks.companion.errMovedDuringWrite":
+    "Companion moved during replacement; retry at its new path.",
+  "notebooks.companion.errTargetChanged": "Companion target changed during export.",
+  "notebooks.companion.errReplacementInvalid": "Companion replacement did not validate.",
+  "notebooks.companion.errAlreadyEnabled": "This notebook already has an enabled companion PDF.",
 } as const;

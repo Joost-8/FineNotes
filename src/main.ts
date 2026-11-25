@@ -886,23 +886,18 @@ export default class GoodObsidianPlugin extends Plugin {
     this.registerEvent(
       this.app.vault.on("delete", (file) => {
         this.libraryPathChanged(file.path);
-        void this.companionPdfs
-          .deleted(file.path)
-          .catch(
-            () =>
-              new Notice(
-                t("notebooks.companion.noticePrefix", { error: "could not save status." }),
-              ),
-          );
+        this.companionPdfs.deleted(file.path);
       }),
     );
-    this.registerEvent(
-      this.app.vault.on("modify", (file) => {
-        this.companionPdfs.modified(file.path);
-        if (this.companionPdfs.isInternal(file.path)) return;
-        for (const view of this.openNotebooks()) view.companionResourceChanged(file.path);
-      }),
-    );
+    const companionFileChanged = (file: TAbstractFile): void => {
+      if (!(file instanceof TFile)) return;
+      this.companionPdfs.modified(file.path);
+      if (this.companionPdfs.isInternal(file.path)) return;
+      for (const view of this.openNotebooks()) view.companionVaultFileChanged(file.path);
+    };
+    this.registerEvent(this.app.vault.on("modify", companionFileChanged));
+    this.registerEvent(this.app.vault.on("create", companionFileChanged));
+    this.register(() => this.companionPdfs.destroy());
     this.register(() => this.fileMoves.destroy());
     this.wordCheck.answered = (count) => this.remindToRelearn(count);
     void loadSharing({

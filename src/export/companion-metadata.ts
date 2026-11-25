@@ -1,5 +1,6 @@
 /** Ownership and content hash travel invisibly inside the PDF's Subject metadata. */
 import { PDFDocument } from "pdf-lib";
+import { t } from "../i18n/translate";
 import { validCompanionId } from "../model/companion-pdf";
 
 const PREFIX = "FineNotes companion ";
@@ -11,7 +12,7 @@ export interface CompanionPdfMeta {
 }
 
 export function companionPdfSubject(id: string, contentHash?: string): string {
-  if (!validCompanionId(id)) throw new Error("Invalid companion identity");
+  if (!validCompanionId(id)) throw new Error(t("notebooks.companion.errInvalidIdentity"));
   if (contentHash && HASH_RE.test(contentHash)) {
     return `${PREFIX}${id} ${contentHash}`;
   }

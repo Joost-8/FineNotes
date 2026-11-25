@@ -98,6 +98,7 @@ export interface NoteSettingsHost {
       running: boolean;
       pdfExists: boolean;
     };
+    observeStatus?: (listener: () => void) => () => void;
     configure: (patch: {
       enabled?: boolean;
       followName?: boolean;
@@ -117,6 +118,7 @@ export class NoteSettingsModal extends Modal {
   /** The name and folder the summary card was drawn with. */
   private shown: { name: string; folder: string } | undefined;
   private renameRef: EventRef | undefined;
+  private stopCompanion?: () => void;
 
   constructor(
     app: App,
@@ -147,6 +149,8 @@ export class NoteSettingsModal extends Modal {
   }
 
   override onClose(): void {
+    this.stopCompanion?.();
+    this.stopCompanion = undefined;
     if (this.renameRef) this.app.vault.offref(this.renameRef);
     this.renameRef = undefined;
     this.keyboard.end();
@@ -154,6 +158,8 @@ export class NoteSettingsModal extends Modal {
   }
 
   private render(): void {
+    this.stopCompanion?.();
+    this.stopCompanion = undefined;
     const { contentEl } = this;
     // Re-rendering drops the field being typed in.
     this.keyboard.end();
@@ -192,25 +198,36 @@ export class NoteSettingsModal extends Modal {
     const head = new Setting(card).setDesc(t("notebooks.companion.desc"));
     const titleWrap = head.nameEl.createDiv({ cls: "goodobsidian-ns-companion-head" });
     titleWrap.createSpan({ text: t("notebooks.companion.title") });
-    const badge = titleWrap.createSpan({
-      cls: "goodobsidian-ns-companion-badge",
-      text: state.enabled
-        ? state.error
-          ? t("notebooks.companion.badgeError")
-          : state.running
-            ? t("notebooks.companion.statusUpdating")
-            : !state.pdfExists
-              ? t("notebooks.companion.badgeMissing")
-              : state.dirty
-                ? t("notebooks.companion.statusNeedsUpdate")
-                : t("notebooks.companion.statusUpToDate")
-        : t("notebooks.companion.statusOff"),
-    });
-    if (!state.enabled) badge.addClass("is-off");
-    else if (state.error || !state.pdfExists) badge.addClass("is-error");
-    else if (state.running) badge.addClass("is-running");
-    else if (state.dirty) badge.addClass("is-dirty");
-    else badge.addClass("is-synced");
+    const badge = titleWrap.createSpan({ cls: "goodobsidian-ns-companion-badge" });
+    const refreshBadge = (): void => {
+      const now = host.state();
+      badge.setText(
+        !now.enabled
+          ? t("notebooks.companion.statusOff")
+          : now.error
+            ? t("notebooks.companion.badgeError")
+            : now.running
+              ? t("notebooks.companion.statusUpdating")
+              : !now.pdfExists
+                ? t("notebooks.companion.badgeMissing")
+                : now.dirty
+                  ? t("notebooks.companion.statusNeedsUpdate")
+                  : t("notebooks.companion.statusUpToDate"),
+      );
+      const tone = !now.enabled
+        ? "is-off"
+        : now.error || !now.pdfExists
+          ? "is-error"
+          : now.running
+            ? "is-running"
+            : now.dirty
+              ? "is-dirty"
+              : "is-synced";
+      for (const cls of ["is-off", "is-error", "is-running", "is-dirty", "is-synced"])
+        badge.toggleClass(cls, cls === tone);
+    };
+    refreshBadge();
+    this.stopCompanion = host.observeStatus?.(refreshBadge);
 
     head.addToggle((toggle) =>
       toggle.setValue(state.enabled).onChange((on) => {

@@ -129,3 +129,29 @@ it("a failed first export with no previous PDF can recover and retry", async () 
   await replaceCompanionPdf(s.entry, s.bytes, ID, s.io);
   expect(s.files.get("Book.pdf")).toBe("new:" + ID);
 });
+
+it("does not promote a staged PDF after the existing target is deleted", async () => {
+  const s = setup();
+  const write = s.io.create;
+  s.io.create = async (path, bytes) => {
+    await write(path, bytes);
+    s.files.delete(s.entry.pdfPath);
+  };
+  await expect(replaceCompanionPdf(s.entry, s.bytes, ID, s.io)).resolves.toBe(false);
+  expect(s.files.size).toBe(0);
+  expect(s.entry.transaction).toBeUndefined();
+});
+
+it("keeps the old backup without resurrecting its target while a new path syncs", async () => {
+  const s = setup();
+  const stage = `Book.pdf.fn-${ID}-pending.pdf`;
+  const backup = `Book.pdf.fn-${ID}-backup.pdf`;
+  s.entry.transaction = { target: "Book.pdf", stage, backup };
+  s.entry.pdfPath = "New/Book.pdf";
+  s.files.delete("Book.pdf");
+  s.files.set(backup, "old:" + ID);
+  s.files.set(stage, "new:" + ID);
+  await recoverCompanionWrite(s.entry, ID, s.io);
+  expect(s.files).toEqual(new Map([[backup, "old:" + ID]]));
+  expect(s.entry.transaction).toBeUndefined();
+});

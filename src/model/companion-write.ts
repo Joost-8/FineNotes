@@ -1,4 +1,5 @@
 /** Journalled, same-folder staging: a failed render/write never truncates the good PDF. */
+import { t } from "../i18n/translate";
 import type { CompanionEntry } from "./companion-pdf";
 
 export interface CompanionWriteIO {
@@ -8,6 +9,7 @@ export interface CompanionWriteIO {
   rename: (from: string, to: string) => Promise<void>;
   remove: (path: string) => Promise<void>;
   persist: () => Promise<void>;
+  cancelled?: () => boolean;
 }
 
 export async function recoverCompanionWrite(
@@ -17,12 +19,12 @@ export async function recoverCompanionWrite(
 ): Promise<void> {
   const tx = entry.transaction;
   if (!tx) return;
-  if (
-    entry.pdfPath !== tx.target &&
-    io.exists(entry.pdfPath) &&
-    (await io.identity(entry.pdfPath)) === id
-  ) {
-    for (const path of [tx.stage, tx.backup]) if (io.exists(path)) await io.remove(path);
+  if (entry.pdfPath !== tx.target) {
+    const moved = io.exists(entry.pdfPath) && (await io.identity(entry.pdfPath)) === id;
+    for (const path of moved ? [tx.stage, tx.backup] : [tx.stage]) {
+      if (io.exists(path) && (await io.identity(path)) === id) await io.remove(path);
+    }
+    // A backup at the old path may be the only good copy while the new path syncs.
     delete entry.transaction;
     await io.persist();
     return;
@@ -49,10 +51,7 @@ export async function recoverCompanionWrite(
         await io.remove(path);
     delete entry.transaction;
     await io.persist();
-  } else
-    throw new Error(
-      "Companion replacement recovery is incomplete; the previous PDF backup is preserved.",
-    );
+  } else throw new Error(t("notebooks.companion.errBackupPreserved"));
 }
 
 export async function replaceCompanionPdf(
@@ -60,36 +59,56 @@ export async function replaceCompanionPdf(
   bytes: Uint8Array,
   id: string,
   io: CompanionWriteIO,
-): Promise<void> {
+): Promise<boolean> {
+  if (io.cancelled?.()) return false;
   await recoverCompanionWrite(entry, id, io);
+  if (io.cancelled?.()) return false;
   const target = entry.pdfPath;
   const stage = `${target}.fn-${id}-pending.pdf`;
   const backup = `${target}.fn-${id}-backup.pdf`;
   if (io.exists(stage) || io.exists(backup))
-    throw new Error("A companion staging/backup path is occupied. Resolve it before updating.");
-  if (io.exists(target) && (await io.identity(target)) !== id)
-    throw new Error("Refusing to replace an unrelated PDF.");
+    throw new Error(t("notebooks.companion.errStageOccupied"));
+  const hadTarget = io.exists(target);
+  if (hadTarget && (await io.identity(target)) !== id)
+    throw new Error(t("notebooks.companion.errRefuseReplace"));
+  let promoted = false;
+  const cancel = async (): Promise<false> => {
+    for (const path of promoted ? [stage, backup, target] : [stage, backup]) {
+      if (io.exists(path) && (await io.identity(path)) === id) await io.remove(path);
+    }
+    delete entry.transaction;
+    await io.persist();
+    return false;
+  };
+
   entry.transaction = { target, stage, backup };
   // Persist recovery paths before any binary write or rename.
   await io.persist();
   try {
+    if (io.cancelled?.()) return await cancel();
     await io.create(stage, bytes);
-    if ((await io.identity(stage)) !== id)
-      throw new Error("Staged companion PDF did not validate.");
-    if (entry.pdfPath !== target)
-      throw new Error("Companion moved during replacement; retry at its new path.");
+    const stageId = await io.identity(stage);
+    if (io.cancelled?.() || (hadTarget && !io.exists(target))) return await cancel();
+    if (stageId !== id) throw new Error(t("notebooks.companion.errStageInvalid"));
+    if (entry.pdfPath !== target) throw new Error(t("notebooks.companion.errMovedDuringWrite"));
     if (io.exists(target)) {
       if ((await io.identity(target)) !== id)
-        throw new Error("Companion target changed during export.");
+        throw new Error(t("notebooks.companion.errTargetChanged"));
+      if (io.cancelled?.() || !io.exists(target)) return await cancel();
       await io.rename(target, backup);
     }
+    if (io.cancelled?.()) return await cancel();
     await io.rename(stage, target);
-    if ((await io.identity(target)) !== id)
-      throw new Error("Companion replacement did not validate.");
+    promoted = true;
+    const targetId = await io.identity(target);
+    if (io.cancelled?.()) return await cancel();
+    if (targetId !== id) throw new Error(t("notebooks.companion.errReplacementInvalid"));
     if (io.exists(backup)) await io.remove(backup);
     delete entry.transaction;
     await io.persist();
+    return true;
   } catch (error) {
+    if (io.cancelled?.()) return cancel();
     // Restore via rename, not a second potentially partial binary write.
     if (!io.exists(target) && io.exists(backup) && (await io.identity(backup)) === id) {
       try {

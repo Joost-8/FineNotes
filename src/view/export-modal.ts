@@ -58,6 +58,8 @@ export interface ExportedFiles {
   where: string;
   /** The same files, for the share sheet. */
   files: File[];
+  /** Link this exact saved export as the notebook’s companion. */
+  keepUpdated?: () => Promise<void>;
 }
 
 export interface ExportPdfHost {
@@ -122,8 +124,6 @@ export interface ExportPdfHost {
   formats?: false;
   /** The dialog's title; "Export" when not given. */
   title?: string;
-  /** Optional: link a newly exported full-notebook PDF as an auto-updating Companion PDF. */
-  keepPdfUpdated?: (path: string) => Promise<void>;
 }
 
 /** The margins button's icon and name for each choice: the name is its tooltip. */
@@ -429,7 +429,7 @@ export class ExportPdfModal extends Modal {
           () => this.cancelled,
         );
         if (this.closed) return;
-        this.renderDone(saved, pages.length === pageCount);
+        this.renderDone(saved);
       } catch (error) {
         if (this.closed || (error instanceof DOMException && error.name === "AbortError")) return;
         this.busy = false;
@@ -610,7 +610,7 @@ export class ExportPdfModal extends Modal {
 
   // --- Saved -----------------------------------------------------------------
 
-  private renderDone(saved: ExportedFiles, allPagesExported = false): void {
+  private renderDone(saved: ExportedFiles): void {
     this.busy = false;
     this.keyboard.end();
     this.disposePreviews();
@@ -624,18 +624,13 @@ export class ExportPdfModal extends Modal {
     const status = contentEl.createDiv({ cls: "goodobsidian-ask-status" });
     const actions = contentEl.createDiv({ cls: "goodobsidian-ask-actions" });
 
-    if (
-      this.format === "pdf" &&
-      allPagesExported &&
-      saved.paths.length === 1 &&
-      this.host.keepPdfUpdated
-    ) {
+    const keepUpdated = saved.keepUpdated;
+    if (keepUpdated) {
       const keep = actions.createEl("button", { text: t("notebooks.companion.keepUpdated") });
-      const enable = this.host.keepPdfUpdated;
       keep.addEventListener("click", () => {
         keep.disabled = true;
         status.removeClass("is-error");
-        void enable(saved.paths[0])
+        void keepUpdated()
           .then(() => {
             if (this.closed) return;
             keep.remove();
