@@ -64,11 +64,13 @@ function setup(present: Record<string, ArrayBuffer>, hosted = false) {
     },
     offer: (id: string) => void offered.push(id),
   };
+  const languageOf = (path: string) =>
+    Object.keys(present).find((l) => path.endsWith(`grape-lang-${l}-1.0.bin`));
   const app = {
     vault: {
       adapter: {
-        exists: async (path: string) =>
-          Object.keys(present).some((l) => path.endsWith(`grape-lang-${l}-1.0.bin`)),
+        exists: async (path: string) => languageOf(path) !== undefined,
+        readBinary: async (path: string) => present[languageOf(path) ?? ""],
       },
     },
   };
@@ -76,9 +78,9 @@ function setup(present: Record<string, ArrayBuffer>, hosted = false) {
   return { packs, registered, offered };
 }
 
-describe("the language packs on this device", () => {
+describe("the language packs on this device, once published", () => {
   it("registers only the packs whose file is here, and hands them to the reader", async () => {
-    const { packs, registered } = setup({ nl: packBytes("nl", ["tentamen"], false) });
+    const { packs, registered } = setup({ nl: packBytes("nl", ["tentamen"], false) }, true);
     const ready = await packs.ready();
     expect(registered).toEqual(["grape-lang-nl"]);
     expect(ready.map((p) => p.key)).toEqual(["grape-lang-nl|1.0"]);
@@ -86,10 +88,13 @@ describe("the language packs on this device", () => {
   });
 
   it("gives the word check a pack's list and whether it underlines", async () => {
-    const { packs } = setup({
-      nl: packBytes("nl", ["tentamen", "college"], false),
-      fr: packBytes("fr", ["examen"], true),
-    });
+    const { packs } = setup(
+      {
+        nl: packBytes("nl", ["tentamen", "college"], false),
+        fr: packBytes("fr", ["examen"], true),
+      },
+      true,
+    );
     const nl = await packs.words("nl");
     expect([...(nl?.words ?? [])]).toEqual(["tentamen", "college"]);
     expect(nl?.underline).toBe(false);
@@ -98,14 +103,36 @@ describe("the language packs on this device", () => {
     expect(await packs.words("en")).toBeNull();
   });
 
-  it("offers a language's pack once a page in it is read, only once the packs are published", () => {
-    const unpublished = setup({});
-    unpublished.packs.seen("de");
-    expect(unpublished.offered).toEqual([]);
-    expect(unpublished.registered).toEqual([]);
-    const published = setup({}, true);
-    published.packs.seen("de");
-    published.packs.seen("en");
-    expect(published.offered).toEqual(["grape-lang-de"]);
+  it("offers a language's pack once a page in it is read", () => {
+    const { packs, offered } = setup({}, true);
+    packs.seen("de");
+    packs.seen("en");
+    expect(offered).toEqual(["grape-lang-de"]);
+  });
+
+  it("forgets a removed pack, and says it was one", async () => {
+    const { packs } = setup({ fr: packBytes("fr", ["examen"], true) }, true);
+    await packs.words("fr");
+    expect(packs.released("grape-lang-fr")).toBe(true);
+    expect(packs.released("grape-2")).toBe(false);
+  });
+});
+
+describe("the language packs on this device, before they are published", () => {
+  it("never registers a pack (Settings would offer a Re-download that cannot work) and offers nothing", async () => {
+    const { packs, registered, offered } = setup({ nl: packBytes("nl", ["tentamen"], false) });
+    const ready = await packs.ready();
+    packs.seen("de");
+    expect(ready.map((p) => p.key)).toEqual(["grape-lang-nl|1.0"]);
+    expect(registered).toEqual([]);
+    expect(offered).toEqual([]);
+  });
+
+  it("uses a file in the folder only when it is the pinned one", async () => {
+    // A pack made here is not the published file: its hash differs from the pin.
+    const { packs } = setup({ nl: packBytes("nl", ["tentamen"], false) });
+    const [nl] = await packs.ready();
+    await expect(nl.read()).rejects.toThrow(/not the one this build expects/);
+    expect(await packs.words("nl")).toBeNull();
   });
 });

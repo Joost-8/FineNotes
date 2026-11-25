@@ -93,7 +93,7 @@ function handle(request: HwrRequest, id: number): HwrResult {
   }
   if (request.type === "pack") {
     const pack = parseLanguagePack(request.bytes);
-    const packLexicon = new Lexicon(pack.words);
+    const packLexicon = new Lexicon(pack.words, false);
     packs.set(pack.meta.language, {
       lm: pack.lm,
       lexicon: packLexicon,

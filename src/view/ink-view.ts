@@ -4331,7 +4331,6 @@ export class InkView extends TextFileView {
     this.checkedWords.set(page.id, checked);
     // A page in another language is checked against its own pack, if any (word-check.ts flags).
     const language = reading.language ?? "en";
-    this.plugin.languagePacks.seen(language);
     const flagged = await this.plugin.wordCheck.flags(file.path, page.id, words, language);
     if (this.surface === surface)
       surface.setWordFlags(

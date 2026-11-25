@@ -196,8 +196,13 @@ export class Lexicon {
   private readonly words: string[] = [];
 
   /** `words` as `parseWordList` gives them (lower case); the short words are added. */
-  constructor(words: Iterable<string>) {
-    const all = new Set(SHORT);
+  /**
+   * `english`: add the English one- and two-letter words the list leaves
+   * out (`SHORT`); false for another language's list (a language pack's),
+   * which must not pull a word toward "to" or "of".
+   */
+  constructor(words: Iterable<string>, english = true) {
+    const all = new Set(english ? SHORT : []);
     for (const w of words) {
       const lower = w.toLowerCase();
       // Depth and length are stored in bytes; no word is that long.

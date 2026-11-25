@@ -542,6 +542,7 @@ export default class GoodObsidianPlugin extends Plugin {
     }),
     () => this.grape.source(),
     () => this.languagePacks.ready(),
+    (language) => this.languagePacks.seen(language),
   );
 
   /**
@@ -1552,7 +1553,10 @@ export default class GoodObsidianPlugin extends Plugin {
    * whatever holds it in memory lets go, and loads it again when next needed.
    */
   modelReleased(id: string): void {
-    if (id === "grape" || id === "grape-2") this.handwriting.dispose();
+    // A removed language pack leaves the worker too: the next read starts one without it.
+    if (id === "grape" || id === "grape-2" || this.languagePacks.released(id)) {
+      this.handwriting.dispose();
+    }
     if (id.startsWith("whisper-")) this.speech.release();
     if (OCR_TIERS.some((t) => t.asset.id === id)) this.ocr.releaseModel();
   }

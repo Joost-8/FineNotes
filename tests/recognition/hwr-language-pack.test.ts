@@ -97,6 +97,13 @@ describe("a language pack's file", () => {
   });
 });
 
+describe("a pack's word list in the reader", () => {
+  it("does not get the English one- and two-letter words an English list gets", () => {
+    expect(new Lexicon(["tentamen"]).size).toBeGreaterThan(1);
+    expect(new Lexicon(["tentamen"], false).size).toBe(1);
+  });
+});
+
 describe("the packs this build downloads", () => {
   it("has one pinned file per language Grape reads besides English, none for English", () => {
     expect(PACK_LANGUAGES.sort()).toEqual(["de", "es", "fr", "it", "nl", "pt"]);

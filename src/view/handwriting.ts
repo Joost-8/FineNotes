@@ -14,6 +14,7 @@ import type { HwrWorkerClient } from "../recognition/hwr/client";
 import type { PageInk } from "../recognition/hwr/lines";
 import type { HwrModelInfo, SuggestItem, SuggestResult } from "../recognition/hwr/protocol";
 import type { LineReading, PageReading } from "../recognition/hwr/recognizer";
+import type { PageLanguage } from "../recognition/hwr/page-language";
 import type { InkStroke } from "../recognition/hwr/features";
 import type { Rows, TaggedLine } from "../recognition/writer/rows";
 
@@ -102,6 +103,8 @@ export class HandwritingReader {
     private readonly grape: () => Promise<StoredModel | null>,
     /** The language packs on this device (language-packs.ts), sent to the worker once each. */
     private readonly packs: () => Promise<readonly StoredModel[]> = async () => [],
+    /** Told each page's language as it is read (language-packs.ts offers its pack). */
+    private readonly onLanguage: (language: PageLanguage) => void = () => {},
   ) {}
 
   /** What the model in the worker is, or null before one is loaded. Never loads one. */
@@ -174,10 +177,12 @@ export class HandwritingReader {
     try {
       await this.sendLexicon(client, context.lexicon ?? null);
       await this.sendPacks(client);
-      return await client.readPage(inkForReading(strokes), true, keep, {
+      const reading = await client.readPage(inkForReading(strokes), true, keep, {
         words: context.words,
         reread: context.lexicon !== undefined ? context.lexicon !== null : false,
       });
+      this.onLanguage(reading.language ?? "en");
+      return reading;
     } catch (error) {
       this.dispose();
       throw error;
