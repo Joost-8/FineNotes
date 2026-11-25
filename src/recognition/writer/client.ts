@@ -42,6 +42,9 @@ export class WriterClient {
   private nextId = 1;
   private idleTimer = 0;
 
+  /** `onRelease`: called each time a running worker is let go (idle, an error, `dispose`). */
+  constructor(private readonly onRelease: () => void = () => undefined) {}
+
   /** Whether a worker is running (and holding the model). */
   get running(): boolean {
     return this.worker !== null;
@@ -137,6 +140,7 @@ export class WriterClient {
 
   private stop(error: Error | null): void {
     window.clearTimeout(this.idleTimer);
+    const had = this.worker !== null;
     this.worker?.terminate();
     this.worker = null;
     this.loaded = "";
@@ -148,6 +152,7 @@ export class WriterClient {
       window.clearTimeout(p.timer);
       p.reject(error ?? new Error("the writer's worker was released"));
     }
+    if (had) this.onRelease();
   }
 
   /** Let the worker go now (the plugin is unloading, or the OCR needs the memory). */
