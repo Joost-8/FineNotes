@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { kindFor } from "../../../src/recognition/writer/kinds";
 import { parseManifest, type WriterManifest } from "../../../src/recognition/writer/manifest";
-import { neatnessOf, strengthAt } from "../../../src/recognition/writer/neatness";
+import { guidanceAt, neatnessOf, strengthAt } from "../../../src/recognition/writer/neatness";
 import {
   LETTER,
   LINE,
@@ -241,6 +241,12 @@ describe("neatness", () => {
     expect(strengthAt(0.75)).toBeCloseTo(0.85);
     expect(strengthAt(Number.NaN)).toBeCloseTo(0.7);
     expect(strengthAt(7)).toBeCloseTo(1);
+  });
+
+  it("writes at the model's own guidance wherever the slider is", () => {
+    expect(guidanceAt(0, 1)).toBe(1);
+    expect(guidanceAt(1, 1)).toBe(1);
+    expect(guidanceAt(0.25, 1.5)).toBe(1.5);
   });
 
   it("reads a missing or broken setting as the middle, and holds it to 0..1", () => {
