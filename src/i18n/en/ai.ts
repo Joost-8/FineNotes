@@ -600,6 +600,8 @@ export const ai = {
   "ai.neaten.modelBroken":
     "Dostoyev, the handwriting writer, is damaged on this device. Download it again in Settings, Models on this device.",
   "ai.neaten.failed": "Beautify could not rewrite these words, so it only tidied them.",
+  "ai.neaten.noMemory":
+    "There is not enough memory on this device right now to write in your hand. Try again in a moment.",
   "ai.ocr.tierFast": "Fast",
   "ai.ocr.tierAccurate": "Accurate",
   "ai.ocr.tierMostAccurate": "Most accurate",

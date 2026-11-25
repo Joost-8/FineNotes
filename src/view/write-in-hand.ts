@@ -19,6 +19,7 @@
 
 import { Notice } from "obsidian";
 import { t } from "../i18n/translate";
+import { isOutOfMemory } from "../recognition/writer/protocol";
 import type { Page, Stroke, TextBoxElement } from "../model/document";
 import { AddStrokeToPage, CompositeCommand, RemoveTextBoxFromPage } from "../model/page-commands";
 import { neatenCommandFor } from "../model/neaten-commands";
@@ -144,16 +145,18 @@ export class WriteInHand {
     // The word's underline shows the work, as the card did.
     surface.setActiveWordFlag(pageId, wordIds);
     let written: Awaited<ReturnType<KnownWriter["writeKnown"]>> = null;
+    let failure: string | null = null;
     try {
       written = await this.writer.writeKnown([text], { stop, seed: freshSeed() });
     } catch (error) {
       console.warn("FineNotes: writing in your hand stopped", error);
+      failure = isOutOfMemory(error) ? t("ai.neaten.noMemory") : null;
     } finally {
       surface.setActiveWordFlag(null);
     }
     if (stop()) return;
     if (!written) {
-      new Notice(t("ai.hand.failed"), 6000);
+      new Notice(failure ?? t("ai.hand.failed"), 8000);
       return;
     }
     // The whole text as one unit (a correction may be two words), as the model spaced it.
@@ -226,14 +229,16 @@ export class WriteInHand {
       return locked() || !still || still.text !== box.text;
     };
     let written: Awaited<ReturnType<KnownWriter["writeKnown"]>> = null;
+    let failure: string | null = null;
     try {
       written = await this.writer.writeKnown(pieces, { stop, seed: freshSeed() });
     } catch (error) {
       console.warn("FineNotes: writing in your hand stopped", error);
+      failure = isOutOfMemory(error) ? t("ai.neaten.noMemory") : null;
     }
     if (stop()) return;
     if (!written) {
-      new Notice(t("ai.hand.failed"), 6000);
+      new Notice(failure ?? t("ai.hand.failed"), 8000);
       return;
     }
     const writing = writingOf(page);

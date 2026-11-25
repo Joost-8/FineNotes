@@ -2,7 +2,7 @@
  * Messages between the main thread and the writer's worker (worker.ts,
  * client.ts). Every request carries an id its reply repeats, and the tag.
  *
- * PURE: types only.
+ * PURE: types, and one reading of an error message.
  */
 
 import type { WriterManifest } from "./manifest";
@@ -36,6 +36,17 @@ export type WriterRequest =
 
 export type WriterResult =
   { type: "load"; ms: number } | { type: "write"; written: Written; ms: number };
+
+/**
+ * Whether a writer error is the WebAssembly runtime failing for memory: on
+ * the iPad ONNX Runtime starts in a new worker with "no available backend
+ * found. ERR: [wasm] RangeError: Out of memory" while the memory of a worker
+ * just let go (the OCR's, the writer's last) has not been reclaimed yet.
+ */
+export function isOutOfMemory(error: unknown): boolean {
+  const text = error instanceof Error ? error.message : String(error);
+  return /out of memory|no available backend/i.test(text);
+}
 
 export type WriterReply = { id: number } & (
   { ok: true; result: WriterResult } | { ok: false; error: string }
