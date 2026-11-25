@@ -23,6 +23,7 @@ import { ASK_MAX_PAGES } from "./ai-chat";
 import { isRecord } from "./llm-request";
 import { MAX_NOTE_CHARS, MAX_READ_CHARS } from "./vault-context";
 import { MAX_OUTLINE_ENTRIES, type OutlineEntry } from "../model/outline-edit";
+import { READ_PDF_TAB_TOOL, type ReadPdfTabCall, parseReadPdfTab } from "./ask-pdf-tabs";
 
 /** Rounds of tool calls one question may take before the answer has to come. */
 export const ASK_MAX_TOOL_ROUNDS = 8;
@@ -129,6 +130,7 @@ export const ASK_TOOLS = [
       additionalProperties: false,
     },
   },
+  READ_PDF_TAB_TOOL,
   {
     name: "linked_notes",
     description:
@@ -451,7 +453,8 @@ export type AskToolCall =
       shape: "circle" | "box" | "highlight";
       comment: string;
     }
-  | { tool: "add_comment"; page: number; x: number; y: number; text: string };
+  | { tool: "add_comment"; page: number; x: number; y: number; text: string }
+  | ReadPdfTabCall;
 
 /** A `tool_use` block from a reply. */
 export interface ToolUse {
@@ -517,6 +520,8 @@ export function parseToolCall(
       const query = text("query");
       return query ? { tool: "search_vault", query: query.trim() } : { error: '"query" is empty.' };
     }
+    case "read_pdf_tab":
+      return parseReadPdfTab(args);
     case "read_note": {
       const path = text("path");
       if (!path) return { error: '"path" is empty.' };
@@ -715,6 +720,8 @@ export function toolStatus(call: AskToolCall): string {
       return t("ai.tool.searchingVault", { query: call.query });
     case "read_note":
       return t("ai.tool.readingNote", { name: noteName(call.path) });
+    case "read_pdf_tab":
+      return t("ai.tool.readingNote", { name: call.tab });
     case "linked_notes":
       return t("ai.tool.lookingAtLinks");
     case "finenotes_help":

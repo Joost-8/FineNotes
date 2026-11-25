@@ -170,6 +170,8 @@ import {
 import { InkSurface, type SearchFocus } from "./ink-surface";
 import { PdfBackdropCache } from "./pdf-backdrop";
 import { PdfTextCache } from "./pdf-text-source";
+import { type PdfTabReadHost, askPdfTabs, readPdfTab } from "./ask-pdf-tab-read";
+import { type AskPdfReading, pdfTabsPrompt } from "../recognition/ask-pdf-tabs";
 import { type PdfWorker, acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
 import { vaultPathFromDrop } from "../model/file-drop";
 import { droppedText, outsideDropEffect, takesDrag } from "./drop-text";
@@ -1006,6 +1008,8 @@ export class InkView extends TextFileView {
   private readonly tabSessions = new Map<string, SurfaceSession>();
   /** The tab shown: {@link NOTES_TAB}, or a `BesidePdf` id. */
   private activeTab = NOTES_TAB;
+  /** The PDF tab and page in view when Ask was last opened; `null` when it was opened on the notes. */
+  private askReading: AskPdfReading | null = null;
   /** The tool the notes had in hand when a PDF's tab took over; it comes back with them. */
   private notesTool: ActiveTool | null = null;
   private tabViewTimer = 0;
@@ -3105,6 +3109,8 @@ export class InkView extends TextFileView {
   /** Ask, in the layout last chosen: a window, or the sidebar beside the page. */
   private openAsk(): void {
     if (this.isDamaged()) return;
+    // Asked from a PDF's tab: "this slide" is the page in view there.
+    this.askReading = this.pdfTabInView();
     this.showTab(NOTES_TAB);
     if (this.settings.askLayout === "sidebar" && this.chatPanel) {
       this.setChatPanel(true);
@@ -3272,7 +3278,10 @@ export class InkView extends TextFileView {
       this.settings.askShowCost,
       this.file?.path ?? "",
     );
-    const prompt = `${system}\n${buildAskToolsPrompt()}\n${abilities}`;
+    // A tab shown beside an open Ask sidebar is what the user reads now.
+    const reading = this.pdfTabInView() ?? this.askReading;
+    const tabs = pdfTabsPrompt(askPdfTabs(this.pdfTabReader()), reading);
+    const prompt = `${system}\n${buildAskToolsPrompt()}\n${abilities}${tabs ? `\n${tabs}` : ""}`;
     const turn = { answer: ++this.askAnswers, commands: [] as Command[] };
     this.askTurn = turn;
     // Everything the answer changed is one step of the notebook's undo.
@@ -3472,6 +3481,23 @@ export class InkView extends TextFileView {
     this.requestSave();
   }
 
+  /** The PDF tab shown and its page in view; `null` on the notes. */
+  private pdfTabInView(): AskPdfReading | null {
+    const beside = this.onPdfTab ? findBeside(this.doc, this.activeTab) : null;
+    return beside ? { label: tabLabel(beside), page: (this.surface?.currentPage ?? 0) + 1 } : null;
+  }
+
+  /** What Ask's `read_pdf_tab` reads the PDF tabs through. */
+  private pdfTabReader(): PdfTabReadHost {
+    return {
+      tabs: () => (this.takesPdfTabs ? stripTabs(this.doc) : []),
+      exists: (path) => this.pdfExists(path),
+      document: (beside) => this.tabDocument(beside),
+      text: () => this.pdfText,
+      render: (page) => this.renderForAi(page),
+    };
+  }
+
   /** `read_outline`: the contents, and each PDF behind the pages with its own outline. */
   private async readOutlineForAi(): Promise<AskToolOutcome> {
     const surface = this.surface;
@@ -3527,6 +3553,8 @@ export class InkView extends TextFileView {
       case "read_note":
       case "linked_notes":
         return this.runVaultTool(call);
+      case "read_pdf_tab":
+        return readPdfTab(this.pdfTabReader(), call);
       case "create_note":
         return this.createAskNote(call.title, call.text, call.replace);
       case "finenotes_help":
