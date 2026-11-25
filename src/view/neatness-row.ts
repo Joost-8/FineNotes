@@ -1,10 +1,10 @@
 /**
- * Beautify's neatness slider, in the Lasso tool popover (Beautify is a
- * lasso action; a tool's settings live in its own popover, design rulings
- * 2026-10-27). A pen at the left end ("most like my ink") and Beautify's
- * brush at the right ("neatest"; sparkles already mean AI in the bar), the
- * tool bar's own slider between, five stops; the middle is the model's own
- * guidance (`recognition/writer/neatness.ts`).
+ * Beautify's neatness slider, at the end of the AI menu, below everything
+ * else there (Joost, 2026-11-25). A pen at the left end ("most like my
+ * ink") and Beautify's brush at the right ("neatest"), the tool bar's own
+ * slider between, five stops (`recognition/writer/neatness.ts`); one line
+ * under it says what Beautify does and what the two ends mean, at his
+ * explicit word ("with explanation").
  */
 
 import { setIcon } from "obsidian";
@@ -20,10 +20,10 @@ export interface NeatnessControl {
   set(neatness: number): void;
 }
 
-/** Appends the slider, under its label, to a popover's body. */
-export function renderNeatnessRow(body: HTMLElement, control: NeatnessControl): HTMLInputElement {
-  body.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.lasso.beautify") });
-  const row = body.createDiv({ cls: "goodobsidian-neatness" });
+/** Appends the slider, under its heading and over its one line, to the menu. */
+export function renderNeatnessRow(parent: HTMLElement, control: NeatnessControl): HTMLInputElement {
+  parent.createDiv({ cls: "goodobsidian-aimenu-heading", text: t("ai.menu.beautify") });
+  const row = parent.createDiv({ cls: "goodobsidian-neatness" });
   const end = (icon: string, label: string): void => {
     const mark = row.createSpan({
       cls: "goodobsidian-neatness-end",
@@ -31,7 +31,7 @@ export function renderNeatnessRow(body: HTMLElement, control: NeatnessControl): 
     });
     setIcon(mark, icon);
   };
-  end("pen-line", t("toolbar.lasso.likeMyInk"));
+  end("pen-line", t("ai.menu.likeMyInk"));
   const track = row.createDiv({ cls: "goodobsidian-width-slider" });
   const range = track.createEl("input", {
     cls: "goodobsidian-width-range",
@@ -40,7 +40,7 @@ export function renderNeatnessRow(body: HTMLElement, control: NeatnessControl): 
       min: "0",
       max: String(NEATNESS_STEPS),
       step: "1",
-      "aria-label": t("toolbar.lasso.neatness"),
+      "aria-label": t("ai.menu.neatness"),
     },
   });
   range.value = String(Math.round(neatnessOf(control.get()) * NEATNESS_STEPS));
@@ -48,6 +48,10 @@ export function renderNeatnessRow(body: HTMLElement, control: NeatnessControl): 
   syncRangeFill(range);
   range.addEventListener("input", () => syncRangeFill(range));
   range.addEventListener("change", () => control.set(Number(range.value) / NEATNESS_STEPS));
-  end("brush-cleaning", t("toolbar.lasso.neatest"));
+  end("brush-cleaning", t("ai.menu.neatest"));
+  parent.createDiv({
+    cls: "goodobsidian-aimenu-reason goodobsidian-neatness-about",
+    text: t("ai.menu.beautifyAbout"),
+  });
   return range;
 }

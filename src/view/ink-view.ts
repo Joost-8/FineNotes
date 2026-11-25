@@ -2694,6 +2694,7 @@ export class InkView extends TextFileView {
           }
         });
       },
+      this.plugin.beautifyNeatness(),
     );
   }
 
@@ -4842,7 +4843,6 @@ export class InkView extends TextFileView {
           this.surface?.refreshLassoChrome();
           this.plugin.saveLasso(mode, filter);
         },
-        beautifyNeatness: () => this.plugin.beautifyNeatness(),
         onToggleThumbnails: () => this.toggleSidebar(),
         onHome: () => void this.plugin.openLibrary(),
         onFullScreen: this.plugin.fullScreenOffered
