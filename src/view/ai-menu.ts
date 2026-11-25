@@ -14,7 +14,8 @@
  * key (Ask and the rest, what the menu is mostly opened for), then the
  * handwriting reader on this device; "AI settings…" closes the menu. With
  * `keyFolded`, the first is one row that opens it, so it stays out of the
- * way of anyone who has no key.
+ * way of anyone who has no key. Where Beautify writes in the hand, its
+ * neatness slider ends the menu (`neatness-row.ts`).
  */
 
 import { setIcon } from "obsidian";
@@ -22,6 +23,7 @@ import { t } from "../i18n/translate";
 import type { AiMenuItem } from "../recognition/ai-menu-model";
 import { menuAnchor, menuPlace } from "./bar-dock-model";
 import { docOf, shownDoc, winOf } from "./host-window";
+import { type NeatnessControl, renderNeatnessRow } from "./neatness-row";
 
 const POPOVER_WIDTH = 320;
 
@@ -37,11 +39,17 @@ export class AiMenuPopover {
     keyFolded = false,
     private readonly toggle: (id: string, on: boolean) => void = () => {},
     private readonly choose: (id: string, value: string) => void = () => {},
+    neatness: NeatnessControl | null = null,
   ) {
     this.el = shownDoc().body.createDiv({ cls: "goodobsidian-addpage goodobsidian-aimenu" });
     this.el.setAttribute("role", "menu");
     this.el.setAttribute("aria-label", t("ai.menu.title"));
     this.build(items, keyFolded);
+    // Beautify's neatness ends the menu, below everything (Joost, 2026-11-25).
+    if (neatness) {
+      this.el.createDiv({ cls: "goodobsidian-addpage-divider" });
+      renderNeatnessRow(this.el, neatness);
+    }
     this.place();
     this.installDismiss();
   }

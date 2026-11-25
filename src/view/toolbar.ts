@@ -248,7 +248,6 @@ import { dragRange } from "./range-drag";
 import { RowDrag } from "./row-drag";
 import { moveTo } from "./row-drag-model";
 import { syncRangeFill } from "./range-fill";
-import { type NeatnessControl, renderNeatnessRow } from "./neatness-row";
 import { clampEraserSize, eraserStops } from "../model/eraser-sizes";
 import {
   DEFAULT_WIDTH_PRESETS,
@@ -859,8 +858,6 @@ export interface ToolbarCallbacks {
   onEraserGreyChange?: (on: boolean) => void;
   /** The lasso's type, or what it picks up, changed. Hosts persist it. */
   onLassoChange?: (mode: LassoMode, filter: LassoFilter) => void;
-  /** Beautify's neatness slider, in the lasso popover; asked each time it opens (null: Beautify only tidies). */
-  beautifyNeatness?: () => NeatnessControl | null;
   /** Add a page; `anchor` is the button, for a popover to hang from. */
   onAddPage?: (anchor: HTMLElement) => void;
   onToggleThumbnails?: () => void;
@@ -4937,8 +4934,6 @@ export class Toolbar {
         this.popoverRender?.();
       });
     }
-    const neatness = this.callbacks.beautifyNeatness?.();
-    if (neatness) renderNeatnessRow(body, neatness);
   }
 
   /**
