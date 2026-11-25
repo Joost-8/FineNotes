@@ -33,7 +33,7 @@ import { median } from "../recognition/writer/rows";
 import {
   KNOWN_PRESSURE,
   boxXHeight,
-  MIN_LINE_PITCH,
+  spacingOf,
   chunkLine,
   flowWords,
   numericAnswer,
@@ -209,8 +209,8 @@ export class WriteInHand {
    * of ruled paper and below the box's top, never on anything already on the
    * page (ink, pictures, other boxes, tables). Its x-height is the box's own
    * lowercase (`boxXHeight`), larger only to stay legible; the word gap and
-   * line spacing are the writer's, in x-heights, from this page or else
-   * their practice sheets; the ink is the box's colour. A box written in Markdown is
+   * line spacing are the writer's, in x-heights, from this page when it
+   * holds enough writing or else their practice sheets (`spacingOf`); the ink is the box's colour. A box written in Markdown is
    * written as it reads, without its marks. When it does not all fit on the
    * page, or the note became read-only (`locked`), nothing changes.
    */
@@ -261,7 +261,8 @@ export class WriteInHand {
       t0: s.t0 ?? null,
       pts: s.pts,
     }));
-    const hand = measureHand(writing) ?? measureHand(sample);
+    // The page's measure only from enough writing: two strokes measured no gaps (Joost, 2026-11-25).
+    const hand = spacingOf(measureHand(writing), measureHand(sample));
     const pen = penFor(writing, box);
     const plan = layoutFor(page, box, hand, pen.size);
     const words = wordsOfLines(written.lines, plan.xHeight, pressureOf(writing));
@@ -405,7 +406,7 @@ function penFor(writing: readonly Stroke[], box: TextBoxElement): Omit<Stroke, "
 function layoutFor(
   page: Page,
   box: TextBoxElement,
-  hand: { xHeight: number; wordGap: number; linePitch: number } | null,
+  hand: { wordGap: number; linePitch: number },
   penSize: number,
 ): {
   xHeight: number;
@@ -428,8 +429,8 @@ function layoutFor(
     ) ?? null;
   // The box's own size (Joost, 2026-11-25: "keep it to the size of the text"), larger only to stay legible.
   const xHeight = boxXHeight(box.fontSize, penSize, block ? block.pitch : null);
-  const pitch = block?.pitch ?? Math.max(hand?.linePitch ?? 0, MIN_LINE_PITCH) * xHeight;
-  const gap = (hand?.wordGap ?? 1) * xHeight;
+  const pitch = block?.pitch ?? hand.linePitch * xHeight;
+  const gap = hand.wordGap * xHeight;
   const left = Math.max(box.x, block ? block.x0 : 0);
   const right = block ? block.x1 - xHeight * 0.5 : width - margin;
   return {
