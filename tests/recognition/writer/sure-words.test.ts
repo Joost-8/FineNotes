@@ -11,24 +11,28 @@ import {
   wordsOf,
 } from "../../../src/recognition/writer/sure-words";
 
-describe("applyAnswers with words just confirmed (Beautify asked)", () => {
-  const words = ["from", "the", "Bezout", "lemma"];
-  const ink = [["s1", "s2"], ["s3"], ["s4", "s5", "s6"], ["s7", "s8"]];
+describe("applyAnswers when the card read a word otherwise than Beautify (the reviewer's case)", () => {
+  // Beautify's own reading of the line says "testng"; the card showed the page's reading.
+  const words = ["testng", "the", "new"];
+  const ink = [["s1", "s2"], ["s3"], ["s4"]];
 
-  it("makes a confirmed word known whatever the answer, and leaves the others", () => {
-    const got = applyAnswers(
-      words,
-      ink,
-      [{ kind: "mistake", text: "Bezout", ids: ["s4", "s5", "s6"] }],
-      [["s4", "s5", "s6"]],
-    );
-    expect([...got.known]).toEqual([2]);
-    expect(got.words).toEqual(words);
+  it("writes what the writer answered, for every kind, not Beautify's own reading", () => {
+    for (const kind of ["mistake", "ignore", "misread"] as const) {
+      const got = applyAnswers(words, ink, [{ kind, text: "testing", ids: ["s1", "s2"] }]);
+      expect(got.words[0]).toBe("testing");
+      expect([...got.known]).toEqual([0]);
+    }
   });
 
-  it("matches the confirmed ink by most of its strokes", () => {
-    expect([...applyAnswers(words, ink, [], [["s7", "s8", "s9"]]).known]).toEqual([3]);
-    expect([...applyAnswers(words, ink, [], [["s7"]]).known]).toEqual([]);
+  it("knows a word only when an answer matched it: of several words, or other ink, none", () => {
+    expect(
+      applyAnswers(words, ink, [{ kind: "misread", text: "can not", ids: ["s1", "s2"] }]).known
+        .size,
+    ).toBe(0);
+    expect(
+      applyAnswers(words, ink, [{ kind: "mistake", text: "testing", ids: ["s1", "s9", "s8"] }])
+        .known.size,
+    ).toBe(0);
   });
 });
 

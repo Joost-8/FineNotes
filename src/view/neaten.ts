@@ -287,14 +287,14 @@ export class NeatenService {
     const lexicon = this.host.lexicon();
     const listed = lexicon ? new Set(lexicon.words().map((w) => w.toLowerCase())) : null;
     const readings = await this.host.handwriting.readForNeaten(lines, lexicon);
-    const jobsWith = async (confirmed: string[][]) => {
+    const jobsWith = async () => {
       const answers = request.note ? await this.host.answers(request.note, request.pageId) : [];
       return lines.flatMap((strokes, li) => {
-        const job = this.jobOf(strokes, readings[li], writable, listed, answers, confirmed);
+        const job = this.jobOf(strokes, readings[li], writable, listed, answers);
         return job ? [job] : [];
       });
     };
-    let jobs = await jobsWith([]);
+    let jobs = await jobsWith();
     // Words Grape is not sure of: the writer is asked with the word card (Joost, 25 November);
     // each one they answer is written too, the rest stay their own ink.
     const unsure = jobs.flatMap((job) =>
@@ -304,7 +304,8 @@ export class NeatenService {
       request.asking?.();
       const confirmed = await request.ask(unsure);
       if (request.stop()) return { kind: "stopped" };
-      if (confirmed.length > 0) jobs = await jobsWith(confirmed);
+      // Answered words take the writer's text from the saved answers.
+      if (confirmed.length > 0) jobs = await jobsWith();
     }
     jobs = jobs.filter((job) => job.rewrite.some(Boolean));
     if (jobs.length === 0) return { kind: "tidy" };
@@ -373,7 +374,6 @@ export class NeatenService {
     writable: (ch: string) => boolean,
     listed: ReadonlySet<string> | null,
     answers: readonly WordAnswer[],
-    confirmed: readonly string[][] = [],
   ): {
     text: string;
     strokes: Stroke[];
@@ -391,7 +391,7 @@ export class NeatenService {
     );
     if (read.length === 0 || ink.length !== read.length) return null;
     // The writer's own answers come first: a corrected word is what they said it is.
-    const answered = applyAnswers(read, ink, answers, confirmed);
+    const answered = applyAnswers(read, ink, answers);
     const text = answered.words.join(" ");
     // The model writes the whole line (its neighbours shape each word), so every letter must be one it has.
     if (!Array.from(text).every(writable)) return null;

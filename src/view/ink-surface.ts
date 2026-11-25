@@ -15170,6 +15170,9 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     this.syncSelectionOverlay();
   }
 
+  /** A Beautify is asking or writing on this surface (`beautifySelection`). */
+  private beautifying = false;
+
   /**
    * The selection, as far as it is still on its page. Undo, a reload or a
    * host command can take elements away; what is gone is dropped here, and
@@ -19423,7 +19426,8 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
   private async beautifySelection(): Promise<void> {
     const sel = this.liveSelection();
     const page = sel && this.doc.pages.find((candidate) => candidate.id === sel.pageId);
-    if (!sel || !page || this.groupDrag || this.callbacks.isLocked?.()) return;
+    // One at a time: a second, while the first asks or writes, would lose its lasso to the first.
+    if (!sel || !page || this.groupDrag || this.callbacks.isLocked?.() || this.beautifying) return;
     const run = this.callbacks.onNeaten;
     // No writer on this device (or none to be had): tidy at once.
     if (!run || this.callbacks.canNeaten?.() === false) {
@@ -19436,8 +19440,12 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     // Once Beautify asks about words, a tap that closes a card (and the selection) skips that
     // word; only an edit stops it.
     let asked = false;
+    // Another notebook in this view, or this one read again from disk, is never written to.
+    const doc = this.doc;
     const stop = (): boolean => {
       if (
+        this.doc !== doc ||
+        !doc.pages.includes(page) ||
         this.history.latest !== latest ||
         this.groupDrag !== null ||
         this.callbacks.isLocked?.() === true
@@ -19454,6 +19462,7 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     };
     const strokes = page.strokes.filter((stroke) => !isMirror(stroke));
     this.selectionFrameEl.addClass("is-working");
+    this.beautifying = true;
     let outcome: NeatenOutcome;
     try {
       outcome = await run({
@@ -19468,6 +19477,7 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
       });
     } finally {
       this.selectionFrameEl.removeClass("is-working");
+      this.beautifying = false;
     }
     if (outcome.kind === "stopped" || stop()) return;
     const command =

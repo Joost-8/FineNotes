@@ -125,16 +125,14 @@ export interface WordAnswer {
  * are mostly an answered word's takes that answer: "misread" gives its text
  * (Grape read it wrong; the writer said what it is); "mistake" and "ignore"
  * mean the word is as written though not in the word list, so it counts as
- * `listed`. Either way it is `known`: the writer has said what it is (so
- * Beautify writes it, and does not ask again). A word whose strokes are mostly one of
- * `confirmed` (ink the writer just answered about, when Beautify asked) is
- * `known` whatever the answer: they have said what it is.
+ * `listed`. Either way the word takes the answer's text and is `known`: the
+ * writer has said what it is (so Beautify writes that, and does not ask
+ * again). An answer of several words, or none, is left out.
  */
 export function applyAnswers(
   words: readonly string[],
   ink: readonly (readonly string[])[],
   answers: readonly WordAnswer[],
-  confirmed: readonly (readonly string[])[] = [],
 ): { words: string[]; known: Set<number>; listed: Set<string> } {
   const out = [...words];
   const known = new Set<number>();
@@ -148,15 +146,16 @@ export function applyAnswers(
     if (ids.length === 0) return;
     for (const answer of answers) {
       if (!mostly(ids, answer.ids)) continue;
-      if (answer.kind === "misread") {
-        if (/\s/.test(answer.text.trim()) || !answer.text.trim()) continue;
-        out[i] = answer.text.trim();
-      } else listed.add(wordCore(out[i]).toLowerCase());
+      // The answer's text is what the word is, whatever Beautify's own reading of the line
+      // says (the card shows the page's reading, which can differ): one word only.
+      const text = answer.text.trim();
+      if (!text || /\s/.test(text)) continue;
+      out[i] = text;
+      if (answer.kind !== "misread") listed.add(wordCore(text).toLowerCase());
       // Any answer says what the word is: Beautify writes it and does not ask about it again.
       known.add(i);
       break;
     }
-    if (confirmed.some((of) => mostly(ids, of))) known.add(i);
   });
   return { words: out, known, listed };
 }

@@ -14,12 +14,15 @@ function host(script: Record<string, Script>, log: string[]): WordCardHost {
       log.push(ids[0]);
       queueMicrotask(() => {
         if (how === "chip") {
+          // The card closes at the tap; the answer is reported once saved, a moment later.
+          after.chosen();
           after.closed();
-          after.done();
+          setTimeout(() => after.done(), 3);
         } else if (how === "dismiss") {
           after.closed();
         } else {
           // "Type what it says": the card goes, a dialog stays up a while, then the answer.
+          after.chosen();
           dialog = 3;
           after.closed();
         }
@@ -66,6 +69,7 @@ describe("askUnsureWords", () => {
     };
     const got = await askUnsureWords(h, [["a"], ["b"], ["c"]], () => stopped, wait);
     expect(log).toEqual(["b"]);
-    expect(got).toEqual([["b"]]);
+    // Stopped (an edit, another notebook): Beautify writes nothing, so nothing counts.
+    expect(got).toEqual([]);
   });
 });
