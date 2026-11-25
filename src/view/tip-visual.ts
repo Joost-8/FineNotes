@@ -16,13 +16,14 @@ import {
   penPresence,
   sampleTrack,
 } from "../model/tip-scenes";
+import { prefersReducedMotion } from "./motion";
 
 /** Samples along a path for the pen riding it. */
 const PEN_STEPS = 48;
 const EASE = "cubic-bezier(.45,.05,.3,1)";
 
 function prefersStill(): boolean {
-  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+  return prefersReducedMotion();
 }
 
 export class TipVisual {

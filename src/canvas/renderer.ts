@@ -1370,8 +1370,26 @@ export class Renderer {
     // Drawn without saying how to draw it again: only the pixels have it.
     if (visible && this.wetReplay === null) this.wetRaster = true;
     const classes = this.wet.canvas.classList;
-    if (visible) classes.remove(WET_HIDDEN);
+    if (visible || this.wetAlwaysShown) classes.remove(WET_HIDDEN);
     else classes.add(WET_HIDDEN);
+  }
+
+  /** Whether the wet layer stays shown between strokes ({@link keepWetShown}). */
+  private wetAlwaysShown = false;
+
+  /**
+   * Keep the wet layer shown between strokes, emptied rather than hidden:
+   * for an e-ink screen (`model/eink.ts`), where hiding and showing a layer
+   * the size of the view at every stroke may ask the panel to redraw all of
+   * it. Hidden it guards against WebKit's stale desynchronized frames (see
+   * the constructor), which an Android e-ink tablet does not have.
+   */
+  keepWetShown(shown: boolean): void {
+    this.wetAlwaysShown = shown;
+    const classes = this.wet.canvas.classList;
+    const empty = !this.wetRaster && this.wetReplay === null && this.wetInk === null;
+    if (shown) classes.remove(WET_HIDDEN);
+    else if (empty) classes.add(WET_HIDDEN);
   }
 
   /** Layout-space band currently on screen. */

@@ -2066,6 +2066,11 @@ export class InkView extends TextFileView {
     this.surface?.zoomOut();
   }
 
+  /** Draw for an e-ink screen, or not (the E-ink screen setting). */
+  setEinkScreen(on: boolean): void {
+    this.surface?.setEinkScreen(on);
+  }
+
   /** Show or hide the input debug overlay (the command, and the setting). */
   setDebug(enabled: boolean): void {
     this.showHud = enabled;
@@ -2223,6 +2228,8 @@ export class InkView extends TextFileView {
         startup: this.plugin.startup.report(),
         // The file read again while open, and what became of this view's ink (#273).
         diskReloads: { ...this.diskReloads },
+        // Whether this device was taken for an e-ink screen, and from what (#309).
+        eink: this.plugin.eink.report(),
       }) ?? null
     );
   }
@@ -5027,6 +5034,7 @@ export class InkView extends TextFileView {
       this.toolState,
       {
         desynchronizedCanvas: this.settings.desynchronizedCanvas,
+        einkScreen: this.plugin.eink.on,
         highlighterAlpha: this.settings.highlighterAlpha,
         debug: this.showHud,
         palette,

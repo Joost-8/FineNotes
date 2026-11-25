@@ -1022,6 +1022,11 @@ export interface InkSurfaceOptions {
    * `desynchronized` 2D context, where the platform offers one.
    */
   desynchronizedCanvas: boolean;
+  /**
+   * Draw for an e-ink screen (`model/eink.ts`): the wet layer stays shown
+   * between strokes ({@link Renderer.keepWetShown}). Optional: off.
+   */
+  einkScreen?: boolean;
   /** Opacity of highlighter ink, 0–1. */
   highlighterAlpha: number;
   /**
@@ -3445,6 +3450,7 @@ export class InkSurface {
     );
     renderer.highlighterAlpha = this.options.highlighterAlpha;
     renderer.paper = this.paper;
+    renderer.keepWetShown(this.options.einkScreen === true);
     // A pan or scroll moves the dry layer rather than painting it again: on
     // a phone or tablet, whose compositor is always the GPU. Composited on
     // the CPU (a desktop with its GPU turned off), the larger canvas cost
@@ -5099,6 +5105,12 @@ export class InkSurface {
     if (this.inkPressure === enabled) return;
     this.inkPressure = enabled;
     this.requestFrame();
+  }
+
+  /** Draw for an e-ink screen, or not (the E-ink screen setting; see {@link InkSurfaceOptions.einkScreen}). */
+  setEinkScreen(on: boolean): void {
+    this.options.einkScreen = on;
+    this.renderer?.keepWetShown(on);
   }
 
   setDebug(enabled: boolean): void {

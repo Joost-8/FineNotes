@@ -159,6 +159,7 @@ import type { StylusClickAction } from "./input/stylus-click";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
 import { learnWindow } from "./recognition/hwr/learn-window-model";
 import { lookPaletteNames, lookPaletteOf, lookStyleNames, lookStyleOf } from "./model/look";
+import { EINK_CHOICES, type EinkChoice, parseEinkChoice } from "./model/eink";
 
 export { DEFAULT_SETTINGS, type GoodObsidianSettings, type ToolId } from "./settings-data";
 
@@ -1291,6 +1292,18 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             ),
             visible: !Platform.isMobile,
           },
+          // No iPad or iPhone has an e-ink screen; an Android tablet or a
+          // desktop's e-ink monitor may.
+          this.tile(
+            drawnRow(
+              t("settings.eink.name"),
+              t("settings.eink.line"),
+              (s) => this.drawEink(s),
+              ["eink", "e-paper", "epaper", "Boox", "Onyx", "paper screen", "ghosting", "refresh"],
+              !Platform.isIosApp,
+            ),
+            "tablet",
+          ),
         ],
       ],
       [
@@ -2580,6 +2593,25 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         }
       },
     };
+  }
+
+  /**
+   * E-ink screen: Auto, On or Off, kept on this device (`view/eink-screen.ts`).
+   * Auto says what it does here, so a Boox shows "Auto (on)".
+   */
+  private drawEink(setting: Setting): void {
+    const eink = this.plugin.eink;
+    setting.addDropdown((d) => {
+      const names: Record<EinkChoice, string> = {
+        auto: t(eink.detected ? "settings.eink.autoOn" : "settings.eink.autoOff"),
+        on: t("common.on"),
+        off: t("common.off"),
+      };
+      for (const choice of EINK_CHOICES) d.addOption(choice, names[choice]);
+      d.selectEl.setAttribute("aria-label", t("settings.eink.name"));
+      d.setValue(eink.choice);
+      d.onChange((value) => eink.set(parseEinkChoice(value)));
+    });
   }
 
   /** The voice model's size and spoken language, side by side. */

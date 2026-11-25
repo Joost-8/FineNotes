@@ -2794,6 +2794,20 @@ body.is-mobile.goodobsidian-dialog-typing .app-container {
   visibility: hidden;
 }
 
+/* E-ink screen (Settings › Writing, view/eink-screen.ts): every moving pixel
+   is a slow, ghosting redraw of the panel, so FineNotes' own chrome holds
+   still. The class is repeated to outrank the rules that start a motion
+   without !important. */
+body.goodobsidian-eink.goodobsidian-eink.goodobsidian-eink [class*="goodobsidian-"],
+body.goodobsidian-eink.goodobsidian-eink.goodobsidian-eink [class*="goodobsidian-"]::before,
+body.goodobsidian-eink.goodobsidian-eink.goodobsidian-eink [class*="goodobsidian-"]::after,
+body.goodobsidian-eink.goodobsidian-eink.goodobsidian-eink [class*="finenotes-"],
+body.goodobsidian-eink.goodobsidian-eink.goodobsidian-eink [class*="finenotes-"]::before,
+body.goodobsidian-eink.goodobsidian-eink.goodobsidian-eink [class*="finenotes-"]::after {
+  transition: none;
+  animation: none;
+}
+
 /* "3 / 18" — bottom centre, out of the way of both the pill and the palm. */
 .goodobsidian-pageindicator {
   position: absolute;

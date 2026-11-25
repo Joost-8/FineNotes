@@ -19,6 +19,16 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **E-ink screen** ([discussion #309](https://github.com/Joost-8/FineNotes/discussions/309)).
+  A new row in Settings › Writing for paper-like screens such as an Onyx
+  Boox: FineNotes' bars, menus and dialogs stop animating, and the layer
+  that shows the stroke being written stays in place between strokes, so
+  the screen has less to redraw. **Auto** (the default) turns it on for a
+  known Boox and leaves it off everywhere else; On and Off decide for this
+  device only. Most of the delay on an e-ink tablet is the screen itself:
+  on a Boox, a faster refresh mode for Obsidian in the E-Ink Center helps
+  most.
+
 - **Insert space on boards, and on paper without lines**
   ([discussion #276](https://github.com/Joost-8/FineNotes/discussions/276)).
   With the lasso on **By line**, press anywhere on a board and drag down: everything
