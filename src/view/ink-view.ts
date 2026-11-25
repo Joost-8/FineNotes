@@ -4395,7 +4395,9 @@ export class InkView extends TextFileView {
    * The word card (word-check.ts) for `word` on `page`, at `at` (client
    * px); `asked` when opened by hand ("Correct"). Its underline turns red
    * while it is open, and an answer is saved and acted on the same way
-   * however the card was opened.
+   * however the card was opened. `after` hooks its answer and its closing;
+   * `after.inHand` false (Beautify asking, which writes the word itself):
+   * the card must not also write the word in the hand.
    */
   private openWordCard(
     page: Page,
@@ -4403,7 +4405,7 @@ export class InkView extends TextFileView {
     suggestion: LexiconSuggestion | null,
     at: { x: number; y: number },
     asked: boolean,
-    after: { done?: () => void; closed?: () => void } = {},
+    after: { done?: () => void; closed?: () => void; inHand?: boolean } = {},
   ): void {
     const file = this.file;
     const surface = this.surface;
@@ -4453,7 +4455,10 @@ export class InkView extends TextFileView {
         );
         const at = found ? surface.wordInk(index, found.word.strokeIds) : null;
         if (!found || !at) return false;
-        this.openWordCard(page, found.word, found.suggestion, at, true, after);
+        this.openWordCard(page, found.word, found.suggestion, at, true, {
+          ...after,
+          inHand: false,
+        });
         return true;
       },
       dialogOpen: () => activeDocument.querySelector(".modal-container") !== null,
