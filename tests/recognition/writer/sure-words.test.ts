@@ -6,9 +6,43 @@ import {
   applyAnswers,
   joinPunctuation,
   sureWords,
+  unsureWords,
   wordCore,
   wordsOf,
 } from "../../../src/recognition/writer/sure-words";
+
+describe("applyAnswers with words just confirmed (Beautify asked)", () => {
+  const words = ["from", "the", "Bezout", "lemma"];
+  const ink = [["s1", "s2"], ["s3"], ["s4", "s5", "s6"], ["s7", "s8"]];
+
+  it("makes a confirmed word known whatever the answer, and leaves the others", () => {
+    const got = applyAnswers(
+      words,
+      ink,
+      [{ kind: "mistake", text: "Bezout", ids: ["s4", "s5", "s6"] }],
+      [["s4", "s5", "s6"]],
+    );
+    expect([...got.known]).toEqual([2]);
+    expect(got.words).toEqual(words);
+  });
+
+  it("matches the confirmed ink by most of its strokes", () => {
+    expect([...applyAnswers(words, ink, [], [["s7", "s8", "s9"]]).known]).toEqual([3]);
+    expect([...applyAnswers(words, ink, [], [["s7"]]).known]).toEqual([]);
+  });
+});
+
+describe("unsureWords", () => {
+  it("lists the ink of words left as written that have a letter or digit", () => {
+    expect(
+      unsureWords({
+        words: ["test", "again,", "but", "-", "simple"],
+        ink: [["a"], ["b"], ["c"], ["d"], []],
+        rewrite: [true, false, true, false, false],
+      }),
+    ).toEqual([["b"]]);
+  });
+});
 
 /** Readings of `greedy`, letter by letter; `over` changes single letters by index. */
 function readings(
@@ -37,14 +71,14 @@ describe("applyAnswers", () => {
     expect([...got.known]).toEqual([0]);
   });
 
-  it("lists a word the writer said is as written (mistake, ignore)", () => {
+  it("lists a word the writer said is as written (mistake, ignore), and knows it: they said what it is", () => {
     const got = applyAnswers(words, ink, [
       { kind: "ignore", text: "Bezout", ids: ["s4", "s5", "s6"] },
       { kind: "mistake", text: "lemma", ids: ["s7", "s8"] },
     ]);
     expect(got.words).toEqual(words);
     expect([...got.listed].sort()).toEqual(["bezout", "lemma"]);
-    expect(got.known.size).toBe(0);
+    expect([...got.known].sort()).toEqual([2, 3]);
   });
 
   it("needs most of the word's strokes to be the answered word's", () => {

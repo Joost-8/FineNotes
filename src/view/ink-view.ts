@@ -457,6 +457,7 @@ import {
 } from "../recognition/hwr/selection-words";
 import type { SpellingFix } from "./spelling-row";
 import type { WordPopover } from "./word-popover";
+import { type WordCardHost, askUnsureWords } from "./beautify-ask";
 import { wordInHand } from "./write-in-hand";
 import { type TranslateAi, TranslateWindow, type TranslateTarget } from "./translate-window";
 import { nextDeviceStep } from "../recognition/device-reading";
@@ -4396,7 +4397,9 @@ export class InkView extends TextFileView {
    * The word card (word-check.ts) for `word` on `page`, at `at` (client
    * px); `asked` when opened by hand ("Correct"). Its underline turns red
    * while it is open, and an answer is saved and acted on the same way
-   * however the card was opened.
+   * however the card was opened. `after` hooks its answer and its closing;
+   * `after.inHand` false (Beautify asking, which writes the word itself):
+   * the card must not also write the word in the hand.
    */
   private openWordCard(
     page: Page,
@@ -4404,6 +4407,7 @@ export class InkView extends TextFileView {
     suggestion: LexiconSuggestion | null,
     at: { x: number; y: number },
     asked: boolean,
+    after: { done?: () => void; closed?: () => void; inHand?: boolean } = {},
   ): void {
     const file = this.file;
     const surface = this.surface;
@@ -4413,12 +4417,14 @@ export class InkView extends TextFileView {
     surface.setActiveWordFlag(page.id, word.strokeIds);
     const closed = () => {
       if (this.surface === surface) surface.setActiveWordFlag(null);
+      after.closed?.();
     };
     this.wordPopover?.close();
     this.wordPopover = this.plugin.wordCheck.ask(
       { note: file.path, pageId: page.id, word, strokes, suggestion },
       at,
       () => {
+        after.done?.();
         // Answered: underline the page's words again, without this one.
         const checked = this.checkedWords.get(page.id);
         if (!checked || this.surface !== surface) return;
@@ -4431,19 +4437,49 @@ export class InkView extends TextFileView {
       },
       closed,
       asked,
-      wordInHand(
-        this.plugin.writeInHand,
-        surface,
-        page.id,
-        word.strokeIds,
-        at,
-        (card) => {
-          this.wordPopover = card;
-        },
-        // Read-only or damaged: the card answers, but nothing is rewritten (no notice from here).
-        () => this.isDamaged() || isReadOnly(this.doc) || isReadOnly(surface.document),
-      ),
+      // Beautify's own cards (inHand: false) write the word themselves: no second offer here.
+      after.inHand === false
+        ? undefined
+        : wordInHand(
+            this.plugin.writeInHand,
+            surface,
+            page.id,
+            word.strokeIds,
+            at,
+            (card) => {
+              this.wordPopover = card;
+            },
+            // Read-only or damaged: the card answers, but nothing is rewritten (no notice from here).
+            () => this.isDamaged() || isReadOnly(this.doc) || isReadOnly(surface.document),
+          ),
     );
+  }
+
+  /**
+   * The word card for ink on page `pageId`, as Correct opens it, for
+   * Beautify's question about its unsure words (`beautify-ask.ts`): null
+   * when the ink is in no word the page's reading has.
+   */
+  private wordCards(pageId: string): WordCardHost {
+    return {
+      open: async (strokeIds, after) => {
+        const surface = this.surface;
+        const index = surface?.document.pages.findIndex((p) => p.id === pageId) ?? -1;
+        const page = surface?.document.pages[index];
+        if (!surface || !page) return false;
+        const found = await this.readWordAt(page, pageContentHash(page), strokeIds).catch(
+          () => null,
+        );
+        const at = found ? surface.wordInk(index, found.word.strokeIds) : null;
+        if (!found || !at) return false;
+        this.openWordCard(page, found.word, found.suggestion, at, true, {
+          ...after,
+          inHand: false,
+        });
+        return true;
+      },
+      dialogOpen: () => activeDocument.querySelector(".modal-container") !== null,
+    };
   }
 
   /**
@@ -5176,7 +5212,12 @@ export class InkView extends TextFileView {
         },
         onFlaggedWord: (index, strokeIds, at) => this.askAboutWord(index, strokeIds, at),
         onCorrectWord: (index, strokeIds) => void this.correctWord(index, strokeIds),
-        onNeaten: (request) => this.plugin.neaten.run({ ...request, note: this.file?.path }),
+        onNeaten: (request) =>
+          this.plugin.neaten.run({
+            ...request,
+            note: this.file?.path,
+            ask: (words) => askUnsureWords(this.wordCards(request.pageId), words, request.stop),
+          }),
         canNeaten: () => this.plugin.neaten.available(),
         onWriteInHand: (pageId, boxId) =>
           this.surface

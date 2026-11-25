@@ -123,33 +123,57 @@ export interface WordAnswer {
 /**
  * The line's words with the writer's answers applied. A word whose strokes
  * are mostly an answered word's takes that answer: "misread" gives its text
- * (Grape read it wrong; the writer said what it is) and makes it `known`;
- * "mistake" and "ignore" mean the word is as written though not in the word
- * list, so it counts as `listed`.
+ * (Grape read it wrong; the writer said what it is); "mistake" and "ignore"
+ * mean the word is as written though not in the word list, so it counts as
+ * `listed`. Either way it is `known`: the writer has said what it is (so
+ * Beautify writes it, and does not ask again). A word whose strokes are mostly one of
+ * `confirmed` (ink the writer just answered about, when Beautify asked) is
+ * `known` whatever the answer: they have said what it is.
  */
 export function applyAnswers(
   words: readonly string[],
   ink: readonly (readonly string[])[],
   answers: readonly WordAnswer[],
+  confirmed: readonly (readonly string[])[] = [],
 ): { words: string[]; known: Set<number>; listed: Set<string> } {
   const out = [...words];
   const known = new Set<number>();
   const listed = new Set<string>();
+  const mostly = (ids: readonly string[], of: readonly string[]): boolean => {
+    const theirs = new Set(of);
+    const shared = ids.filter((id) => theirs.has(id)).length;
+    return shared * 2 > Math.max(ids.length, theirs.size);
+  };
   ink.forEach((ids, i) => {
     if (ids.length === 0) return;
     for (const answer of answers) {
-      const theirs = new Set(answer.ids);
-      const shared = ids.filter((id) => theirs.has(id)).length;
-      if (shared * 2 <= Math.max(ids.length, theirs.size)) continue;
+      if (!mostly(ids, answer.ids)) continue;
       if (answer.kind === "misread") {
         if (/\s/.test(answer.text.trim()) || !answer.text.trim()) continue;
         out[i] = answer.text.trim();
-        known.add(i);
       } else listed.add(wordCore(out[i]).toLowerCase());
+      // Any answer says what the word is: Beautify writes it and does not ask about it again.
+      known.add(i);
       break;
     }
+    if (confirmed.some((of) => mostly(ids, of))) known.add(i);
   });
   return { words: out, known, listed };
+}
+
+/**
+ * The words of a line Beautify would leave as written because Grape is not
+ * sure of them, as their ink: the ones it can ask the writer about (a word
+ * with a letter or digit, not rewritten).
+ */
+export function unsureWords(line: {
+  words: readonly string[];
+  ink: readonly (readonly string[])[];
+  rewrite: readonly boolean[];
+}): string[][] {
+  return line.words.flatMap((w, i) =>
+    !line.rewrite[i] && /[\p{L}\p{N}]/u.test(w) && line.ink[i]?.length ? [[...line.ink[i]]] : [],
+  );
 }
 
 /** A line's words with their strokes and whether each is rewritten. */

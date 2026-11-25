@@ -36,7 +36,13 @@ import { type LineToPlace, placeLines } from "../recognition/writer/layout";
 import { proseLike } from "../recognition/writer/pool";
 import { errorRate, neatenLine, readBackRewrite } from "../recognition/writer/repair";
 import { readsAs } from "../recognition/writer/known-layout";
-import { type TaggedLine, type WrittenStroke, levelledStrokes } from "../recognition/writer/rows";
+import {
+  type TaggedLine,
+  type WrittenStroke,
+  levelledStrokes,
+  median,
+} from "../recognition/writer/rows";
+import { inkXHeight, leastXHeight, writtenXHeight } from "../recognition/writer/x-height";
 import { DEFAULT_TRIES } from "../recognition/writer/flow-meta";
 import { type WriterKind, WRITER_KINDS, kindFor } from "../recognition/writer/kinds";
 import { guidanceAt } from "../recognition/writer/neatness";
@@ -51,6 +57,7 @@ import {
   applyAnswers,
   joinPunctuation,
   sureWords,
+  unsureWords,
   wordCore,
   wordsOf,
 } from "../recognition/writer/sure-words";
@@ -96,6 +103,14 @@ export interface NeatenRequest {
   rules: readonly RuleBlock[] | null;
   /** Asked between steps: true ends the work, nothing changes. */
   stop: () => boolean;
+  /**
+   * Ask the writer about words Grape is not sure of (their ink), one after
+   * another with the word card; resolves with the ink of each word they
+   * answered (the view fills it). Without it those words stay as written.
+   */
+  ask?: (words: string[][]) => Promise<string[][]>;
+  /** Told just before `ask`: from then on the selection may go (a tap closing a card) without stopping the work. */
+  asking?: () => void;
 }
 
 export type NeatenOutcome =
@@ -281,12 +296,27 @@ export class NeatenService {
     if (lines.length === 0 || !profile) return { kind: "tidy" };
     const lexicon = this.host.lexicon();
     const listed = lexicon ? new Set(lexicon.words().map((w) => w.toLowerCase())) : null;
-    const answers = request.note ? await this.host.answers(request.note, request.pageId) : [];
     const readings = await this.host.handwriting.readForNeaten(lines, lexicon);
-    const jobs = lines.flatMap((strokes, li) => {
-      const job = this.jobOf(strokes, readings[li], writable, listed, answers);
-      return job ? [job] : [];
-    });
+    const jobsWith = async (confirmed: string[][]) => {
+      const answers = request.note ? await this.host.answers(request.note, request.pageId) : [];
+      return lines.flatMap((strokes, li) => {
+        const job = this.jobOf(strokes, readings[li], writable, listed, answers, confirmed);
+        return job ? [job] : [];
+      });
+    };
+    let jobs = await jobsWith([]);
+    // Words Grape is not sure of: the writer is asked with the word card (Joost, 25 November);
+    // each one they answer is written too, the rest stay their own ink.
+    const unsure = jobs.flatMap((job) =>
+      unsureWords({ words: job.read, ink: job.words, rewrite: job.rewrite }),
+    );
+    if (unsure.length > 0 && request.ask) {
+      request.asking?.();
+      const confirmed = await request.ask(unsure);
+      if (request.stop()) return { kind: "stopped" };
+      if (confirmed.length > 0) jobs = await jobsWith(confirmed);
+    }
+    jobs = jobs.filter((job) => job.rewrite.some(Boolean));
     if (jobs.length === 0) return { kind: "tidy" };
     if (request.stop()) return { kind: "stopped" };
 
@@ -331,6 +361,12 @@ export class NeatenService {
         words: job.words,
         rewrite,
         written: levelledStrokes(done.written, done.written.char, job.text),
+        // Written at the writer's own x-height, or at the least the model writes legibly with their pen.
+        xHeight: {
+          ink: job.xHeight,
+          written: writtenXHeight(done.written, done.written.char, job.text),
+          least: leastXHeight(median(job.strokes.map((s) => s.size))),
+        },
       });
     }
     const placed = placeLines(placing, profile);
@@ -340,14 +376,24 @@ export class NeatenService {
     return { kind: "done", edit, style: placing.map((line) => line.strokes[0]) };
   }
 
-  /** One line's text, words, and which words to rewrite; null when nothing on it may be. */
+  /** One line's text, words, and which words to rewrite; null when the model cannot write it. */
   private jobOf(
     strokes: Stroke[],
     reading: LineReading | undefined,
     writable: (ch: string) => boolean,
     listed: ReadonlySet<string> | null,
     answers: readonly WordAnswer[],
-  ): { text: string; strokes: Stroke[]; words: string[][]; rewrite: boolean[] } | null {
+    confirmed: readonly string[][] = [],
+  ): {
+    text: string;
+    strokes: Stroke[];
+    /** Each word's ink (stroke ids). */
+    words: string[][];
+    /** Each word's text. */
+    read: string[];
+    rewrite: boolean[];
+    xHeight: number | null;
+  } | null {
     if (!reading || !reading.wordStrokes || !reading.chars) return null;
     const read = wordsOf(reading.text);
     const ink = reading.wordStrokes.map((word) =>
@@ -355,7 +401,7 @@ export class NeatenService {
     );
     if (read.length === 0 || ink.length !== read.length) return null;
     // The writer's own answers come first: a corrected word is what they said it is.
-    const answered = applyAnswers(read, ink, answers);
+    const answered = applyAnswers(read, ink, answers, confirmed);
     const text = answered.words.join(" ");
     // The model writes the whole line (its neighbours shape each word), so every letter must be one it has.
     if (!Array.from(text).every(writable)) return null;
@@ -372,8 +418,15 @@ export class NeatenService {
       inList,
     );
     const joined = joinPunctuation({ words: answered.words, ink, rewrite });
-    if (!joined.rewrite.some(Boolean)) return null;
-    return { text: joined.words.join(" "), strokes, words: joined.ink, rewrite: joined.rewrite };
+    return {
+      text: joined.words.join(" "),
+      strokes,
+      words: joined.ink,
+      read: joined.words,
+      rewrite: joined.rewrite,
+      // The writer's x-height on this line, from the strokes Grape read as x-height letters.
+      xHeight: inkXHeight(strokes, reading.chars),
+    };
   }
 
   /** Every prose-like copied line of the vault's practice sheets (not yet tied to its letters). */

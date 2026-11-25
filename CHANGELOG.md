@@ -43,6 +43,10 @@ extracted from the matching section of this file by `release.yml`.
   after your "=" in your hand, once Grape reads it back exactly; fractions
   and powers stay in the drawn figures. All of it follows Beautify's
   neatness slider.
+  ink to neatest. When Grape is unsure of a word, Beautify first opens the
+  word card on it (as **Correct** does): answer it and that word is written
+  too, and Grape learns from it; close the card and the word stays as you
+  wrote it.
 - **Insert space on boards, and on paper without lines**
   ([discussion #276](https://github.com/Joost-8/FineNotes/discussions/276)).
   With the lasso on **By line**, press anywhere on a board and drag down: everything
