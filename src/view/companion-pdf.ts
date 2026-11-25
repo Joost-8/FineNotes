@@ -381,13 +381,11 @@ export class CompanionPdfManager {
       let current: string | null;
       try {
         current = await this.controller.resolve(id);
-      } catch (error) {
-        if (
-          this.app.vault.getAbstractFileByPath(entry.pdfPath) &&
-          (await this.identity(entry.pdfPath)) !== id
-        )
-          current = null;
-        else throw error;
+      } catch {
+        // The old PDF cannot be told apart (two copies carry this identity, or
+        // another file sits at its path): a target chosen by hand starts a
+        // fresh PDF there and leaves every old file as it is.
+        current = null;
       }
       if (current && !existing) await this.rename(current, target, true);
       this.controller.claim(id, target);

@@ -9,6 +9,7 @@ import {
   companionResources,
   defaultCompanionPath,
   isCompanionNotebookPath,
+  isSyncConflictCopy,
   parseCompanionStore,
   type CompanionEntry,
   type CompanionSnapshot,
@@ -199,6 +200,41 @@ describe("companion associations and lifecycle", () => {
     expect(s.replace).not.toHaveBeenCalled();
   });
 
+  it("never takes a sync tool's conflict copy for the companion", async () => {
+    const s = setup();
+    await s.controller.update(ID, s.snapshot);
+    const target = s.entry.pdfPath;
+    const copy = "School/Biology.sync-conflict-20261125-120000-ABCDEFG.pdf";
+    s.files.set(copy, ID);
+    s.files.delete(target);
+    expect(await s.controller.resolve(ID)).toBeNull();
+    await s.controller.update(ID, s.snapshot, true);
+    expect(s.entry.pdfPath).toBe(target);
+    expect(s.files.get(target)).toBe(ID);
+    expect(s.files.get(copy)).toBe(ID);
+    // Two copies are not "multiple PDFs with this identity" either.
+    s.files.set("School/Biology (Joost's conflicted copy 2026-11-25).pdf", ID);
+    s.files.delete(target);
+    await expect(s.controller.update(ID, s.snapshot, true)).resolves.toBeUndefined();
+    expect(s.entry.pdfPath).toBe(target);
+  });
+
+  it("a target chosen by hand gets past copies it cannot tell apart", async () => {
+    const s = setup();
+    s.files.set("One.pdf", ID);
+    s.files.set("Two.pdf", ID);
+    await expect(s.controller.update(ID, s.snapshot, true)).rejects.toThrow("Multiple PDFs");
+    s.controller.claim(ID, "Exports/Biology.pdf");
+    await s.controller.update(ID, s.snapshot, true);
+    expect(s.entry.pdfPath).toBe("Exports/Biology.pdf");
+    expect(s.files.get("Exports/Biology.pdf")).toBe(ID);
+    expect(s.files.get("One.pdf")).toBe(ID);
+    expect(s.files.get("Two.pdf")).toBe(ID);
+    // Once written there, a later update finds it at once.
+    await s.controller.update(ID, s.snapshot, true);
+    expect(s.entry.pdfPath).toBe("Exports/Biology.pdf");
+  });
+
   it("target deletion recreates the same path even when content is clean", async () => {
     const s = setup();
     await s.controller.update(ID, s.snapshot);
@@ -265,6 +301,15 @@ describe("companion associations and lifecycle", () => {
 });
 
 describe("names, portable frontmatter and exported-content tracking", () => {
+  it("tells sync tools' conflict copies from ordinary names", () => {
+    expect(isSyncConflictCopy("A/Biology.sync-conflict-20261125-120000-ABCDEFG.pdf")).toBe(true);
+    expect(isSyncConflictCopy("Biology (Oskar's conflicted copy 2026-11-25).pdf")).toBe(true);
+    expect(isSyncConflictCopy("Biology (conflicted copy 2026-11-25 120000).pdf")).toBe(true);
+    expect(isSyncConflictCopy("Conflict resolution.pdf")).toBe(false);
+    expect(isSyncConflictCopy("A.sync-conflict/Biology.pdf")).toBe(false);
+    expect(isSyncConflictCopy("Biology.pdf")).toBe(false);
+  });
+
   it("uses clean filenames without suffix tags and supports all ink extensions", () => {
     expect(defaultCompanionPath("School/Biology.notebook.md", "Exports")).toBe(
       "Exports/Biology.pdf",

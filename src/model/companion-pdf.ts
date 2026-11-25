@@ -40,6 +40,20 @@ export function isCompanionNotebookPath(path: string): boolean {
   return INK_FILE_SUFFIXES.some((suffix) => lower.endsWith(suffix));
 }
 
+/**
+ * A copy a sync tool made when two devices changed the same file: Syncthing's
+ * `name.sync-conflict-20261125-120000-ABCDEFG.pdf`, Dropbox's and Nextcloud's
+ * `name (… conflicted copy …).pdf`. It carries the same Subject identity as
+ * the companion it was copied from, so it is never taken for that companion.
+ */
+export function isSyncConflictCopy(path: string): boolean {
+  const name = path.split("/").pop() ?? path;
+  return (
+    /\.sync-conflict-\d{8}-\d{6}-[A-Z0-9]{7}(?:\.[^./]+)?$/i.test(name) ||
+    /\([^)]*conflicted copy[^)]*\)/i.test(name)
+  );
+}
+
 export function validCompanionId(value: unknown): value is string {
   return typeof value === "string" && /^[a-f0-9]{16}$/.test(value);
 }
@@ -232,6 +246,8 @@ export class CompanionController {
   >();
   private readonly revisions = new Map<string, number>();
   private readonly rendered = new Set<string>();
+  /** Targets the user chose by hand: written where chosen, never searched for, until written. */
+  private readonly chosen = new Set<string>();
 
   constructor(
     readonly store: CompanionStore,
@@ -252,12 +268,18 @@ export class CompanionController {
     if (!entry) return null;
     if (this.io.exists(entry.pdfPath) && (await this.io.pdfIdentity(entry.pdfPath)) === id)
       return entry.pdfPath;
+    if (this.chosen.has(id)) {
+      if (this.io.exists(entry.pdfPath))
+        throw new Error("An unrelated file occupies the companion path. Choose another target.");
+      return null;
+    }
     const candidates = this.io
       .pdfPaths()
       .filter(
         (path) =>
           path !== entry.pdfPath &&
-          !/[.]pdf[.]fn-[a-f0-9]{16}-(?:pending|backup)[.]pdf$/i.test(path),
+          !/[.]pdf[.]fn-[a-f0-9]{16}-(?:pending|backup)[.]pdf$/i.test(path) &&
+          !isSyncConflictCopy(path),
       );
     const owned: string[] = [];
     for (const path of candidates) {
@@ -285,6 +307,7 @@ export class CompanionController {
       throw new Error("Another notebook already owns this PDF target.");
     this.store.entries[id].pdfPath = clean;
     this.store.entries[id].dirty = true;
+    this.chosen.add(id);
   }
 
   async followNotebookName(id: string, notebookPath: string, force = false): Promise<void> {
@@ -358,6 +381,7 @@ export class CompanionController {
             if (current.resources.includes(entry.pdfPath))
               throw new Error("Companion target is a notebook source.");
             await this.io.replace(entry, bytes, id);
+            this.chosen.delete(id);
             entry.lastFingerprint = current.fingerprint;
             const latest = await request.snapshot();
             entry.dirty =

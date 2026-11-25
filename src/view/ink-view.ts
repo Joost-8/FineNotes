@@ -1746,11 +1746,7 @@ export class InkView extends TextFileView {
     }
     // Where the PDF's tab was left goes into this save.
     this.saveTabView();
-    if (this.companionUnloadedFile !== file) {
-      this.companionUnloadedFile = file;
-      await this.updateCompanionPdf(false);
-      this.companionUnloadedFile = file;
-    }
+    await this.closeCompanionPdf(file);
     await super.onUnloadFile(file);
   }
 
@@ -1967,6 +1963,10 @@ export class InkView extends TextFileView {
   }
 
   override async onClose(): Promise<void> {
+    // Closing the tab never reaches onUnloadFile (TextFileView's own onClose
+    // is not called here), so the companion PDF is brought up to date now,
+    // while the pages, PDF cache and images an export reads are still here.
+    if (this.file) await this.closeCompanionPdf(this.file);
     this.presenter?.stop();
     window.clearTimeout(this.tabViewTimer);
     this.tabViewTimer = 0;
@@ -6442,6 +6442,13 @@ export class InkView extends TextFileView {
     const savedBody = parseInkFile(await this.app.vault.read(note), this.settings.paperWidth).body;
     if (this.file !== note) return;
     this.noteBody = savedBody;
+  }
+
+  /** The companion PDF's update as the notebook goes: once per file, on unload or on close. */
+  private async closeCompanionPdf(file: TFile): Promise<void> {
+    if (this.companionUnloadedFile === file) return;
+    this.companionUnloadedFile = file;
+    await this.updateCompanionPdf(false);
   }
 
   async updateCompanionPdf(force = true): Promise<void> {
