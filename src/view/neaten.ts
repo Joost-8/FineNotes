@@ -34,7 +34,7 @@ import type { WriterClient } from "../recognition/writer/client";
 import { isOutOfMemory } from "../recognition/writer/protocol";
 import { type LineToPlace, placeLines } from "../recognition/writer/layout";
 import { proseLike } from "../recognition/writer/pool";
-import { neatenLine, readBackRewrite } from "../recognition/writer/repair";
+import { errorRate, neatenLine, readBackRewrite } from "../recognition/writer/repair";
 import { readsAs } from "../recognition/writer/known-layout";
 import { type TaggedLine, type WrittenStroke, levelledStrokes } from "../recognition/writer/rows";
 import { DEFAULT_TRIES } from "../recognition/writer/flow-meta";
@@ -519,8 +519,11 @@ export class NeatenService {
    */
   async writeKnown(
     texts: readonly string[],
-    /** `exact`: a line counts only when Grape reads it back as the text (an answer); else null. */
-    options: { stop?: () => boolean; seed?: number; exact?: boolean } = {},
+    /**
+     * `attempts`: how many times a line Grape misreads is written again (the best reading kept).
+     * `exact`: a line counts only when Grape reads it back as the text (an answer); else null.
+     */
+    options: { stop?: () => boolean; seed?: number; exact?: boolean; attempts?: number } = {},
   ): Promise<{ lines: WrittenStroke[][]; sample: InkStroke[] } | null> {
     if (texts.length === 0) return null;
     // One writing at a time, Beautify's included: wait for one in progress.
@@ -559,8 +562,15 @@ export class NeatenService {
       const lines: WrittenStroke[][] = [];
       for (const [n, text] of texts.entries()) {
         let kept: Awaited<ReturnType<typeof neatenLine>> = null;
-        // Exact: written again from other noise until it reads back as the text.
-        for (let attempt = 0; attempt < (options.exact ? EXACT_ATTEMPTS : 1); attempt++) {
+        let best: Awaited<ReturnType<typeof neatenLine>> = null;
+        // Written again from other noise until Grape reads it back as the text (a word it
+        // misreads may be misshapen: "friena", "bridye" on the iPad, 2026-11-25); otherwise
+        // the best reading is kept, or for `exact` (an answer) nothing.
+        for (
+          let attempt = 0;
+          attempt < (options.exact ? EXACT_ATTEMPTS : (options.attempts ?? 1));
+          attempt++
+        ) {
           const done = await neatenLine(
             text,
             refs[n],
@@ -570,11 +580,13 @@ export class NeatenService {
             { seed: (options.seed ?? 0) + attempt * 7919, tries, repair: true, stop },
           );
           if (!done || stop()) return null;
-          if (!options.exact || readsAs(text, done.read)) {
+          if (readsAs(text, done.read)) {
             kept = done;
             break;
           }
+          if (!best || errorRate(text, done.read) < errorRate(text, best.read)) best = done;
         }
+        if (!options.exact) kept ??= best;
         if (!kept) return null;
         lines.push(levelledStrokes(kept.written, kept.written.char, text));
       }

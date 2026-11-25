@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import { measureLines } from "../../../src/ink/tidy";
 import {
+  MIN_X_HEIGHT_PENS,
+  TEXT_X_HEIGHT,
+  boxXHeight,
   chunkLine,
   flowWords,
   numericAnswer,
@@ -228,6 +231,24 @@ describe("placeAnswer", () => {
 
   it("writes nothing for nothing", () => {
     expect(placeAnswer([], { x: 0, baseline: 0, height: 10 })).toEqual([]);
+  });
+});
+
+describe("boxXHeight", () => {
+  it("is the box's own lowercase, whatever else is on the page", () => {
+    expect(boxXHeight(40, 3, null)).toBeCloseTo(40 * TEXT_X_HEIGHT, 6);
+    expect(boxXHeight(22, 3, null)).toBeCloseTo(22 * TEXT_X_HEIGHT, 6);
+  });
+
+  it("grows only to stay legible for the pen", () => {
+    expect(boxXHeight(10, 3, null)).toBe(3 * MIN_X_HEIGHT_PENS);
+    expect(boxXHeight(10, 6, null)).toBe(6 * MIN_X_HEIGHT_PENS);
+  });
+
+  it("keeps to the rules on ruled paper, never below legible", () => {
+    expect(boxXHeight(60, 3, 30)).toBeCloseTo(30 / 3, 6);
+    expect(boxXHeight(18, 3, 30)).toBeCloseTo(18 * TEXT_X_HEIGHT, 6);
+    expect(boxXHeight(60, 6, 30)).toBe(6 * MIN_X_HEIGHT_PENS);
   });
 });
 

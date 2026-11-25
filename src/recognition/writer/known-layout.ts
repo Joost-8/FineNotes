@@ -35,6 +35,22 @@ export const MIN_LINE_PITCH = 3;
 export const MEASURED_WORDS = 3;
 /** How far a line's own measure may move it from the calibrated size. */
 export const LINE_SPREAD = 1.3;
+/** A typed letter's x-height as a share of its font size (Obsidian's interface faces: about half). */
+export const TEXT_X_HEIGHT = 0.53;
+/** The smallest x-height written ink stays legible at, in pen widths: smaller, a letter's strokes run together. */
+export const MIN_X_HEIGHT_PENS = 3;
+
+/**
+ * The x-height a text box's handwriting is written at: the box's own
+ * lowercase (its font size, not other ink on the page), larger only where
+ * that would be too small for the pen to write legibly. On ruled paper no
+ * taller than the rules allow, but never below legible. Page px.
+ */
+export function boxXHeight(fontSize: number, penSize: number, rulePitch: number | null): number {
+  const legible = penSize * MIN_X_HEIGHT_PENS;
+  const typed = Math.max(fontSize * TEXT_X_HEIGHT, legible);
+  return rulePitch ? Math.max(legible, Math.min(typed, rulePitch / MIN_LINE_PITCH)) : typed;
+}
 
 /** One written word: strokes of x, y, pressure in page px, x from its left edge, y from its baseline (down). */
 export interface WrittenWord {
