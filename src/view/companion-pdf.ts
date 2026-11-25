@@ -1,11 +1,12 @@
 /** Obsidian adapter for stable companion PDF associations and journalled writes. */
-import { type App, type TAbstractFile, type TFile } from "obsidian";
+import { type App, Notice, type TAbstractFile, type TFile } from "obsidian";
 import {
   COMPANION_FOLLOW_KEY,
   COMPANION_ID_KEY,
   COMPANION_PDF_KEY,
   CompanionController,
   companionContent,
+  companionContentOnly,
   companionIdFromBody,
   companionMetaFromBody,
   companionName,
@@ -20,14 +21,80 @@ import {
   type CompanionSnapshot,
   type CompanionStore,
 } from "../model/companion-pdf";
-import type { InkDocument } from "../model/document";
+import type { InkDocument, Page } from "../model/document";
+import { furnitureText } from "../model/furniture";
+import { stripInkSuffix } from "../model/new-notebook";
+import { paperTheme } from "../canvas/backdrop";
 import {
   recoverCompanionWrite,
   replaceCompanionPdf,
   type CompanionWriteIO,
 } from "../model/companion-write";
-import { companionPdfIdentity, stampCompanionPdfSubject } from "../export/companion-metadata";
+import {
+  companionPdfMeta,
+  companionPdfSubject,
+  stampCompanionPdfSubject,
+} from "../export/companion-metadata";
+import { exportPagesToPdf, type PdfExportSources } from "./pdf-export";
+import { PdfBackdropCache } from "./pdf-backdrop";
+import { VaultImageCache } from "./image-cache";
+import { exportMarginsOf } from "../export/export-choice";
 import { t } from "../i18n/translate";
+
+/**
+ * Builds a detached CompanionSnapshot from a closed/closing notebook's decoded
+ * pages using short-lived image and PDF caches so `InkView.onClose` never
+ * blocks tab closure waiting for PDF rendering.
+ */
+export async function detachedCompanionSnapshot(params: {
+  app: App;
+  id: string;
+  title: string;
+  notebookTitle: string;
+  doc: InkDocument;
+  pages: Page[];
+  options: CompanionExportOptions;
+}): Promise<CompanionSnapshot> {
+  const { app, id, title, notebookTitle, doc, pages, options } = params;
+  const { fingerprint, contentHash, resources } = await fingerprintCompanionDoc(
+    app,
+    { pages },
+    title,
+    options,
+  );
+  const subject = companionPdfSubject(id, contentHash);
+  return {
+    fingerprint,
+    contentHash,
+    resources,
+    export: async () => {
+      const images = new VaultImageCache(app);
+      const pdf = pages.some((p) => p.backdrop.kind === "pdf") ? new PdfBackdropCache(app) : null;
+      try {
+        const sources: PdfExportSources = {
+          readPdf: async (path: string) => {
+            const f = app.vault.getFileByPath(path);
+            if (!f) throw new Error(`Missing PDF source — ${path}`);
+            return app.vault.readBinary(f);
+          },
+          pdf,
+          images,
+          paper: paperTheme(false),
+          usePressure: options.usePressure,
+          highlighterAlpha: options.highlighterAlpha,
+          plainPaper: options.plainPaper === true,
+          withoutTapes: options.withoutTapes === true,
+          margins: exportMarginsOf(options.margins),
+          furniture: (page) => furnitureText(doc, pages.indexOf(page), notebookTitle),
+        };
+        return await exportPagesToPdf(pages, sources, { title, subject });
+      } finally {
+        images.destroy();
+        pdf?.destroy();
+      }
+    },
+  };
+}
 
 export async function companionDigest(text: string): Promise<string> {
   const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
@@ -39,14 +106,17 @@ export async function fingerprintCompanionDoc(
   doc: Pick<InkDocument, "pages">,
   title: string,
   options: CompanionExportOptions,
-): Promise<{ fingerprint: string; resources: string[] }> {
+): Promise<{ fingerprint: string; contentHash: string; resources: string[] }> {
   const resources = companionResources(doc);
   const assets = resources.map((path) => {
     const file = app.vault.getFileByPath(path);
     return { path, mtime: file?.stat.mtime ?? null, size: file?.stat.size ?? null };
   });
-  const fingerprint = await companionDigest(companionContent(doc, options, assets) + title);
-  return { fingerprint, resources };
+  const [fingerprint, fullContentHash] = await Promise.all([
+    companionDigest(companionContent(doc, options, assets) + title),
+    companionDigest(companionContentOnly(doc, assets) + title),
+  ]);
+  return { fingerprint, contentHash: fullContentHash.slice(0, 16), resources };
 }
 
 export class CompanionPdfManager {
@@ -55,7 +125,7 @@ export class CompanionPdfManager {
   private readonly internal = new Set<string>();
   private readonly identities = new Map<
     string,
-    { mtime: number; size: number; id: string | null }
+    { mtime: number; size: number; id: string | null; contentHash: string | null }
   >();
   private readonly bindings = new Map<string, Promise<void>>();
   private readonly configurations = new WeakMap<TFile, Promise<string>>();
@@ -67,6 +137,7 @@ export class CompanionPdfManager {
     this.controller = new CompanionController(this.store, {
       exists: (path) => this.app.vault.getAbstractFileByPath(path) !== null,
       pdfIdentity: (path) => this.identity(path),
+      pdfContentHash: (path) => this.contentHash(path),
       pdfPaths: () =>
         this.app.vault
           .getFiles()
@@ -132,13 +203,22 @@ export class CompanionPdfManager {
     if (!meta) return undefined;
     const existing = this.store.entries[meta.id];
     if (existing) {
+      let changed = false;
+      if (meta.pdfPath && existing.pdfPath !== meta.pdfPath) {
+        existing.pdfPath = meta.pdfPath;
+        existing.dirty = true;
+        changed = true;
+      }
+      if (meta.followName !== undefined && existing.followName !== meta.followName) {
+        existing.followName = meta.followName;
+        changed = true;
+      }
       if (meta.pdfPath && !existing.enabled) {
         existing.enabled = true;
-        existing.pdfPath = meta.pdfPath;
-        if (meta.followName !== undefined) existing.followName = meta.followName;
         existing.dirty = true;
-        void this.persist();
+        changed = true;
       }
+      if (changed) void this.persist();
       return existing;
     }
     if (!meta.pdfPath || !isCompanionNotebookPath(notebook.path)) return undefined;
@@ -165,19 +245,30 @@ export class CompanionPdfManager {
       : t("notebooks.companion.statusUpToDate");
   }
 
-  private async identity(path: string): Promise<string | null> {
+  private async pdfMeta(path: string): Promise<{ id: string | null; contentHash: string | null }> {
     const file = this.app.vault.getFileByPath(path);
-    if (!file) return null;
+    if (!file) return { id: null, contentHash: null };
     const cached = this.identities.get(path);
-    if (cached && cached.mtime === file.stat.mtime && cached.size === file.stat.size)
-      return cached.id;
+    if (cached && cached.mtime === file.stat.mtime && cached.size === file.stat.size) {
+      return { id: cached.id, contentHash: cached.contentHash };
+    }
     const mtime = file.stat.mtime;
     const size = file.stat.size;
-    const id = await companionPdfIdentity(await this.app.vault.readBinary(file));
+    const meta = await companionPdfMeta(await this.app.vault.readBinary(file));
     if (file.stat.mtime !== mtime || file.stat.size !== size)
-      throw new Error("PDF changed while its ownership was checked.");
-    this.identities.set(path, { mtime, size, id });
-    return id;
+      throw new Error(t("notebooks.companion.errChangedDuringCheck"));
+    const id = meta?.id ?? null;
+    const contentHash = meta?.contentHash ?? null;
+    this.identities.set(path, { mtime, size, id, contentHash });
+    return { id, contentHash };
+  }
+
+  private async identity(path: string): Promise<string | null> {
+    return (await this.pdfMeta(path)).id;
+  }
+
+  private async contentHash(path: string): Promise<string | null> {
+    return (await this.pdfMeta(path)).contentHash;
   }
 
   private async ensureFolder(path: string): Promise<void> {
@@ -410,12 +501,13 @@ export class CompanionPdfManager {
     notebook: TFile,
     exportedPath: string,
     fingerprint: string,
+    contentHash?: string,
   ): Promise<string> {
     if (!isCompanionNotebookPath(notebook.path))
-      throw new Error("Companion PDFs are available for FineNotes notebooks and pages.");
+      throw new Error(t("notebooks.companion.errNotebookUnavailable"));
     const cleanTarget = companionPath(exportedPath);
     const pdfFile = this.app.vault.getFileByPath(cleanTarget);
-    if (!pdfFile) throw new Error("Exported PDF could not be found.");
+    if (!pdfFile) throw new Error(t("notebooks.companion.errMissing"));
 
     const body = await this.app.vault.read(notebook);
     this.hydrateFromBody(notebook, body);
@@ -425,10 +517,10 @@ export class CompanionPdfManager {
         ([other, e]) => other !== id && e.pdfPath.toLowerCase() === cleanTarget.toLowerCase(),
       )
     )
-      throw new Error("Another notebook already owns this PDF target.");
+      throw new Error(t("notebooks.companion.errOwnedByOther"));
 
     const raw = await this.app.vault.readBinary(pdfFile);
-    const stamped = await stampCompanionPdfSubject(raw, id);
+    const stamped = await stampCompanionPdfSubject(raw, id, contentHash);
     this.internal.add(cleanTarget);
     this.identities.delete(cleanTarget);
     try {
@@ -462,10 +554,18 @@ export class CompanionPdfManager {
     if (!entry?.enabled) return;
     await this.bind(id, notebook);
     const current = await snapshot();
-    const dirty =
-      current.fingerprint !== entry.lastFingerprint || !this.app.vault.getFileByPath(entry.pdfPath);
-    if (dirty && !entry.dirty) {
-      entry.dirty = true;
+    const exists = this.app.vault.getFileByPath(entry.pdfPath) !== null;
+    let dirty = !exists;
+    if (exists) {
+      const pdfHash = current.contentHash ? await this.contentHash(entry.pdfPath) : null;
+      dirty =
+        pdfHash !== null
+          ? pdfHash !== current.contentHash
+          : current.fingerprint !== entry.lastFingerprint;
+    }
+    if (dirty !== entry.dirty) {
+      entry.dirty = dirty;
+      if (!dirty) entry.lastFingerprint = current.fingerprint;
       await this.persist();
     }
   }
@@ -520,12 +620,24 @@ export class CompanionPdfManager {
     this.identities.delete(path);
     if (this.isInternal(path)) return;
     let changed = false;
-    for (const entry of Object.values(this.store.entries))
+    for (const [id, entry] of Object.entries(this.store.entries)) {
       if (entry.pdfPath === path || entry.pdfPath.startsWith(path + "/")) {
-        entry.dirty = true;
+        const wasEnabled = entry.enabled;
+        entry.enabled = false;
+        entry.dirty = false;
         delete entry.lastFingerprint;
+        delete entry.error;
         changed = true;
+        if (wasEnabled) {
+          const noteFile = this.app.vault.getFileByPath(entry.notebookPath);
+          if (noteFile) await this.syncFrontmatter(noteFile, id, entry);
+          const name = stripInkSuffix(
+            noteFile?.basename ?? entry.notebookPath.split("/").pop() ?? "",
+          );
+          new Notice(t("notebooks.companion.deletedDisabled", { name }), 6000);
+        }
       }
+    }
     if (changed) await this.persist();
   }
 }

@@ -1,5 +1,6 @@
 /** Optional Companion PDF associations; pure model with no platform dependencies. */
 import { INK_FILE_SUFFIXES } from "../constants";
+import { t } from "../i18n/translate";
 import type { InkDocument } from "./document";
 import { stripInkSuffix } from "./new-notebook";
 
@@ -183,6 +184,34 @@ export interface CompanionExportOptions {
   margins?: string;
 }
 
+function companionPagesPayload(doc: Pick<InkDocument, "pages">): unknown[] {
+  return doc.pages.map((page) => {
+    const { id: _id, bookmarked: _bookmarked, title: _title, ...visual } = page;
+    return {
+      ...visual,
+      strokes: page.strokes.map(({ id: _sid, t0: _t0, ...graphics }) => graphics),
+      images: page.images.map(({ id: _iid, ...image }) => image),
+      textBoxes: page.textBoxes.map(({ id: _tid, ...text }) => text),
+      tables: (page.tables ?? []).map(({ id: _tbid, ...table }) => table),
+      graphs: (page.graphs ?? []).map(({ id: _gid, ...graph }) => graph),
+      equations: (page.equations ?? []).map(({ id: _eid, ...eq }) => eq),
+    };
+  });
+}
+
+/**
+ * Device-independent content payload (pages + referenced assets, excluding
+ * per-device render settings like pressure width or highlighter alpha).
+ * Hashed into the PDF Subject so stale synced PDFs are caught without causing
+ * two devices with different pen settings to rewrite each other.
+ */
+export function companionContentOnly(doc: Pick<InkDocument, "pages">, resources: unknown): string {
+  return JSON.stringify({
+    pages: companionPagesPayload(doc),
+    resources,
+  });
+}
+
 /**
  * Only exported graphics & export switches; navigation, audio and bookmarks are
  * excluded. Uses an exclude-list on Page so any future visual element added to
@@ -194,18 +223,7 @@ export function companionContent(
   resources: unknown,
 ): string {
   return JSON.stringify({
-    pages: doc.pages.map((page) => {
-      const { id: _id, bookmarked: _bookmarked, title: _title, ...visual } = page;
-      return {
-        ...visual,
-        strokes: page.strokes.map(({ id: _sid, t0: _t0, ...graphics }) => graphics),
-        images: page.images.map(({ id: _iid, ...image }) => image),
-        textBoxes: page.textBoxes.map(({ id: _tid, ...text }) => text),
-        tables: (page.tables ?? []).map(({ id: _tbid, ...table }) => table),
-        graphs: (page.graphs ?? []).map(({ id: _gid, ...graph }) => graph),
-        equations: (page.equations ?? []).map(({ id: _eid, ...eq }) => eq),
-      };
-    }),
+    pages: companionPagesPayload(doc),
     options,
     resources,
   });
@@ -224,6 +242,7 @@ export function companionResources(doc: Pick<InkDocument, "pages">): string[] {
 
 export interface CompanionSnapshot {
   fingerprint: string;
+  contentHash?: string;
   resources: string[];
   export: () => Promise<Uint8Array>;
 }
@@ -231,6 +250,7 @@ export interface CompanionSnapshot {
 export interface CompanionIO {
   exists: (path: string) => boolean;
   pdfIdentity: (path: string) => Promise<string | null>;
+  pdfContentHash?: (path: string) => Promise<string | null>;
   pdfPaths: () => string[];
   rename: (from: string, to: string) => Promise<void>;
   replace: (entry: CompanionEntry, bytes: Uint8Array, id: string) => Promise<void>;
@@ -263,17 +283,16 @@ export class CompanionController {
     return transitioned;
   }
 
-  async resolve(id: string): Promise<string | null> {
+  async resolve(id: string, allowFullScan = true): Promise<string | null> {
     const entry = this.store.entries[id];
     if (!entry) return null;
     if (this.io.exists(entry.pdfPath) && (await this.io.pdfIdentity(entry.pdfPath)) === id)
       return entry.pdfPath;
     if (this.chosen.has(id)) {
-      if (this.io.exists(entry.pdfPath))
-        throw new Error("An unrelated file occupies the companion path. Choose another target.");
+      if (this.io.exists(entry.pdfPath)) throw new Error(t("notebooks.companion.errUnrelatedFile"));
       return null;
     }
-    const candidates = this.io
+    const allCandidates = this.io
       .pdfPaths()
       .filter(
         (path) =>
@@ -281,19 +300,33 @@ export class CompanionController {
           !/[.]pdf[.]fn-[a-f0-9]{16}-(?:pending|backup)[.]pdf$/i.test(path) &&
           !isSyncConflictCopy(path),
       );
+    const parentOf = (p: string): string => {
+      const i = p.lastIndexOf("/");
+      return i < 0 ? "" : p.slice(0, i);
+    };
+    const baseOf = (p: string): string => p.slice(p.lastIndexOf("/") + 1).toLowerCase();
+    const noteDir = parentOf(entry.notebookPath);
+    const pdfDir = parentOf(entry.pdfPath);
+    const expectedNames = new Set([
+      baseOf(entry.pdfPath),
+      companionName(entry.notebookPath).toLowerCase(),
+    ]);
+    const isLikely = (p: string): boolean => {
+      const dir = parentOf(p);
+      return dir === pdfDir || dir === noteDir || expectedNames.has(baseOf(p));
+    };
+    const candidates = allowFullScan ? allCandidates : allCandidates.filter(isLikely);
     const owned: string[] = [];
     for (const path of candidates) {
       if ((await this.io.pdfIdentity(path)) === id) owned.push(path);
     }
-    if (owned.length > 1)
-      throw new Error("Multiple PDFs have this companion identity. Choose one target explicitly.");
+    if (owned.length > 1) throw new Error(t("notebooks.companion.errMultiplePdfs"));
     if (owned.length === 1) {
       entry.pdfPath = owned[0];
       await this.io.persist();
       return owned[0];
     }
-    if (this.io.exists(entry.pdfPath))
-      throw new Error("An unrelated file occupies the companion path. Choose another target.");
+    if (this.io.exists(entry.pdfPath)) throw new Error(t("notebooks.companion.errUnrelatedFile"));
     return null;
   }
 
@@ -304,7 +337,7 @@ export class CompanionController {
         ([other, e]) => other !== id && e.pdfPath.toLowerCase() === clean.toLowerCase(),
       )
     )
-      throw new Error("Another notebook already owns this PDF target.");
+      throw new Error(t("notebooks.companion.errOwnedByOther"));
     this.store.entries[id].pdfPath = clean;
     this.store.entries[id].dirty = true;
     this.chosen.add(id);
@@ -319,7 +352,7 @@ export class CompanionController {
       await this.io.persist();
       return;
     }
-    const current = await this.resolve(id);
+    const current = await this.resolve(id, false);
     const folder = entry.pdfPath.split("/").slice(0, -1).join("/");
     const next = defaultCompanionPath(notebookPath, folder);
     if (next === entry.pdfPath) {
@@ -327,8 +360,7 @@ export class CompanionController {
       await this.io.persist();
       return;
     }
-    if (this.io.exists(next))
-      throw new Error("Cannot follow the notebook name: another file occupies that path.");
+    if (this.io.exists(next)) throw new Error(t("notebooks.companion.errFollowOccupied"));
     if (current) await this.io.rename(current, next);
     entry.pdfPath = next;
     entry.notebookPath = notebookPath;
@@ -354,32 +386,41 @@ export class CompanionController {
           const revision = this.revisions.get(id) ?? 0;
           try {
             const current = await request.snapshot();
-            const target = await this.resolve(id);
+            const target = await this.resolve(id, request.force);
             if (current.resources.includes(entry.pdfPath))
-              throw new Error(
-                "A companion PDF cannot also be this notebook's imported PDF or picture source.",
-              );
-            if (!request.force && target && current.fingerprint === entry.lastFingerprint) {
-              const dirty = (this.revisions.get(id) ?? 0) !== revision;
-              const changed = entry.dirty !== dirty || entry.error !== undefined;
-              entry.dirty = dirty;
-              delete entry.error;
-              if (changed) await this.io.persist();
-              continue;
+              throw new Error(t("notebooks.companion.errSourceConflict"));
+            if (!request.force && target) {
+              const pdfHash = current.contentHash
+                ? await this.io.pdfContentHash?.(target)
+                : undefined;
+              const upToDate =
+                pdfHash !== null && pdfHash !== undefined
+                  ? pdfHash === current.contentHash
+                  : current.fingerprint === entry.lastFingerprint;
+              if (upToDate) {
+                const dirty = (this.revisions.get(id) ?? 0) !== revision;
+                const changed =
+                  entry.dirty !== dirty ||
+                  entry.error !== undefined ||
+                  entry.lastFingerprint !== current.fingerprint;
+                entry.dirty = dirty;
+                entry.lastFingerprint = current.fingerprint;
+                delete entry.error;
+                if (changed) await this.io.persist();
+                continue;
+              }
             }
             if (!target && entry.lastFingerprint && !request.force)
-              throw new Error(
-                "PDF missing. Choose its moved path, or use Update PDF now to recreate it.",
-              );
+              throw new Error(t("notebooks.companion.errMissing"));
             this.rendered.add(id);
             const queuedNext = this.pending.get(id);
             if (queuedNext) queuedNext.force = false;
             const bytes = await current.export();
             if (!entry.enabled) break;
             // The PDF may have moved while it was rendered; resolve again before writing.
-            await this.resolve(id);
+            await this.resolve(id, false);
             if (current.resources.includes(entry.pdfPath))
-              throw new Error("Companion target is a notebook source.");
+              throw new Error(t("notebooks.companion.errSourceConflict"));
             await this.io.replace(entry, bytes, id);
             this.chosen.delete(id);
             entry.lastFingerprint = current.fingerprint;

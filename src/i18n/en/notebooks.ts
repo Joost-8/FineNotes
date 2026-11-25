@@ -1587,5 +1587,24 @@ export const notebooks = {
   "notebooks.companion.updateNow": "Update PDF now",
   "notebooks.companion.keepUpdated": "Keep PDF updated",
   "notebooks.companion.keptUpdated": "Companion PDF enabled — updates automatically on close.",
+  "notebooks.companion.deletedDisabled":
+    "Companion PDF deleted — auto-update turned off for {name}.",
   "notebooks.companion.noticePrefix": "FineNotes companion PDF: {error}",
+  "notebooks.companion.errUnrelatedFile":
+    "An unrelated file occupies the companion path. Choose another target.",
+  "notebooks.companion.errMultiplePdfs":
+    "Multiple PDFs have this companion identity. Choose one target explicitly.",
+  "notebooks.companion.errOwnedByOther": "Another notebook already owns this PDF target.",
+  "notebooks.companion.errFollowOccupied":
+    "Cannot follow the notebook name: another file occupies that path.",
+  "notebooks.companion.errSourceConflict":
+    "A companion PDF cannot also be this notebook's imported PDF or picture source.",
+  "notebooks.companion.errMissing":
+    "PDF missing. Choose its moved path, or use Update PDF now to recreate it.",
+  "notebooks.companion.errChangedDuringCheck": "PDF changed while its ownership was checked.",
+  "notebooks.companion.errNotebookUnavailable":
+    "The notebook is unavailable or its load is protected.",
+  "notebooks.companion.errNoPages": "The notebook has no pages to export.",
+  "notebooks.companion.errMissingIdentity": "Missing companion PDF identity.",
+  "notebooks.companion.errNotebookChanged": "Notebook changed during companion update.",
 } as const;

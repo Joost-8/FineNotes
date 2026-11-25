@@ -459,3 +459,75 @@ it("automatically fingerprints unknown future visual fields added to Page", () =
   (doc.pages[0] as unknown as Record<string, unknown>).futureDiagrams = [{ x: 10, y: 20 }];
   expect(companionContent(doc, options, [])).not.toBe(before);
 });
+
+it("detects a stale synced PDF via contentHash without ping-ponging across different device render settings", async () => {
+  const s = setup();
+  let pdfHash: string | null = "1111111111111111";
+  const controller = new CompanionController(s.store, {
+    exists: (p) => s.files.has(p),
+    pdfIdentity: async (p) => s.files.get(p) ?? null,
+    pdfContentHash: async () => pdfHash,
+    pdfPaths: () => [...s.files.keys()],
+    rename: async (from, to) => {
+      const id = s.files.get(from);
+      if (id !== undefined) {
+        s.files.delete(from);
+        s.files.set(to, id);
+      }
+    },
+    replace: async (entry, _bytes, id) => {
+      s.files.set(entry.pdfPath, id);
+      pdfHash = "2222222222222222";
+    },
+    persist: async () => {},
+  });
+
+  // Existing PDF on disk has an older contentHash ("1111...") even though local lastFingerprint matches.
+  s.files.set(s.store.entries[ID].pdfPath, ID);
+  s.store.entries[ID].lastFingerprint = "device-a-fp";
+  const render = vi.fn(async () => new Uint8Array([1, 2, 3]));
+  await controller.update(
+    ID,
+    async () => ({
+      fingerprint: "device-a-fp",
+      contentHash: "2222222222222222",
+      resources: [],
+      export: render,
+    }),
+    false,
+  );
+  expect(render).toHaveBeenCalledOnce();
+
+  // Another device with a different local render fingerprint sees the matching contentHash -> no rewrite.
+  render.mockClear();
+  await controller.update(
+    ID,
+    async () => ({
+      fingerprint: "device-b-different-pressure-fp",
+      contentHash: "2222222222222222",
+      resources: [],
+      export: render,
+    }),
+    false,
+  );
+  expect(render).not.toHaveBeenCalled();
+});
+
+it("scopes background resolve() to local candidates instead of scanning unrelated vault PDFs", async () => {
+  const s = setup();
+  s.files.set("Archive/2020/Unrelated.pdf", "bbbbbbbbbbbbbbbb");
+  const checked: string[] = [];
+  const controller = new CompanionController(s.store, {
+    exists: (p) => s.files.has(p),
+    pdfIdentity: async (p) => {
+      checked.push(p);
+      return s.files.get(p) ?? null;
+    },
+    pdfPaths: () => [...s.files.keys()],
+    rename: async () => {},
+    replace: async () => {},
+    persist: async () => {},
+  });
+  await controller.resolve(ID, false);
+  expect(checked).not.toContain("Archive/2020/Unrelated.pdf");
+});

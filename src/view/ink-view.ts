@@ -84,7 +84,7 @@ import {
   isCompanionNotebookPath,
   type CompanionSnapshot,
 } from "../model/companion-pdf";
-import { fingerprintCompanionDoc } from "./companion-pdf";
+import { detachedCompanionSnapshot, fingerprintCompanionDoc } from "./companion-pdf";
 import { DotClock, attachDotClock, dotClockOf, idsIn } from "../model/dot-ids";
 import {
   type DevicePagesLoad,
@@ -6372,23 +6372,24 @@ export class InkView extends TextFileView {
   private async companionSnapshot(): Promise<CompanionSnapshot> {
     const note = this.file;
     if (!note || this.isDamaged()) {
-      throw new Error("The notebook is unavailable or its load is protected.");
+      throw new Error(t("notebooks.companion.errNotebookUnavailable"));
     }
     const exportable = this.persistedExportablePages();
-    if (exportable.pages.length === 0) throw new Error("The notebook has no pages to export.");
+    if (exportable.pages.length === 0) throw new Error(t("notebooks.companion.errNoPages"));
     const id = companionIdFromBody(this.noteBody);
-    if (!id) throw new Error("Missing companion PDF identity.");
+    if (!id) throw new Error(t("notebooks.companion.errMissingIdentity"));
     const title = stripInkSuffix(note.basename);
-    const subject = companionPdfSubject(id);
     const sources = this.pdfExportSources();
-    const { fingerprint, resources } = await fingerprintCompanionDoc(
+    const { fingerprint, contentHash, resources } = await fingerprintCompanionDoc(
       this.app,
       exportable,
       title,
       this.companionOptions(sources),
     );
+    const subject = companionPdfSubject(id, contentHash);
     return {
       fingerprint,
+      contentHash,
       resources,
       export: () => exportPagesToPdf(exportable.pages, sources, { title, subject }),
     };
@@ -6411,7 +6412,7 @@ export class InkView extends TextFileView {
   }): Promise<void> {
     const note = this.file;
     if (!note || this.isDamaged()) {
-      throw new Error("Cannot configure a protected or unavailable notebook.");
+      throw new Error(t("notebooks.companion.errNotebookUnavailable"));
     }
     await this.saveNow(false, true);
     await this.plugin.companionPdfs.configure(
@@ -6429,26 +6430,58 @@ export class InkView extends TextFileView {
   private async adoptExportedCompanionPdf(exportedPath: string): Promise<void> {
     const note = this.file;
     if (!note || this.isDamaged()) {
-      throw new Error("Cannot configure a protected or unavailable notebook.");
+      throw new Error(t("notebooks.companion.errNotebookUnavailable"));
     }
     await this.saveNow(false, true);
-    const { fingerprint } = await fingerprintCompanionDoc(
+    const { fingerprint, contentHash } = await fingerprintCompanionDoc(
       this.app,
       this.persistedExportablePages(),
       stripInkSuffix(note.basename),
       this.companionOptions(this.pdfExportSources()),
     );
-    await this.plugin.companionPdfs.adoptExportedPdf(note, exportedPath, fingerprint);
+    await this.plugin.companionPdfs.adoptExportedPdf(note, exportedPath, fingerprint, contentHash);
     const savedBody = parseInkFile(await this.app.vault.read(note), this.settings.paperWidth).body;
     if (this.file !== note) return;
     this.noteBody = savedBody;
   }
 
-  /** The companion PDF's update as the notebook goes: once per file, on unload or on close. */
+  /**
+   * Queues a non-blocking companion PDF update as the notebook closes: once per
+   * file, on unload or on close. Snapshots the decoded pages before teardown so
+   * closing a tab on a tablet returns immediately instead of waiting for export.
+   */
   private async closeCompanionPdf(file: TFile): Promise<void> {
     if (this.companionUnloadedFile === file) return;
     this.companionUnloadedFile = file;
-    await this.updateCompanionPdf(false);
+    const id = companionIdFromBody(this.noteBody);
+    if (!id || !this.hasCompanionPdf || this.isDamaged()) return;
+    const exportable = this.persistedExportablePages();
+    if (exportable.pages.length === 0) return;
+    const title = stripInkSuffix(file.basename);
+    const notebookTitle = this.notebookTitle();
+    const docSnapshot = structuredClone(this.surface?.document ?? this.doc);
+    const options = this.companionOptions(this.pdfExportSources());
+    const app = this.app;
+
+    await this.saveNow(false, true);
+
+    void this.plugin.companionPdfs
+      .update(
+        id,
+        file,
+        () =>
+          detachedCompanionSnapshot({
+            app,
+            id,
+            title,
+            notebookTitle,
+            doc: docSnapshot,
+            pages: exportable.pages,
+            options,
+          }),
+        false,
+      )
+      .catch((error) => this.companionError(error));
   }
 
   async updateCompanionPdf(force = true): Promise<void> {
@@ -6461,7 +6494,7 @@ export class InkView extends TextFileView {
         id,
         note,
         () => {
-          if (this.file !== note) throw new Error("Notebook changed during companion update.");
+          if (this.file !== note) throw new Error(t("notebooks.companion.errNotebookChanged"));
           return this.companionSnapshot();
         },
         force,
