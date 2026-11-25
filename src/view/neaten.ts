@@ -39,6 +39,7 @@ import { type TaggedLine, levelledStrokes, median } from "../recognition/writer/
 import { inkXHeight, leastXHeight, writtenXHeight } from "../recognition/writer/x-height";
 import { DEFAULT_TRIES } from "../recognition/writer/flow-meta";
 import { type WriterKind, WRITER_KINDS, kindFor } from "../recognition/writer/kinds";
+import { guidanceAt } from "../recognition/writer/neatness";
 import { roughness } from "../recognition/writer/evenness";
 import { strengthAt } from "../recognition/writer/neatness";
 import { straighten } from "../recognition/writer/straighten";
@@ -323,8 +324,11 @@ export class NeatenService {
       }
       refs.push(kind.reference(job.text, shown, manifest, n + 1));
     }
-    // The model writes at its own guidance; the neatness dial is how far the written
-    // line's letters are straightened (`neatness.ts`, `straighten.ts`).
+    // The neatness dial is how far the written line's letters are straightened; the
+    // guidance is the model's own at every stop (`neatness.ts`, `straighten.ts`).
+    const guidance = manifest.sampling
+      ? guidanceAt(this.host.neatness(), manifest.sampling.guidance)
+      : undefined;
     const strength = strengthAt(this.host.neatness());
     const tries = manifest.sampling?.tries ?? DEFAULT_TRIES;
     if (request.stop()) return { kind: "stopped" };
@@ -339,7 +343,7 @@ export class NeatenService {
         job.text,
         ref,
         n,
-        (text, r, seed, id, low) => writer.write(text, r, seed, id, low),
+        (text, r, seed, id, low) => writer.write(text, r, seed, id, low, guidance),
         (written) => this.host.handwriting.readRows(written),
         {
           seed: 0,

@@ -39,9 +39,8 @@ export function strengthAt(neatness: number): number {
 
 /**
  * The guidance a line is written at, at any slider position: the model's
- * own (`base`). The dial no longer moves it; this stays for callers written
- * against the dial of 24 November (known text written in the hand), so they
- * keep compiling and write as Beautify does.
+ * own (`base`). The dial no longer moves it; everything that writes in the
+ * hand (Beautify, known text) still asks here, so one place says so.
  */
 export function guidanceAt(_neatness: number, base: number): number {
   return base;
