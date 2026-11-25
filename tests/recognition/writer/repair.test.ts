@@ -4,6 +4,7 @@ import {
   errorRate,
   neatenLine,
   opcodes,
+  READ_BACK_SURE,
   readBackRewrite,
   rejected,
   wordSpan,
@@ -202,6 +203,30 @@ describe("readBackRewrite", () => {
     expect(
       readBackRewrite("test again but simple", "test ag ain but single", [false, true, true, true]),
     ).toEqual([false, false, true, false]);
+  });
+
+  it("keeps the writer's ink for a word read back as itself with a letter the reader was unsure of (at written like nt)", () => {
+    const read = "Meeting on Tuesday at 10:30";
+    const sure = Array.from(read, () => 0.99);
+    sure[read.indexOf("at ")] = READ_BACK_SURE - 0.01;
+    expect(readBackRewrite(read, read, [true, true, true, true, true], sure)).toEqual([
+      true,
+      true,
+      true,
+      false,
+      true,
+    ]);
+    // At the bar, and on a space or punctuation, nothing changes.
+    sure[read.indexOf("at ")] = READ_BACK_SURE;
+    sure[read.indexOf(":")] = 0.1;
+    sure[read.indexOf(" at")] = 0.1;
+    expect(readBackRewrite(read, read, [true, true, true, true, true], sure)).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+    ]);
   });
 
   it("leaves every word rewritten when the line reads back right, and never rewrites a kept one", () => {

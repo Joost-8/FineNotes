@@ -19470,6 +19470,7 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
         strokes,
         selected: new Set(sel.strokes.map((stroke) => stroke.id)),
         rules: writingLines(page.backdrop, page.geometry),
+        pageWidth: page.geometry.width,
         stop,
         asking: () => {
           asked = true;

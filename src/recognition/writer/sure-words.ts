@@ -20,6 +20,7 @@
  */
 
 import type { CharReading } from "../hwr/char-readings";
+import { plainWord } from "../hwr/corrections";
 import { opcodes } from "./repair";
 
 export interface SureBars {
@@ -105,12 +106,77 @@ export function sureWords(
           c.confidence >= bars.minConfidence &&
           (c.alternatives[0]?.p ?? 0) <= bars.maxRival,
       );
-      const core = wordCore(words[i]);
-      const listed = !inList || !/\p{L}/u.test(core) || inList(core);
-      if (ok && listed) out[i] = true;
+      if (ok && listedOrNot(words[i], inList)) out[i] = true;
     }
   }
   return out;
+}
+
+/**
+ * Whether a word passes the word list: only a word the list could hold is
+ * looked up. The list keeps words of three letters or more, letters only
+ * (`plainWord`), so "on", "at" and "B-214" are never in it; they were each
+ * asked about on Joost's iPad (25 November) for that alone.
+ */
+function listedOrNot(word: string, inList: ((word: string) => boolean) | null): boolean {
+  if (!inList) return true;
+  const core = wordCore(word);
+  return plainWord(core) === null || inList(core);
+}
+
+/**
+ * How sure Grape is of each word of `text`, 0 to 1: its least sure letter,
+ * halved when the word could be in the word list and is not, and 0 where the
+ * text (with the language model) and the letters as written disagree. The
+ * least sure words are the ones worth a question.
+ */
+export function wordSureness(
+  text: string,
+  greedy: string,
+  chars: readonly CharReading[],
+  inList: ((word: string) => boolean) | null = null,
+): number[] {
+  const words = wordsOf(text);
+  const out = words.map(() => 0);
+  const read = greedyWords(greedy, chars);
+  if (!read) return out;
+  for (const [tag, a0, a1, b0] of opcodes(
+    words,
+    read.map((r) => r.word),
+  )) {
+    if (tag !== "equal") continue;
+    for (let i = a0; i < a1; i++) {
+      const least = Math.min(...read[b0 + (i - a0)].letters.map((c) => c.confidence));
+      out[i] = listedOrNot(words[i], inList) ? least : least / 2;
+    }
+  }
+  return out;
+}
+
+/** A word Beautify could ask about: where it is, and how sure Grape is of it. */
+export interface Question {
+  line: number;
+  word: number;
+  sure: number;
+}
+
+/**
+ * Below this sureness a word Grape is unsure of gets a card; above it, it is
+ * written as read (the read-back still keeps a word that does not read back
+ * as itself in the writer's ink). "Tuesday" read at 0.97 needs no question.
+ */
+export const ASK_BELOW = 0.9;
+
+/**
+ * Which unsure words to ask about: the least sure first, at most `budget`
+ * of them (about one per line selected: Joost, 25 November, after ten
+ * cards for two lines), and only those under `ASK_BELOW`.
+ */
+export function pickQuestions(candidates: readonly Question[], budget: number): Question[] {
+  return candidates
+    .filter((q) => q.sure < ASK_BELOW)
+    .sort((a, b) => a.sure - b.sure || a.line - b.line || a.word - b.word)
+    .slice(0, Math.max(0, budget));
 }
 
 /** An answer the writer gave about a word (corrections.json): what it is, and its strokes. */
@@ -160,32 +226,20 @@ export function applyAnswers(
   return { words: out, known, listed };
 }
 
-/**
- * The words of a line Beautify would leave as written because Grape is not
- * sure of them, as their ink: the ones it can ask the writer about (a word
- * with a letter or digit, not rewritten).
- */
-export function unsureWords(line: {
-  words: readonly string[];
-  ink: readonly (readonly string[])[];
-  rewrite: readonly boolean[];
-}): string[][] {
-  return line.words.flatMap((w, i) =>
-    !line.rewrite[i] && /[\p{L}\p{N}]/u.test(w) && line.ink[i]?.length ? [[...line.ink[i]]] : [],
-  );
-}
-
 /** A line's words with their strokes and whether each is rewritten. */
 export interface LineWords {
   words: string[];
   ink: string[][];
   rewrite: boolean[];
+  /** How sure Grape is of each word (`wordSureness`); a joined word takes its parts' least. */
+  sure?: number[];
 }
 
 interface Part {
   word: string;
   ink: string[];
   rewrite: boolean;
+  sure: number;
 }
 
 /**
@@ -198,7 +252,12 @@ export function joinPunctuation(line: LineWords): LineWords {
   const parts: Part[] = [];
   let lead: Part | null = null;
   line.words.forEach((word, i) => {
-    const part: Part = { word, ink: line.ink[i] ?? [], rewrite: line.rewrite[i] ?? false };
+    const part: Part = {
+      word,
+      ink: line.ink[i] ?? [],
+      rewrite: line.rewrite[i] ?? false,
+      sure: line.sure?.[i] ?? 0,
+    };
     const bare = !/[\p{L}\p{N}]/u.test(word);
     const last = parts[parts.length - 1];
     if (bare && last) {
@@ -215,9 +274,18 @@ export function joinPunctuation(line: LineWords): LineWords {
     words: parts.map((p) => p.word),
     ink: parts.map((p) => p.ink),
     rewrite: parts.map((p) => p.rewrite),
+    ...(line.sure ? { sure: parts.map((p) => p.sure) } : {}),
   };
 }
 
+/** Two parts as one word; a bare punctuation mark does not lower how sure the word is. */
 function join(a: Part, b: Part): Part {
-  return { word: a.word + b.word, ink: [...a.ink, ...b.ink], rewrite: a.rewrite && b.rewrite };
+  const bare = (p: Part): boolean => !/[\p{L}\p{N}]/u.test(p.word);
+  const sure = bare(a) ? b.sure : bare(b) ? a.sure : Math.min(a.sure, b.sure);
+  return {
+    word: a.word + b.word,
+    ink: [...a.ink, ...b.ink],
+    rewrite: a.rewrite && b.rewrite,
+    sure,
+  };
 }
