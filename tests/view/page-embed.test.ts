@@ -65,11 +65,17 @@ function fakeEl(): Record<string, unknown> {
     addClass(...cls: string[]) {
       for (const c of cls) (el.classes as Set<string>).add(c);
     },
+    hasClass(cls: string) {
+      return (el.classes as Set<string>).has(cls);
+    },
     removeClass(...cls: string[]) {
       for (const c of cls) (el.classes as Set<string>).delete(c);
     },
     setAttribute(k: string, v: string) {
       (el.attrs as Map<string, string>).set(k, v);
+    },
+    removeAttribute(k: string) {
+      (el.attrs as Map<string, string>).delete(k);
     },
     getAttribute(k: string) {
       return (el.attrs as Map<string, string>).get(k) ?? null;
@@ -371,6 +377,36 @@ describe("Notebook embeds' pages", () => {
     const click = (second!.listeners as Map<string, (e: unknown) => void>).get("click");
     click?.({ preventDefault() {}, stopPropagation() {} });
     expect(opened).toEqual(["Physics.notebook#page=2"]);
+  });
+
+  it("leaves pen and keyboard events to a mounted inline editor", async () => {
+    const report = observers();
+    notebookPages = [page("hw-test")];
+    const { reg, embeds, notebook, opened, app } = setUp();
+    embeds.onload();
+    const c = { ...ctx("Physics.notebook#id=hw-test"), app: app as never };
+    (c.containerEl as Fake).closest = (selector: string) =>
+      selector === ".markdown-source-view.mod-cm6" ? {} : null;
+    void reg.embedByExtension.md!(c, notebook as never, "#id=hw-test")?.loadFile();
+    const slot = pagesOf(c.containerEl)[0];
+    report(slot, true);
+    await vi.waitFor(() => expect(painted.map((p) => p.id)).toEqual(["hw-test"]));
+
+    const startInline = vi.spyOn(embeds, "startInline");
+    const dispatch = (type: string, event: object) =>
+      (slot.listeners as Map<string, (e: unknown) => void>).get(type)?.(event);
+    const event = { pointerType: "pen", preventDefault: vi.fn(), stopPropagation: vi.fn() };
+    dispatch("pointerdown", event);
+    expect(startInline).toHaveBeenCalledOnce();
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+
+    (slot.classes as Set<string>).add("is-inline-editing");
+    dispatch("pointerdown", event);
+    dispatch("click", event);
+    dispatch("keydown", { key: "Enter" });
+    expect(startInline).toHaveBeenCalledOnce();
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(opened).toEqual([]);
   });
 
   it("takes pages out when the notebook has fewer", async () => {

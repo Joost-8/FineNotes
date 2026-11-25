@@ -1045,6 +1045,8 @@ export interface ToolbarOptions {
   barDock?: BarDock;
   /** "Dock tool options": the pill by the bar is a row the page starts past (`pill-row-model.ts`). */
   pillRow?: boolean;
+  /** Start with tool options folded even when they have a docked row. */
+  startOptionsTucked?: boolean;
   /** The bar's preset: in Essentials the end's buttons live in ⋯ (`isFoldedInPreset`). */
   preset?: BarPreset;
   /** Where every button is (`toolbar-layout.ts`); the default layout when absent. */
@@ -1437,7 +1439,7 @@ export class Toolbar {
       this.pillDock = offeredDock(this.barDock);
     }
     // Docked, the pen's pill covers nothing: it need not start tucked away.
-    this.optionsVisible = !this.startsTucked(state.tool);
+    this.optionsVisible = !options.startOptionsTucked && !this.startsTucked(state.tool);
     this.optionsEl.addClass(`is-dock-${this.pillDock}`);
     this.optionsEl.toggleClass("is-upright", isUpright(this.pillDock));
     bindPillDrag(this.optionsEl, {

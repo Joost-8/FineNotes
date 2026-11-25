@@ -444,6 +444,8 @@ export class EmbedInlineEditor {
           inlineLayoutFrom(plugin.settings.toolbarLayout, savedPenIds),
         allowedItems,
         popoverBounds: slotEl,
+        pillRow: true,
+        startOptionsTucked: true,
         resetLayout: DEFAULT_INLINE_LAYOUT,
         onlyStylusMode: plugin.stylusOnly,
         fingerDrawing: plugin.fingerDrawing,

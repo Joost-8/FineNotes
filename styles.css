@@ -16708,10 +16708,12 @@ button.clickable-icon.goodobsidian-zoombox-window-button.is-active {
   border-bottom: var(--gob-bar-border);
 }
 
+.goodobsidian-inline-toolbar-host.goodobsidian-has-pill-row > .goodobsidian-pill-row,
 .goodobsidian-view.goodobsidian-has-pill-row > .goodobsidian-pill-row {
   display: block;
 }
 
+.goodobsidian-inline-toolbar-host.goodobsidian-has-pill-row > .goodobsidian-toolbar,
 .goodobsidian-view.goodobsidian-has-pill-row > .goodobsidian-toolbar {
   border-bottom-color: transparent;
 }

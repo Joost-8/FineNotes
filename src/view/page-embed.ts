@@ -977,6 +977,7 @@ class PageSlot {
     releaseCanvas(this.canvas);
     this.mountInlineControls();
     this.el.addEventListener("pointerdown", (event) => {
+      if (this.el.hasClass("is-inline-editing")) return;
       if (event.pointerType !== "pen" || !this.page || !this.isLivePreviewEditable()) return;
       if ((event.target as Element | null)?.closest(".goodobsidian-page-embed-actions")) return;
       event.preventDefault();
@@ -984,6 +985,7 @@ class PageSlot {
       this.embed.embeds.startInline(this);
     });
     this.el.addEventListener("click", (event) => {
+      if (this.el.hasClass("is-inline-editing")) return;
       if (
         this.page &&
         this.embed.target.pageId !== undefined &&
@@ -998,6 +1000,7 @@ class PageSlot {
       this.embed.open(event, this.number);
     });
     this.el.addEventListener("keydown", (event) => {
+      if (this.el.hasClass("is-inline-editing")) return;
       if (event.key === "Enter" || event.key === " ") this.embed.open(event, this.number);
     });
   }
