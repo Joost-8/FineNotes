@@ -39,7 +39,9 @@ import { type TaggedLine, levelledStrokes, median } from "../recognition/writer/
 import { inkXHeight, leastXHeight, writtenXHeight } from "../recognition/writer/x-height";
 import { DEFAULT_TRIES } from "../recognition/writer/flow-meta";
 import { type WriterKind, WRITER_KINDS, kindFor } from "../recognition/writer/kinds";
-import { guidanceAt } from "../recognition/writer/neatness";
+import { roughness } from "../recognition/writer/evenness";
+import { strengthAt } from "../recognition/writer/neatness";
+import { straighten } from "../recognition/writer/straighten";
 import {
   type ManifestProblem,
   type WriterManifest,
@@ -321,10 +323,9 @@ export class NeatenService {
       }
       refs.push(kind.reference(job.text, shown, manifest, n + 1));
     }
-    // The neatness dial moves the model's own guidance (`neatness.ts`).
-    const guidance = manifest.sampling
-      ? guidanceAt(this.host.neatness(), manifest.sampling.guidance)
-      : undefined;
+    // The model writes at its own guidance; the neatness dial is how far the written
+    // line's letters are straightened (`neatness.ts`, `straighten.ts`).
+    const strength = strengthAt(this.host.neatness());
     const tries = manifest.sampling?.tries ?? DEFAULT_TRIES;
     if (request.stop()) return { kind: "stopped" };
 
@@ -338,11 +339,20 @@ export class NeatenService {
         job.text,
         ref,
         n,
-        (text, r, seed, id, low) => writer.write(text, r, seed, id, low, guidance),
+        (text, r, seed, id, low) => writer.write(text, r, seed, id, low),
         (written) => this.host.handwriting.readRows(written),
-        { seed: 0, tries, repair: true, stop: request.stop },
+        {
+          seed: 0,
+          tries,
+          repair: true,
+          stop: request.stop,
+          // Of two tries read equally well, the more even one.
+          uneven: (written) => roughness(written, written.char, job.text),
+        },
       );
       if (!done || request.stop()) return { kind: "stopped" };
+      // Words flat and level, letters standing and leaning evenly; no letter redrawn.
+      const written = straighten(done.written, done.written.char, job.text, strength);
       // A word whose writing Grape does not read back as the word stays in the writer's own
       // ink: the model wrote "simple" as "single" and "again" as "ag ain" on Joost's iPad.
       const rewrite = readBackRewrite(job.text, done.read, job.rewrite);
@@ -351,11 +361,11 @@ export class NeatenService {
         strokes: job.strokes,
         words: job.words,
         rewrite,
-        written: levelledStrokes(done.written, done.written.char, job.text),
+        written: levelledStrokes(written, written.char, job.text),
         // Written at the writer's own x-height, or at the least the model writes legibly with their pen.
         xHeight: {
           ink: job.xHeight,
-          written: writtenXHeight(done.written, done.written.char, job.text),
+          written: writtenXHeight(written, written.char, job.text),
           least: leastXHeight(median(job.strokes.map((s) => s.size))),
         },
       });

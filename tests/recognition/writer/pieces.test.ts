@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { kindFor } from "../../../src/recognition/writer/kinds";
 import { parseManifest, type WriterManifest } from "../../../src/recognition/writer/manifest";
-import { guidanceAt, neatnessOf } from "../../../src/recognition/writer/neatness";
+import { neatnessOf, strengthAt } from "../../../src/recognition/writer/neatness";
 import {
   LETTER,
   LINE,
@@ -234,12 +234,13 @@ describe("Dostoyev 2.0 (C2) through its manifest", () => {
 });
 
 describe("neatness", () => {
-  it("maps the slider to 1.2, 1 and 0.75 times the model's guidance at its ends and middle", () => {
-    expect(guidanceAt(0, 1)).toBeCloseTo(1.2);
-    expect(guidanceAt(0.5, 1)).toBeCloseTo(1);
-    expect(guidanceAt(1, 1)).toBeCloseTo(0.75);
-    expect(guidanceAt(0.75, 1)).toBeCloseTo(0.875);
-    expect(guidanceAt(0.25, 1.5)).toBeCloseTo(1.65);
+  it("maps the slider to straightening the letters 0.4, 0.7 and all of the way", () => {
+    expect(strengthAt(0)).toBeCloseTo(0.4);
+    expect(strengthAt(0.5)).toBeCloseTo(0.7);
+    expect(strengthAt(1)).toBeCloseTo(1);
+    expect(strengthAt(0.75)).toBeCloseTo(0.85);
+    expect(strengthAt(Number.NaN)).toBeCloseTo(0.7);
+    expect(strengthAt(7)).toBeCloseTo(1);
   });
 
   it("reads a missing or broken setting as the middle, and holds it to 0..1", () => {

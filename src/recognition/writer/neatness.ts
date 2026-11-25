@@ -1,27 +1,29 @@
 /**
  * Beautify's neatness dial: where its slider sits (0 "most like my ink",
- * 0.5 the model's own, 1 "neatest") as the guidance the writer samples at.
+ * 0.5 the middle, 1 "neatest") as how far the written line is straightened
+ * (`straighten.ts`: the share of the way each pen-lift unit goes to its
+ * word's foot line and to the line's own lean).
  *
- * Guidance is the style dial (research/handwriting-rig/RESEARCH-LOG.md,
- * 24 November 21:00): lower guidance writes a plainer, smaller hand and
- * likeness falls; higher keeps more of the writer. Joost's mapping for C2
- * (guidance 1.0 by default): about 1.2 at "most like my ink", 0.75 at
- * "neatest". The ends are taken as shares of the model's guidance, so a
- * model whose own guidance differs (A long's 1.5) gets the same dial.
- * Below 1 the sampler also mixes the curve counts toward none's
- * (`sampler.ts` `WriteOptions.guidance`).
+ * The dial used to move the model's guidance (1.2 to 0.75; Joost's mapping
+ * of 24 November 2026). Measured the next day (research/handwriting-rig/
+ * RESEARCH-LOG.md, 25 November): guidance changes whose hand it is, not how
+ * even the line is. At 0.75 a line reads better and is less the writer's,
+ * and no more even; straightening what was written makes it even and keeps
+ * the hand. So the model writes at its own guidance everywhere, and the
+ * dial is the straightening (Joost, 25 November). Words are always set flat
+ * and level; the dial is how far the letters follow.
  *
  * PURE: no DOM, no Obsidian.
  */
 
-/** The slider's middle: the model's own guidance. */
+/** The slider's middle. */
 export const NEATNESS_DEFAULT = 0.5;
 
-/** Guidance at the two ends, as shares of the model's own. */
-export const LIKE_MY_INK = 1.2;
-export const NEATEST = 0.75;
+/** How far the letters are straightened at the two ends (the middle is halfway: 0.7). */
+export const LIKE_MY_INK = 0.4;
+export const NEATEST = 1;
 
-/** The slider's stops: like my ink, between, the model's own, between, neatest. */
+/** The slider's stops: like my ink, between, the middle, between, neatest. */
 export const NEATNESS_STEPS = 4;
 
 /** `value` held to the dial, with anything not a number read as the default. */
@@ -30,12 +32,7 @@ export function neatnessOf(value: unknown): number {
   return Math.min(1, Math.max(0, value));
 }
 
-/** The guidance at slider position `neatness` for a model whose own guidance is `base`. */
-export function guidanceAt(neatness: number, base: number): number {
-  const p = neatnessOf(neatness);
-  const share =
-    p <= NEATNESS_DEFAULT
-      ? LIKE_MY_INK + (1 - LIKE_MY_INK) * (p / NEATNESS_DEFAULT)
-      : 1 + (NEATEST - 1) * ((p - NEATNESS_DEFAULT) / (1 - NEATNESS_DEFAULT));
-  return base * share;
+/** How far the letters of a written line are straightened at slider position `neatness`. */
+export function strengthAt(neatness: number): number {
+  return LIKE_MY_INK + (NEATEST - LIKE_MY_INK) * neatnessOf(neatness);
 }

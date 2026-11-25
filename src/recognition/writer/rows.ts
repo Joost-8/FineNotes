@@ -326,6 +326,8 @@ export function wordsOf(
 }
 
 const DESCENDERS = new Set("gjpqy");
+/** Under the line in many joined hands: a foot only when a word has no other (`evenness.feetOf`). */
+const MAY_DESCEND = new Set("fzJQ");
 
 /** Points per curve when a written line becomes ink. */
 export const POINTS_PER_CURVE = 8;
@@ -339,9 +341,11 @@ export interface WrittenStroke {
 /**
  * The written line as strokes, each word moved up or down so its letters'
  * feet stand on one straight line through the words. A word's foot is the
- * median bottom of its letters and digits without a descender; a word with
- * none follows the word before it. Without an alignment (`char` null or of
- * another length) the strokes are as written, with no words.
+ * median bottom of its letters and digits without a descender (f, z, J and Q
+ * count only when it has no other: a joined f goes under the line, and "of"
+ * stood too high for it); a word with none follows the word before it.
+ * Without an alignment (`char` null or of another length) the strokes are as
+ * written, with no words.
  */
 export function levelledStrokes(
   r: Rows,
@@ -375,6 +379,7 @@ export function levelledStrokes(
     if (ch === " ") w++;
   }
   const feet = new Map<number, number[]>();
+  const maybe = new Map<number, number[]>();
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     if (ch === " " || !/[\p{L}\p{N}]/u.test(ch) || DESCENDERS.has(ch)) continue;
@@ -384,10 +389,12 @@ export function levelledStrokes(
       for (let j = 0; j < per; j++) low = Math.min(low, pts[(row * per + j) * 2 + 1]);
     }
     if (low === Infinity) continue;
-    const list = feet.get(wordAt[i]) ?? [];
+    const into = MAY_DESCEND.has(ch) ? maybe : feet;
+    const list = into.get(wordAt[i]) ?? [];
     list.push(low);
-    feet.set(wordAt[i], list);
+    into.set(wordAt[i], list);
   }
+  for (const [word, list] of maybe) if (!feet.has(word)) feet.set(word, list);
   const ext = new Map<number, [number, number]>();
   strokes.forEach((s, i) => {
     const o = owner[i];

@@ -3,8 +3,8 @@
  * lasso action; a tool's settings live in its own popover, design rulings
  * 2026-10-27). A pen at the left end ("most like my ink") and Beautify's
  * brush at the right ("neatest"; sparkles already mean AI in the bar), the
- * tool bar's own slider between, five stops; the middle is the model's own
- * guidance (`recognition/writer/neatness.ts`).
+ * tool bar's own slider between, five stops: how far the written line's
+ * letters are straightened (`recognition/writer/neatness.ts`).
  */
 
 import { setIcon } from "obsidian";
