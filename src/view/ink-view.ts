@@ -434,6 +434,7 @@ import { pageWords } from "../recognition/hwr/page-words";
 import { type HandwrittenLink, findHandwrittenLinks } from "../recognition/handwritten-links";
 import type { PageReading } from "../recognition/hwr/recognizer";
 import { type ReadWord, readWords, strokeKey } from "../recognition/hwr/corrections";
+import { answeredTexts } from "../recognition/hwr/answered-reading";
 import {
   type ReadLine,
   lineHits,
@@ -4325,7 +4326,9 @@ export class InkView extends TextFileView {
     const words = readWords(reading.lines);
     const checked: CheckedPage = { hash, words };
     this.checkedWords.set(page.id, checked);
-    const flagged = await this.plugin.wordCheck.flags(file.path, page.id, words);
+    // The word list is English: on a page in another language it would underline most words.
+    const english = (reading.language ?? "en") === "en";
+    const flagged = english ? await this.plugin.wordCheck.flags(file.path, page.id, words) : [];
     if (this.surface === surface)
       surface.setWordFlags(
         page.id,
@@ -4362,19 +4365,24 @@ export class InkView extends TextFileView {
 
   /** Remember a page's reading, so lassoed ink on it can use its words. */
   private keepReading(page: Page, hash: string, reading: PageReading): PageWords {
+    const path = this.file?.path;
+    // What search finds: the reading with the writer's answers in it (answered-reading.ts).
+    const shown = answeredTexts(
+      reading.lines,
+      path ? this.plugin.wordCheck.shownOn(path, page.id) : new Map<string, string>(),
+    );
     const entry: PageWords = {
       hash,
       words: readWords(reading.lines),
       read: new Set(reading.lines.flatMap((line) => line.strokeIds)),
       lines: reading.lines.map((line) => line.text),
-      readLines: reading.lines.map((line) => ({ text: line.text, words: line.words })),
+      readLines: reading.lines.map((line, i) => ({ text: shown[i], words: line.words })),
       id: reading.id,
     };
     this.pageReadings.set(page.id, entry);
     // Kept on this device, so Home's search finds the page (search-store.ts).
-    const path = this.file?.path;
     if (path) {
-      saveReading(vaultKeyOf(this.app), path, page.id, { hash, text: entry.lines.join("\n") });
+      saveReading(vaultKeyOf(this.app), path, page.id, { hash, text: shown.join("\n") });
     }
     return entry;
   }
@@ -7799,8 +7807,10 @@ export class InkView extends TextFileView {
     correcting = false,
   ): void {
     const file = this.file;
-    if (!file || words.length === 0) return;
-    const phrase = correcting ? editedPhrase(words, final) : null;
+    // A title edited without Correct may fix a misread or the writer's own spelling, and
+    // nothing tells which (RESEARCH-LOG 2026-11-25): only Correct teaches Grape.
+    if (!file || words.length === 0 || !correcting) return;
+    const phrase = editedPhrase(words, final);
     // Words joined or split: the whole selection is one labelled line.
     const edits = phrase
       ? [{ word: { text: phrase.read, strokeIds: phrase.strokeIds }, text: phrase.text }]

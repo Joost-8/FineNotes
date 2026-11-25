@@ -22,6 +22,7 @@ import { networkFrames } from "./curves";
 import { type InkStroke, LineTooLongError, lineFeatures } from "./features";
 import { REREAD_MARGIN, type RereadList, rereadOutOfList } from "./lexicon";
 import { type Box, type PageInk, lineStrokes, segmentPage, withStrokeTimes } from "./lines";
+import { type PageLanguage, pageLanguage } from "./page-language";
 import { wordInk } from "./word-ink";
 
 /** Nats per letter a page word earns while decoding (EXP-PCONFIRM: lam 1). */
@@ -77,6 +78,12 @@ export interface PageReading {
   /** Milliseconds to find the lines. */
   segment: number;
   wordGap: number;
+  /**
+   * The language the page is written in (page-language.ts); one other than
+   * English was read without the English language model. Absent from
+   * readings made before 2.11 and from `readLine`.
+   */
+  language?: PageLanguage;
 }
 
 /** How much the text language model counts on a maths line. */
@@ -122,6 +129,12 @@ export interface ReadOptions {
    *   (words.txt), never the page words alone, which made one set worse.
    */
   rowOrder?: boolean;
+  /**
+   * `readPage` only: find the page's language first and read a page in
+   * another language without the English model (default on; false reads
+   * every page as English, as before 2.11).
+   */
+  language?: boolean;
   lateStrokes?: boolean;
   strokeTimes?: boolean;
   pageWordBias?: boolean;
@@ -149,16 +162,26 @@ function biasOf(options: ReadOptions): WordBias | null {
   };
 }
 
-/**
- * Read one line of strokes (any order: they are put in writing order). A
- * line too long to read (`MAX_LINE_FRAMES`) reads as nothing, so the rest of
- * its page is still read.
- */
-export function readLine(
+/** A line through the network, before any decoding with a language model. */
+interface LineNetwork {
+  /** Null for a line too long to read (`MAX_LINE_FRAMES`). */
+  logp: Float32Array | null;
+  frames: number;
+  frameStroke: Int32Array | null;
+  /** The strokes in writing order, as indices into the strokes given. */
+  order: number[];
+  greedy: ReturnType<typeof greedyDecode> | null;
+  timings: LineTimings;
+  /** The clock when the best path was done, where decoding's time starts. */
+  done: number;
+}
+
+/** Frames, network and best path for one line. */
+function lineNetwork(
   bundle: HwrBundle,
   strokes: readonly InkStroke[],
-  options: ReadOptions = {},
-): LineReading {
+  options: ReadOptions,
+): LineNetwork {
   const now = options.now ?? (() => 0);
   const t0 = now();
   let line: { features: Float32Array; frames: number; frameStroke: Int32Array | null };
@@ -178,16 +201,33 @@ export function readLine(
   } catch (error) {
     if (!(error instanceof LineTooLongError)) throw error;
     const timings = { features: now() - t0, network: 0, greedy: 0, beam: 0 };
-    return { greedy: "", text: "", confidence: 0, frames: 0, timings };
+    return { logp: null, frames: 0, frameStroke: null, order, greedy: null, timings, done: 0 };
   }
   const { features, frames } = line;
   const t1 = now();
   const logp = forward(bundle.net, features, frames);
   const t2 = now();
-  options.logp?.(0, logp, frames);
-  const alphabet = bundle.meta.alphabet;
-  const greedy = greedyDecode(logp, frames, alphabet);
+  const greedy = greedyDecode(logp, frames, bundle.meta.alphabet);
   const t3 = now();
+  return {
+    logp,
+    frames,
+    frameStroke: line.frameStroke,
+    order,
+    greedy,
+    timings: { features: t1 - t0, network: t2 - t1, greedy: t3 - t2, beam: 0 },
+    done: t3,
+  };
+}
+
+/** A line's network output decoded as `options` ask (the language model, the reread). */
+function decodeLine(bundle: HwrBundle, net: LineNetwork, options: ReadOptions): LineReading {
+  const now = options.now ?? (() => 0);
+  const { logp, frames, greedy, order } = net;
+  if (!logp || !greedy)
+    return { greedy: "", text: "", confidence: 0, frames: 0, timings: net.timings };
+  const t3 = net.done;
+  const alphabet = bundle.meta.alphabet;
   const lm = options.useLm === false ? null : bundle.lm;
   const decoder = { ...bundle.meta.decoder, ...options.beam };
   const math = options.math === true;
@@ -207,13 +247,20 @@ export function readLine(
   }
   if (lm && !math && options.reread !== false && options.rereadList) {
     const margin = options.rereadMargin ?? REREAD_MARGIN;
-    const line = { logp, frames };
-    text = rereadOutOfList(line, alphabet, lm, decoder.alpha, text, options.rereadList, margin);
+    text = rereadOutOfList(
+      { logp, frames },
+      alphabet,
+      lm,
+      decoder.alpha,
+      text,
+      options.rereadList,
+      margin,
+    );
   }
   const t4 = now();
   let wordStrokes: number[][] | null = null;
-  if (options.wordInk && line.frameStroke) {
-    const found = wordInk(read, frames, alphabet, text, line.frameStroke, order.length);
+  if (options.wordInk && net.frameStroke) {
+    const found = wordInk(read, frames, alphabet, text, net.frameStroke, order.length);
     wordStrokes = found && found.map((word) => word.map((s) => order[s]).sort((a, b) => a - b));
   }
   return {
@@ -221,8 +268,8 @@ export function readLine(
     text,
     confidence: greedy.confidence,
     frames,
-    timings: { features: t1 - t0, network: t2 - t1, greedy: t3 - t2, beam: t4 - t3 },
-    ...(options.chars && line.frameStroke
+    timings: { ...net.timings, beam: t4 - t3 },
+    ...(options.chars && net.frameStroke
       ? {
           chars: charReadings(
             logp,
@@ -230,7 +277,7 @@ export function readLine(
             alphabet,
             greedy.text,
             greedy.spans,
-            line.frameStroke,
+            net.frameStroke,
             order,
           ),
         }
@@ -239,7 +286,28 @@ export function readLine(
   };
 }
 
-/** Find a page's lines and read each one. */
+/**
+ * Read one line of strokes (any order: they are put in writing order). A
+ * line too long to read (`MAX_LINE_FRAMES`) reads as nothing, so the rest of
+ * its page is still read.
+ */
+export function readLine(
+  bundle: HwrBundle,
+  strokes: readonly InkStroke[],
+  options: ReadOptions = {},
+): LineReading {
+  const net = lineNetwork(bundle, strokes, options);
+  if (net.logp) options.logp?.(0, net.logp, net.frames);
+  return decodeLine(bundle, net, options);
+}
+
+/**
+ * Find a page's lines and read each one. Unless `options.language` is
+ * false, the page's language is found first from its best-path reading
+ * (page-language.ts): a page in another language than English is read
+ * without the language model and the reread, which are English and make
+ * every other language worse.
+ */
 export function readPage(
   bundle: HwrBundle,
   strokes: readonly PageInk[],
@@ -254,19 +322,26 @@ export function readPage(
   // The lines came from the filled-in times; each line is read from what was stored.
   const stored = new Map(strokes.map((s) => [s.id, s]));
   const segment = now() - t0;
-  const bias = biasOf(options);
+  const inks = lines.map((line) => lineStrokes(line).map((s) => stored.get(s.id) ?? s));
+  const lineOptions: ReadOptions = { ...options, wordInk: true };
+  const nets = inks.map((ink) => lineNetwork(bundle, ink, lineOptions));
+  const language =
+    options.language === false
+      ? "en"
+      : pageLanguage(nets.map((net) => net.greedy?.text ?? "").join("\n")).language;
+  const decode: ReadOptions =
+    language === "en"
+      ? { ...lineOptions, bias: biasOf(options) }
+      : { ...lineOptions, useLm: false };
   return {
     segment,
     wordGap,
+    language,
     lines: lines.map((line, index) => {
-      const ink = lineStrokes(line).map((s) => stored.get(s.id) ?? s);
-      const keep = options.logp;
-      const { wordStrokes, ...reading } = readLine(bundle, ink, {
-        ...options,
-        bias,
-        wordInk: true,
-        logp: keep && ((_, logp, frames) => keep(index, logp, frames)),
-      });
+      const ink = inks[index];
+      const net = nets[index];
+      if (net.logp) options.logp?.(index, net.logp, net.frames);
+      const { wordStrokes, ...reading } = decodeLine(bundle, net, decode);
       return {
         ...reading,
         strokeIds: ink.map((s) => s.id),

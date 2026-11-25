@@ -247,6 +247,8 @@ export default defineConfig({
         "src/recognition/hwr/recognizer.ts",
         "src/recognition/hwr/page-words.ts",
         "src/recognition/hwr/word-ink.ts",
+        "src/recognition/hwr/answered-reading.ts",
+        "src/recognition/hwr/page-language.ts",
         "src/recognition/ocr/ocr-model.ts",
         "src/recognition/ocr/ocr-words.ts",
         "src/recognition/ocr/ocr-text.ts",

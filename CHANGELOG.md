@@ -19,6 +19,17 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Corrections tell Grape's misreads from your own mistakes.** On the word
+  card, **Should be “…”** says you wrote the word wrong: the page's text
+  (what search finds) shows the word you meant, and Grape does not learn
+  from it. **Type what it says…** now asks which it was: **Grape misread
+  it** teaches Grape, **I wrote it wrong** only fixes the text. Every
+  answer now changes what search finds on the page, not only what Grape
+  learns. Editing a lassoed title (Add to contents, Link to…) no longer
+  teaches Grape unless you chose **Correct**. Pages written in Dutch,
+  German, French, Spanish, Portuguese or Italian are now read without
+  Grape's English language model and are not underlined, which roughly
+  halves the words misread there.
 - **Beautify handwriting.** Lasso some lines and choose **Beautify** in the ⋯
   menu, or hold a handwritten word and tap the brush beside **Correct** to
   beautify its line. The words Grape is sure of are written again, neater, in
@@ -34,7 +45,8 @@ extracted from the matching section of this file by `release.yml`.
   after you correct a word on the word card, the card offers to write the
   word again in your hand in place of the old ink, on its line and at its
   size (the rest of the line moves to fit); a word you really wrote that way
-  gets "Write “…” in my handwriting" with the closest spelling. A text box,
+  gets **Should be “…”** with the closest spelling, which writes it in your
+  hand too. A text box,
   pasted or typed, turns into your handwriting with the lasso's **Turn into ›
   Handwriting**: wrapped to the page's margins, on the rules of ruled paper,
   each line written afresh so it never looks stamped, never over pictures,

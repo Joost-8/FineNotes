@@ -385,7 +385,7 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     area: "settings",
     title: "Underline words it may have misread (experimental)",
     words: "underline, misread, correct reading, wrong word, spell check handwriting, correction",
-    what: "Experimental, off by default. A dotted underline marks words Grape is unsure of; tap one with a finger to correct, confirm or ignore it, and your answers help it learn.",
+    what: "Experimental, off by default. A dotted underline marks words Grape is unsure of; tap one with a finger to correct it, confirm it, fix your own spelling (Should be …) or ignore it. Words Grape misread help it learn; your own spelling fixes change the text only. Pages in another language than English are not underlined.",
     where: "Settings › Reading and voice › Underline words it may have misread",
     notes: "Shown only while Read handwriting with is not Off.",
     settings: ["checkHandwrittenWords"],
