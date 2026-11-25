@@ -8,6 +8,7 @@
  * `tests/settings/settings-data.test.ts` pins all of it.
  */
 
+import type { SyntheticBackdrop } from "./model/document";
 import type { FolderStyles } from "./model/library-style";
 import type { SimplePart } from "./model/simple-mode";
 import { LLM_PROVIDER_ID } from "./recognition/llm-request";
@@ -482,6 +483,7 @@ export interface GoodObsidianSettings {
    * `toolbarItems`, `toolbarOff` and `toolbarHome`, read once on load.
    */
   toolbarLayout: ToolbarLayout;
+  inlineToolbarLayout?: ToolbarLayout;
   /**
    * Which layout the bar shows: the person's own (`toolbarLayout`) or the
    * Essentials preset (`toolbarEssentials`), whose tools are replaced, never
@@ -585,6 +587,12 @@ export interface GoodObsidianSettings {
    * where read (`parseCalculatorData`, model/calculator-store.ts).
    */
   calculator?: unknown;
+  /** Optional folder for auto-created inline handwriting notebooks (empty = Obsidian attachments folder). */
+  inlineHandwriteFolder?: string;
+  /** How Handwrite here picks a backing notebook: unset triggers the first-time setup prompt. */
+  inlineHandwriteMode?: "once" | "auto" | "always";
+  /** Last backdrop chosen for an inline handwriting block (unset = transparent). */
+  inlineLastBackdrop?: SyntheticBackdrop;
 }
 
 // The records are copies, so a host that edits its settings in place cannot

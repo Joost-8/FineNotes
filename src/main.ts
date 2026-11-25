@@ -205,6 +205,8 @@ import {
   parseNudges,
   recordUse,
 } from "./model/nudges";
+import { EmbedInlineEditor } from "./view/embed-inline-editor";
+import { registerHandwriteHere } from "./view/handwrite-here";
 import { InkView } from "./view/ink-view";
 import { starsOf } from "./model/favorites";
 import {
@@ -436,6 +438,10 @@ export default class GoodObsidianPlugin extends Plugin {
   override settings!: GoodObsidianSettings;
   /** `![[Notebook#page=3]]` previews in notes; repainted when the page appearance changes. */
   private pageEmbeds: PageEmbeds | null = null;
+
+  activateInlineEmbed(file: TFile, pageId: string): void {
+    this.pageEmbeds?.activateInline(file, pageId);
+  }
   /** Transcription engines by id. Manual always; the cloud one is added on load. */
   readonly providers = createProviderRegistry();
   /** Where API keys live: Obsidian's keychain when it has one (see key-store.ts). */
@@ -829,6 +835,7 @@ export default class GoodObsidianPlugin extends Plugin {
       }),
     );
     this.routeInkNotes();
+    registerHandwriteHere(this);
     // `![[Physics.notebook#page=3]]` in any note shows that page (page-embed.ts).
     this.pageEmbeds = this.addChild(
       new PageEmbeds({
@@ -838,6 +845,19 @@ export default class GoodObsidianPlugin extends Plugin {
         usePressure: () => this.settings.pressureWidth,
         highlighterAlpha: () => this.settings.highlighterAlpha,
         paper: () => shownPaperTheme(this.settings, document.body.hasClass("theme-dark")),
+        openInlineEditor: ({ slotEl, file, page, pageNumber, sourcePath, onClosed }) => {
+          const editor = new EmbedInlineEditor({
+            plugin: this,
+            app: this.app,
+            slotEl,
+            notebookFile: file,
+            pageId: page.id,
+            pageNumber,
+            sourcePath,
+            onClosed,
+          });
+          void editor.start();
+        },
       }),
     );
     this.registerEvent(

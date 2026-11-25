@@ -1750,6 +1750,24 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             ),
             "folder-input",
           ),
+          this.tile(
+            drawnRow(
+              "Inline handwriting folder",
+              "Where Handwrite here saves notebooks; blank uses attachments folder.",
+              (s) => this.drawInlineHandwriteFolder(s),
+              ["inline handwriting", "handwrite here", "folder", "attachments"],
+            ),
+            "folder-input",
+          ),
+          this.tile(
+            drawnRow(
+              "Inline handwriting notebook",
+              "How Handwrite here chooses which notebook stores each block.",
+              (s) => this.drawInlineHandwriteMode(s),
+              ["inline handwriting", "handwrite here", "notebook", "ask", "auto"],
+            ),
+            "dropdown",
+          ),
           this.art(
             toggle(
               "notebookOwnFolder",
@@ -3082,6 +3100,38 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         this.plugin.settings.newNotebookFolder = path;
         void this.plugin.saveSettings();
       });
+    });
+  }
+
+  private drawInlineHandwriteFolder(setting: Setting): void {
+    setting.addText((text) => {
+      text
+        .setPlaceholder("Obsidian attachments folder")
+        .setValue(this.plugin.settings.inlineHandwriteFolder ?? "")
+        .onChange(async (value) => {
+          this.plugin.settings.inlineHandwriteFolder = normalizeFolder(value);
+          await this.plugin.saveSettings();
+        });
+      new FolderInputSuggest(this.app, text.inputEl, (path) => {
+        this.plugin.settings.inlineHandwriteFolder = path;
+        void this.plugin.saveSettings();
+      });
+    });
+  }
+
+  private drawInlineHandwriteMode(setting: Setting): void {
+    setting.addDropdown((dropdown) => {
+      dropdown
+        .addOption("once", "Ask once per note")
+        .addOption("auto", "Automatic (one per note)")
+        .addOption("always", "Always ask")
+        .setValue(this.plugin.settings.inlineHandwriteMode ?? "once")
+        .onChange(async (value) => {
+          if (value === "once" || value === "auto" || value === "always") {
+            this.plugin.settings.inlineHandwriteMode = value;
+            await this.plugin.saveSettings();
+          }
+        });
     });
   }
 

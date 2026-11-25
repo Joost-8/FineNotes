@@ -1027,6 +1027,11 @@ export interface ToolbarCallbacks {
 }
 
 export interface ToolbarOptions {
+  /** Restrict toolbar customization to the tools supported by an embedded surface. */
+  allowedItems?: ReadonlySet<BarItemId>;
+  /** Page area available to menus when the toolbar lives in a separate host. */
+  popoverBounds?: HTMLElement;
+  resetLayout?: ToolbarLayout;
   /** The pen width the width popover's reset returns to; default the middle preset. */
   defaultSize?: number;
   /**
@@ -1544,6 +1549,10 @@ export class Toolbar {
       run: ((anchor: HTMLElement) => void) | undefined,
       kept = true,
     ): HTMLButtonElement => {
+      if (this.options.allowedItems && !this.options.allowedItems.has(id)) {
+        button.remove();
+        return button;
+      }
       this.barItems.set(id, button);
       button.setAttribute("data-item", id);
       if (run) this.itemRuns.set(id, run);
@@ -7085,9 +7094,10 @@ export class Toolbar {
     // Above or below its button: as tall as the room on that side, and the
     // rows scroll past it (a bar with everything moved into More tools).
     const gap = 16;
+    const bounds = this.options.popoverBounds?.getBoundingClientRect() ?? hostBox;
     const roomVertical = popover.hasClass("opens-up")
-      ? anchorBox.top - hostBox.top - EDGE_INSET - gap
-      : hostBox.bottom - anchorBox.bottom - EDGE_INSET - gap;
+      ? anchorBox.top - bounds.top - EDGE_INSET - gap
+      : bounds.bottom - anchorBox.bottom - EDGE_INSET - gap;
     this.limitPopoverHeight(popover, roomVertical);
     // Slid sideways into the view, worked out from where it rests (centred
     // on its button, `offsetWidth`), never from its box: that box carries

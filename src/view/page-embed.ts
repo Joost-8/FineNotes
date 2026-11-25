@@ -37,7 +37,8 @@
  */
 
 import { type App, Component, Keymap, type TAbstractFile, TFile, setIcon } from "obsidian";
-import { LIGHT_PAPER, type PaperTheme } from "../canvas/backdrop";
+import { DARK_PAPER, LIGHT_PAPER, type PaperTheme } from "../canvas/backdrop";
+import { VIEW_TYPE_INK } from "../constants";
 import { t, tn } from "../i18n/translate";
 import { paintedTextHeight } from "../canvas/renderer";
 import { isBoard, textLinesHeight } from "../model/board";
@@ -68,10 +69,10 @@ import {
   type EmbedTarget,
   embedLabel,
   embedPageLabel,
-  embedPageLink,
   embedPageNumbers,
   embedTarget,
   embedsToRelease,
+  pageIndexById,
   printPaintSize,
   regionEmbedPart,
 } from "./page-embed-model";
@@ -131,6 +132,15 @@ export interface PageEmbedHost {
   highlighterAlpha(): number;
   /** The paper theme pages are shown in: light, or dark pages (the view setting). */
   paper(): PaperTheme;
+  /** Optional: start inline handwriting directly over an embedded single page in Live Preview. */
+  openInlineEditor?: (req: {
+    slotEl: HTMLElement;
+    file: TFile;
+    page: Page;
+    pageNumber: number;
+    sourcePath: string;
+    onClosed: () => void;
+  }) => void;
 }
 
 /** A notebook's pages as embeds read them, and whether it is an endless board. */
@@ -169,6 +179,7 @@ export class PageEmbeds extends Component {
   private workerHeld = false;
   private readonly changeTimers = new Map<string, number>();
   private active = false;
+  private pendingInline: { path: string; pageId: string } | null = null;
   /**
    * Obsidian's Markdown embed creator, which this one stands in front of:
    * an embed whose subpath names no region of its notebook goes back to it.
@@ -387,7 +398,10 @@ export class PageEmbeds extends Component {
     const version = notebookStatOf(this.host.app, file).mtime;
     if (embed.version === version) return !embed.isLink;
     const { target } = embed;
-    const onePage = !target.whole && target.region === undefined ? target.page - 1 : undefined;
+    const onePage =
+      !target.whole && target.region === undefined && target.pageId === undefined
+        ? target.page - 1
+        : undefined;
     const notebook = await this.notebook(file, version, onePage);
     if (embed.version === version) return !embed.isLink;
     embed.version = version;
@@ -404,8 +418,54 @@ export class PageEmbeds extends Component {
       return false;
     }
     embed.showPages();
+    if (
+      this.pendingInline &&
+      this.pendingInline.path === embed.file.path &&
+      embed.target.pageId === this.pendingInline.pageId
+    ) {
+      const slot = embed.slots[0];
+      if (slot?.page) {
+        this.pendingInline = null;
+        this.startInline(slot);
+      }
+    }
     // Pages the update added that are already on screen are reported by the observer.
     return true;
+  }
+
+  /**
+   * Ask the next rendered embed matching `(file, pageId)` (or an already-live
+   * one) to enter inline editing immediately — used by "Handwrite here".
+   */
+  activateInline(file: TFile, pageId: string): void {
+    this.pendingInline = { path: file.path, pageId };
+    for (const embed of this.live) {
+      if (embed.file.path === file.path && embed.target.pageId === pageId) {
+        const slot = embed.slots[0];
+        if (slot?.page) {
+          this.pendingInline = null;
+          this.startInline(slot);
+          return;
+        }
+      }
+    }
+  }
+
+  /** Opens the inline handwriting editor over `slot` when allowed (Live Preview, single page). */
+  startInline(slot: PageSlot): void {
+    if (!this.host.openInlineEditor || !slot.page) return;
+    if (!slot.isLivePreviewEditable()) return;
+    this.host.openInlineEditor({
+      slotEl: slot.el,
+      file: slot.embed.file,
+      page: slot.page,
+      pageNumber: slot.number,
+      sourcePath: slot.embed.ctx.sourcePath,
+      onClosed: () => {
+        slot.painted = "";
+        this.fileChanged(slot.embed.file);
+      },
+    });
   }
 
   /** Paint `slot`'s page at `size` in `paper`, unless the canvas already holds just that. */
@@ -416,7 +476,17 @@ export class PageEmbeds extends Component {
   ): Promise<void> {
     const page = slot.page;
     if (!page) return;
-    const look = paper.night ? (paper.keepPdf ? "|dark-keep-pdf" : "|dark") : "";
+    const isTransparent =
+      page.backdrop.kind !== "pdf" && page.backdrop.paperColor === "transparent";
+    const effectivePaper =
+      isTransparent && !slot.embed.containerEl.closest(PRINT_LAYOUT)
+        ? document.body.hasClass("theme-dark")
+          ? DARK_PAPER
+          : LIGHT_PAPER
+        : !isTransparent && slot.embed.target.pageId !== undefined
+          ? LIGHT_PAPER
+          : paper;
+    const look = effectivePaper.night ? (effectivePaper.keepPdf ? "|dark-keep-pdf" : "|dark") : "";
     const crop = slot.crop;
     const cut = crop ? `#${crop.x},${crop.y},${crop.width},${crop.height}` : "";
     const key = `${pageSignature(page)}${cut}@${size.cssWidth}x${size.dpr}${look}`;
@@ -424,7 +494,7 @@ export class PageEmbeds extends Component {
     await paintPagePreview(
       slot.canvas,
       page,
-      this.sources(page, paper),
+      this.sources(page, effectivePaper),
       size.cssWidth,
       size.dpr,
       crop ?? undefined,
@@ -703,6 +773,14 @@ class NotebookEmbed extends Component {
       this.showMore(0);
       return null;
     }
+    if (this.target.pageId !== undefined) {
+      const idx = pageIndexById(pages, this.target.pageId);
+      if (idx < 0) return "missing-page";
+      this.shortened = false;
+      this.slots[0]?.show(idx + 1, pages[idx], 1, null);
+      this.showMore(0);
+      return null;
+    }
     // Obsidian's hover preview of a link holds the embed in a `.hover-popover`.
     const hover = this.containerEl.closest(".hover-popover") !== null;
     const numbers = embedPageNumbers(this.target, pages, hover);
@@ -768,14 +846,24 @@ class NotebookEmbed extends Component {
     );
   }
 
-  open(event: MouseEvent | KeyboardEvent, page: number): void {
+  open(event: MouseEvent | KeyboardEvent, page: number, pageId?: string): void {
     event.preventDefault();
     event.stopPropagation();
-    void this.ctx.app.workspace.openLinkText(
-      embedPageLink(this.ctx.linktext, this.target, page),
-      this.ctx.sourcePath,
-      Keymap.isModEvent(event),
-    );
+    const newTab = Keymap.isModEvent(event);
+    if (pageId && typeof this.ctx.app.workspace.getLeaf === "function") {
+      const leaf = this.ctx.app.workspace.getLeaf(newTab);
+      void leaf.setViewState(
+        { type: VIEW_TYPE_INK, state: { file: this.file.path }, active: true },
+        {
+          pageIndex: Math.max(0, page - 1),
+          pageId,
+          highlightPage: true,
+        },
+      );
+      return;
+    }
+    const target = `${this.ctx.linktext}#page=${page}`;
+    void this.ctx.app.workspace.openLinkText(target, this.ctx.sourcePath, newTab);
   }
 
   /**
@@ -869,22 +957,82 @@ class PageSlot {
     this.el.setAttribute("role", "link");
     this.el.tabIndex = 0;
     // Until the notebook is read: its name for one embedded whole, else "Physics, page 3".
-    this.el.setAttribute(
-      "aria-label",
-      embedPageLabel(embed.file.basename, embed.target, number, 1),
-    );
+    // Omit tooltip aria-label for inline sketch embeds (`#id=...`) to avoid hover popups.
+    if (embed.target.pageId === undefined) {
+      this.el.setAttribute(
+        "aria-label",
+        embedPageLabel(embed.file.basename, embed.target, number, 1),
+      );
+    }
     // A region's shape is not known yet: a short box, not a page, until it is read.
     this.el.setCssStyles({
-      aspectRatio: embed.target.region !== undefined ? "4 / 1" : aspectOf(DEFAULT_PAGE_GEOMETRY),
+      aspectRatio:
+        embed.target.region !== undefined || embed.target.pageId !== undefined
+          ? "4 / 1"
+          : aspectOf(DEFAULT_PAGE_GEOMETRY),
     });
     if (embed.isLink) this.el.addClass("is-hidden");
     this.canvas = this.el.createEl("canvas", { cls: "goodobsidian-page-embed-canvas" });
     // No backing store until the page is painted (a canvas starts at 300 x 150).
     releaseCanvas(this.canvas);
-    this.el.addEventListener("click", (event) => this.embed.open(event, this.number));
+    this.mountInlineControls();
+    this.el.addEventListener("pointerdown", (event) => {
+      if (event.pointerType !== "pen" || !this.page || !this.isLivePreviewEditable()) return;
+      if ((event.target as Element | null)?.closest(".goodobsidian-page-embed-actions")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      this.embed.embeds.startInline(this);
+    });
+    this.el.addEventListener("click", (event) => {
+      if (
+        this.page &&
+        this.embed.target.pageId !== undefined &&
+        this.isLivePreviewEditable() &&
+        !Keymap.isModEvent(event)
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        this.embed.embeds.startInline(this);
+        return;
+      }
+      this.embed.open(event, this.number);
+    });
     this.el.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") this.embed.open(event, this.number);
     });
+  }
+
+  isLivePreviewEditable(): boolean {
+    if (this.embed.target.whole || this.embed.target.region !== undefined) return false;
+    const el = this.embed.containerEl;
+    if (el.closest(PRINT_LAYOUT) || el.closest(".hover-popover")) return false;
+    if (el.closest(".markdown-reading-view")) return false;
+    return el.closest(".markdown-source-view.mod-cm6") !== null;
+  }
+
+  private mountInlineControls(): void {
+    if (this.embed.target.whole || this.embed.target.region !== undefined) return;
+    const bar = this.el.createDiv({ cls: "goodobsidian-page-embed-actions" });
+    const writeBtn = bar.createEl("button", {
+      cls: "clickable-icon goodobsidian-page-embed-action",
+      attr: { type: "button", "aria-label": "Write inline" },
+    });
+    setIcon(writeBtn, "pen-tool");
+    writeBtn.addEventListener("pointerdown", (event) => event.stopPropagation());
+    writeBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.embed.embeds.startInline(this);
+    });
+    const openBtn = bar.createEl("button", {
+      cls: "clickable-icon goodobsidian-page-embed-action",
+      attr: { type: "button", "aria-label": "Open in notebook" },
+    });
+    setIcon(openBtn, "external-link");
+    openBtn.addEventListener("pointerdown", (event) => event.stopPropagation());
+    openBtn.addEventListener("click", (event) =>
+      this.embed.open(event, this.number, this.page?.id ?? this.embed.target.pageId),
+    );
   }
 
   /**
@@ -896,11 +1044,19 @@ class PageSlot {
     this.page = page;
     this.crop = crop;
     const { embed } = this;
-    this.el.setAttribute(
-      "aria-label",
-      embedPageLabel(embed.file.basename, embed.target, number, count),
-    );
+    if (embed.target.pageId === undefined) {
+      this.el.setAttribute(
+        "aria-label",
+        embedPageLabel(embed.file.basename, embed.target, number, count),
+      );
+    } else {
+      this.el.removeAttribute("aria-label");
+    }
     if (page) this.el.setCssStyles({ aspectRatio: aspectOf(crop ?? page.geometry) });
+    this.el.toggleClass(
+      "is-transparent",
+      Boolean(page && page.backdrop.kind !== "pdf" && page.backdrop.paperColor === "transparent"),
+    );
     this.label(embed.shortened ? page : null);
   }
 

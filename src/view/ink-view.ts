@@ -665,7 +665,7 @@ const UPDATE_TIP_DELAY_MS = 1500;
  * The tools as the settings left them, for a view that has just opened: the
  * pen last written with, in any notebook (FineNotes#24), else the defaults.
  */
-function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
+export function toolStateFrom(s: GoodObsidianSettings): ToolbarState {
   const last = savedPenOf(s.lastPen);
   // Without a last pen, a notebook opens with the Fountain pen, a pressure pen.
   const spec = PEN_TYPES.find((type) => type.id === last?.type) ?? PEN_TYPES[0];
@@ -2520,6 +2520,8 @@ export class InkView extends TextFileView {
     this.requestBodySave();
   }
 
+  private pendingHighlightPage = false;
+  private pendingPageId: string | null = null;
   /** Canvas used only to measure text boxes that grow with their text. */
   private measureCtx: CanvasRenderingContext2D | null = null;
 
@@ -6012,13 +6014,17 @@ export class InkView extends TextFileView {
    */
   override setEphemeralState(state: unknown): void {
     super.setEphemeralState(state);
-    const { subpath, pageIndex, match, search } = (state ?? {}) as {
+    const { subpath, pageIndex, pageId, match, search, highlightPage } = (state ?? {}) as {
       subpath?: unknown;
       pageIndex?: unknown;
+      pageId?: unknown;
       match?: { content?: unknown; matches?: unknown };
       /** What Home's search found on `pageIndex`, to light up there. */
       search?: unknown;
+      highlightPage?: unknown;
     };
+    if (highlightPage === true) this.pendingHighlightPage = true;
+    if (typeof pageId === "string" && pageId) this.pendingPageId = pageId;
     // A result of Obsidian's own search: its page, with the words lit up (2.5).
     const found =
       typeof match?.content === "string" && Array.isArray(match.matches)
@@ -6059,7 +6065,8 @@ export class InkView extends TextFileView {
     const fresh = path !== this.restoredPath;
     const subpath = this.pendingSubpath;
     const back = this.pendingPageIndex;
-    if (!fresh && subpath === null && back === null) return;
+    const targetPageId = this.pendingPageId;
+    if (!fresh && subpath === null && back === null && targetPageId === null) return;
     // A board not laid out yet has no view to put a spot in either.
     const unready = surface.surfaceEl.clientHeight === 0 || (this.isBoard && !surface.boardSpot());
     if (unready && attempt < 20) {
@@ -6067,12 +6074,28 @@ export class InkView extends TextFileView {
       window.setTimeout(() => this.applyPendingPage(attempt + 1), 50);
       return;
     }
+    const pages = surface.document.pages;
+    if (targetPageId !== null && !pages.some((p) => p.id === targetPageId)) {
+      if (attempt < 20) {
+        window.setTimeout(() => this.applyPendingPage(attempt + 1), 50);
+      }
+      // Keep `pendingPageId` & `pendingHighlightPage` pending so a delayed
+      // DevicePages sync can still land on and highlight the exact requested page
+      // instead of falling back to a wrong positional index.
+      return;
+    }
     this.pendingSubpath = null;
     this.pendingPageIndex = null;
-    const pages = surface.document.pages;
+    this.pendingPageId = null;
+    const highlight = this.pendingHighlightPage;
+    this.pendingHighlightPage = false;
     let index: number | null = null;
-    if (subpath !== null) index = pageFromSubpath(subpath, pages.length);
-    else if (back !== null) index = back < pages.length ? back : null;
+    if (targetPageId !== null) {
+      const byId = pages.findIndex((p) => p.id === targetPageId);
+      if (byId >= 0) index = byId;
+    }
+    if (index === null && subpath !== null) index = pageFromSubpath(subpath, pages.length);
+    else if (index === null && back !== null) index = back < pages.length ? back : null;
     // `#Krebs cycle`: a named region, centred (discussion #167). A page comes first.
     const name = subpath !== null && index === null ? regionSubpathName(subpath) : null;
     const region = name !== null ? findRegion(pages, name) : null;
@@ -6096,7 +6119,13 @@ export class InkView extends TextFileView {
       }
     }
     if (region) surface.showRegion(region.index, region.region);
-    else if (index !== null) surface.goToPage(index);
+    else if (index !== null) {
+      surface.goToPage(index);
+      if (highlight) {
+        const targetIndex = index;
+        window.setTimeout(() => surface.flashPage(targetIndex), 120);
+      }
+    }
     // Opened anew, with no page asked for: the PDF's tab it was left on.
     if (fresh && subpath === null && back === null) {
       const tab = this.loadLastTabs()[path];

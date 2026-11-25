@@ -206,6 +206,9 @@ export interface PageLook {
  */
 export function pageLook(backdrop: Backdrop, theme: PaperTheme): PageLook {
   const own = backdrop.kind !== "pdf" ? backdrop.paperColor : undefined;
+  if (own === "transparent") {
+    return { paper: "transparent", night: theme.night === true, theme };
+  }
   if (!theme.night) return { paper: own ?? theme.paper, night: false, theme };
   if (backdrop.kind === "pdf") {
     return theme.keepPdf
@@ -299,8 +302,10 @@ export function fillPaper(
   theme: PaperTheme,
   paperColor?: string,
 ): void {
+  const fill = paperColor ?? theme.paper;
+  if (fill === "transparent") return;
   ctx.save();
-  ctx.fillStyle = paperColor ?? theme.paper;
+  ctx.fillStyle = fill;
   ctx.fillRect(0, 0, geometry.width, geometry.height);
   ctx.restore();
 }

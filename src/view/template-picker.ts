@@ -860,6 +860,10 @@ export interface TemplatePickerOptions {
   initial: SyntheticBackdrop;
   /** The reference page's geometry: preselects size and orientation. */
   geometry: PageGeometry;
+  /** Offer a Transparent paper swatch (used by inline handwriting blocks). */
+  allowTransparent?: boolean;
+  /** Hide paper size and portrait/landscape controls (used by inline handwriting blocks). */
+  hideSizeControls?: boolean;
   onApply: (choice: TemplateChoice) => void;
 }
 
@@ -909,21 +913,23 @@ export class TemplatePickerModal extends Modal {
     // A change keeps the page's size unless the user picks another one.
     const keepSize = this.sizeId === KEEP_SIZE || this.options.mode === "change";
     if (this.options.mode === "change") this.sizeId = KEEP_SIZE;
-    new PaperControls(contentEl.createDiv({ cls: "goodobsidian-templates-controls" }), {
-      keepSize,
-      sizeId: this.sizeId,
-      color: this.color,
-      landscape: this.landscape,
-      onChange: (state) => {
-        this.sizeId = state.sizeId;
-        // A paper colour picked in the list replaces a custom one.
-        if (state.color !== this.color) delete this.style.paper;
-        this.color = state.color;
-        this.landscape = state.landscape;
-        this.renderStyle();
-        this.repaint();
-      },
-    });
+    if (!this.options.hideSizeControls) {
+      new PaperControls(contentEl.createDiv({ cls: "goodobsidian-templates-controls" }), {
+        keepSize,
+        sizeId: this.sizeId,
+        color: this.color,
+        landscape: this.landscape,
+        onChange: (state) => {
+          this.sizeId = state.sizeId;
+          // A paper colour picked in the list replaces a custom one.
+          if (state.color !== this.color) delete this.style.paper;
+          this.color = state.color;
+          this.landscape = state.landscape;
+          this.renderStyle();
+          this.repaint();
+        },
+      });
+    }
     this.styleEl = contentEl.createDiv({ cls: "goodobsidian-paper-style" });
     this.renderStyle();
 
@@ -1016,19 +1022,32 @@ export class TemplatePickerModal extends Modal {
       cls: "goodobsidian-paper-style-label",
       text: t("notebooks.designer.paper"),
     });
+    if (this.options.allowTransparent) {
+      const btn = this.swatch(
+        paperRow,
+        "Transparent",
+        "transparent",
+        shownPaper === "transparent",
+        () => set({ paper: "transparent" }),
+      );
+      btn.addClass("is-transparent-swatch");
+    }
     for (const swatch of PAPER_SWATCHES) {
       this.swatch(paperRow, swatch.label, swatch.color, swatch.color === shownPaper, () =>
         set({ paper: swatch.color }),
       );
     }
-    const paperCustom = !PAPER_SWATCHES.some((s) => s.color === shownPaper);
+    const paperCustom =
+      shownPaper !== "transparent" && !PAPER_SWATCHES.some((s) => s.color === shownPaper);
     this.customSwatch(
       paperRow,
       "paper",
       t("notebooks.picker.anyPaper"),
       paperCustom ? shownPaper : null,
     );
-    this.mixer(el, "paper", shownPaper, (paper) => set({ paper }));
+    this.mixer(el, "paper", shownPaper === "transparent" ? "#ffffff" : shownPaper, (paper) =>
+      set({ paper }),
+    );
 
     const ruleRow = el.createDiv({ cls: "goodobsidian-paper-style-row" });
     ruleRow.createSpan({
@@ -1037,7 +1056,8 @@ export class TemplatePickerModal extends Modal {
     });
     for (const swatch of RULE_SWATCHES) {
       const on = (swatch.color ?? undefined) === this.style.rule;
-      const button = this.swatch(ruleRow, swatch.label, swatch.color ?? shownPaper, on, () =>
+      const fallback = shownPaper === "transparent" ? "#9aa0ab" : shownPaper;
+      const button = this.swatch(ruleRow, swatch.label, swatch.color ?? fallback, on, () =>
         set({ rule: swatch.color ?? undefined }),
       );
       if (swatch.color === null) button.addClass("is-default");

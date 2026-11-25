@@ -59,16 +59,33 @@ export function embeddedPageNumber(subpath: string): number | null {
 }
 
 /**
+ * A stable page id subpath (`#id=hw-a1b2c3d4`): points to that exact page
+ * even if pages are reordered or deleted in the backing notebook.
+ */
+export function embeddedPageId(subpath: string): string | null {
+  const match = /^#?\s*id=([A-Za-z0-9_-]+)\s*$/.exec(subpath);
+  return match ? match[1] : null;
+}
+
+/** 0-based index of the page with `pageId`, or -1 when absent. */
+export function pageIndexById(pages: readonly Pick<Page, "id">[], pageId: string): number {
+  return pages.findIndex((p) => p.id === pageId);
+}
+
+/**
  * What an embed of a notebook shows: page `page` (1-based); `whole` for a
- * link to the notebook itself; `region` for a named part of a page.
+ * link to the notebook itself; `region` for a named part of a page; `pageId`
+ * for a stable page-id reference (`#id=…`).
  */
 export interface EmbedTarget {
-  /** The page named; 1 for a notebook embedded whole, or until a region is found. */
+  /** The page named; 1 for a notebook embedded whole, or until a region/pageId is found. */
   page: number;
   /** `![[Physics.notebook]]`: every page is shown, one under the other. */
   whole: boolean;
   /** `![[Mind map.notebook#Krebs cycle]]`: the region of that name, alone (discussion #167). */
   region?: string;
+  /** `![[Lecture.notebook#id=hw-a1b2c3d4]]`: stable page id (immune to page reorders). */
+  pageId?: string;
 }
 
 /**
@@ -78,8 +95,9 @@ export interface EmbedTarget {
  * 1. no subpath: the whole notebook;
  * 2. a page (`#page=3`, `#Page 3`, `#p3`): that page, even when a region
  *    is named like one;
- * 3. a block (`#^id`): `null`, left to Obsidian;
- * 4. any other text: the region of that name (`#Krebs cycle`). Whether the
+ * 3. a stable page id (`#id=…`): the page with that `page.id`;
+ * 4. a block (`#^id`): `null`, left to Obsidian;
+ * 5. any other text: the region of that name (`#Krebs cycle`). Whether the
  *    notebook has one is only known once it is read; when it has none, the
  *    embed is handed back to Obsidian, which shows the heading of that name
  *    in the note's text as it always did (`regionEmbedPart`).
@@ -88,6 +106,8 @@ export function embedTarget(subpath: string): EmbedTarget | null {
   if (/^#?\s*$/.test(subpath)) return { page: 1, whole: true };
   const page = embeddedPageNumber(subpath);
   if (page !== null) return { page, whole: false };
+  const pageId = embeddedPageId(subpath);
+  if (pageId !== null) return { page: 1, whole: false, pageId };
   const region = regionSubpathName(subpath);
   return region === null ? null : { page: 1, whole: false, region };
 }
@@ -142,7 +162,7 @@ export function embedPageNumbers(
  * where the click was.
  */
 export function embedPageLink(linktext: string, target: EmbedTarget, page: number): string {
-  if (!target.whole) return linktext;
+  if (!target.whole && !target.pageId) return linktext;
   const hash = linktext.indexOf("#");
   const path = hash < 0 ? linktext : linktext.slice(0, hash);
   return `${path}#page=${page}`;
