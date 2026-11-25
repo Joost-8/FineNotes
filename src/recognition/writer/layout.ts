@@ -71,6 +71,8 @@ export interface LineToPlace<S extends PageInk> {
   words: readonly (readonly string[])[];
   /** Per word: rewritten (true) or kept as written. */
   rewrite: readonly boolean[];
+  /** Per word: answered by the writer on a card; such a word is the last to go back to ink at the page's edge. */
+  answered?: readonly boolean[];
   /** The written line, model units (x right, y up), each stroke with its word. */
   written: readonly WrittenStroke[];
   /**
@@ -250,7 +252,7 @@ export function placeLines<S extends PageInk>(
     };
     // Written words wider than the writer's push the line right. Past the page's edge, the
     // gaps narrow (to half); past it still, the rightmost written word goes back to the
-    // writer's own ink, until the line fits.
+    // writer's own ink (one they answered on a card last), until the line fits.
     let laid = arrange(1);
     while (laid.right > limit) {
       const tight = arrange(MIN_GAP_SHARE);
@@ -260,7 +262,12 @@ export function placeLines<S extends PageInk>(
         laid = arrange(Math.max(MIN_GAP_SHARE, Math.min(1, share)));
         break;
       }
-      const last = rewrite.lastIndexOf(true);
+      // Words the writer answered on a card go back last.
+      let last = -1;
+      for (let w = rewrite.length - 1; w >= 0 && last < 0; w--) {
+        if (rewrite[w] && !line.answered?.[w]) last = w;
+      }
+      if (last < 0) last = rewrite.lastIndexOf(true);
       if (last < 0) break;
       rewrite[last] = false;
       laid = arrange(1);

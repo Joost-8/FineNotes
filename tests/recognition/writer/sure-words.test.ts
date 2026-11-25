@@ -8,9 +8,11 @@ import {
   joinPunctuation,
   pickQuestions,
   sureWords,
+  unsureCandidates,
   wordCore,
   wordSureness,
   wordsOf,
+  writeUnasked,
 } from "../../../src/recognition/writer/sure-words";
 
 describe("applyAnswers when the card read a word otherwise than Beautify (the reviewer's case)", () => {
@@ -41,14 +43,45 @@ describe("applyAnswers when the card read a word otherwise than Beautify (the re
 describe("pickQuestions (Joost's iPad, 25 November: ten cards for two lines)", () => {
   const q = (line: number, word: number, sure: number) => ({ line, word, sure });
 
-  it("asks about the least sure words first, at most the budget", () => {
-    const got = pickQuestions([q(0, 1, 0.5), q(0, 3, 0.1), q(1, 0, 0.3), q(1, 2, 0.6)], 2);
+  it("asks on each line about its least sure word only (the reviewer's case: two on line 0, none on line 1)", () => {
+    const got = pickQuestions([q(0, 1, 0.2), q(0, 3, 0.1), q(1, 0, 0.3), q(1, 2, 0.6)]);
     expect(got).toEqual([q(0, 3, 0.1), q(1, 0, 0.3)]);
   });
 
-  it("never asks about a word read surely enough, nor with no budget", () => {
-    expect(pickQuestions([q(0, 0, ASK_BELOW), q(0, 1, 0.97)], 5)).toEqual([]);
+  it("never asks about a word read surely enough, nor with no room on a line", () => {
+    expect(pickQuestions([q(0, 0, ASK_BELOW), q(0, 1, 0.97)])).toEqual([]);
     expect(pickQuestions([q(0, 0, 0.1)], 0)).toEqual([]);
+  });
+});
+
+describe("unsureCandidates and writeUnasked: who is asked, who is written", () => {
+  const line = {
+    read: ["Meeting", "on", "Tusday", "-", "room"],
+    words: [["a"], ["b"], ["c", "d"], ["e"], []],
+    rewrite: [true, false, false, false, false],
+    sure: [1, 0.95, 0.2, 0.1, 0.3],
+  };
+
+  it("offers the words not sure enough to write that have a letter or digit and ink", () => {
+    expect(unsureCandidates([line])).toEqual([
+      { line: 0, word: 1, sure: 0.95 },
+      { line: 0, word: 2, sure: 0.2 },
+    ]);
+  });
+
+  it("keeps a word asked and not answered as ink, writes an answered one, and every word not asked", () => {
+    const asked = new Set(["c"]);
+    // Not answered: still not sure after the question.
+    expect(writeUnasked(line, asked)).toEqual({
+      rewrite: [true, true, false, true, false],
+      answered: [false, false, false, false, false],
+    });
+    // Answered: sure now, and marked answered.
+    const after = { ...line, rewrite: [true, false, true, false, false] };
+    expect(writeUnasked(after, asked)).toEqual({
+      rewrite: [true, true, true, true, false],
+      answered: [false, false, true, false, false],
+    });
   });
 });
 

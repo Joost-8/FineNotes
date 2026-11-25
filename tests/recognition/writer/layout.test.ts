@@ -222,6 +222,12 @@ describe("placeLines", () => {
     expect(rightOf(held)).toBeLessThanOrEqual(right + 1e-6);
     expect(new Set(held.added.map((s) => s.word))).toEqual(new Set([0, 1, 2]));
     for (const id of first.words[3]) expect(held.kept.has(id)).toBe(true);
+    // A word the writer answered on a card goes back last: the word before it goes instead.
+    const answered = { ...sized(1.5), answered: [false, false, false, true] };
+    const kept = placeLines([answered], profile, pageWidth)[0];
+    expect(rightOf(kept)).toBeLessThanOrEqual(right + 1e-6);
+    expect(kept.added.some((s) => s.word === 3)).toBe(true);
+    expect(kept.added.some((s) => s.word === 2)).toBe(false);
   });
 
   it("places each line on its own, in order", () => {
