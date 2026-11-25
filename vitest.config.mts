@@ -251,6 +251,7 @@ export default defineConfig({
         "src/recognition/hwr/page-language.ts",
         "src/recognition/hwr/language-pack.ts",
         "src/recognition/hwr/language-packs.ts",
+        "src/recognition/hwr/spelling-offer.ts",
         "src/recognition/ocr/ocr-model.ts",
         "src/recognition/ocr/ocr-words.ts",
         "src/recognition/ocr/ocr-text.ts",

@@ -20,7 +20,9 @@ extracted from the matching section of this file by `release.yml`.
 ### Added
 
 - **Corrections tell Grape's misreads from your own mistakes.** On the word
-  card, **Should be “…”** says you wrote the word wrong: the page's text
+  card, **Should be “…”** (offered only for a word that is very likely
+  misspelled, never for a listed word, a number, a code or maths) says you
+  wrote the word wrong: the page's text
   (what search finds) shows the word you meant, while Grape (and Help
   improve Grape) keep the ink labelled with what you really wrote, never
   the word you meant. **Type what it says…** now asks which it was:

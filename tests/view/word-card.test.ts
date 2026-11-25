@@ -27,7 +27,7 @@ const { parseCorrections, strokeKey } = await import("../../src/recognition/hwr/
 
 const FILE = "FineNotes assets/Handwriting sheets/corrections.json";
 
-function setup() {
+async function setup() {
   const store = new Map<string, string>();
   const app = {
     vault: {
@@ -43,8 +43,9 @@ function setup() {
   const check = new WordCheck(
     app as never,
     () => "plug",
-    () => Promise.resolve(null),
+    () => Promise.resolve(["receive", "relieve", "recline"].join("\n")),
   );
+  await check.load();
   return { check, store };
 }
 
@@ -83,8 +84,8 @@ async function saved(store: Map<string, string>) {
 }
 
 describe("the word card", () => {
-  it("offers the close list word as what the writer meant when the ink says the reading", () => {
-    const { check } = setup();
+  it("offers the close list word as what the writer meant when the ink says the reading", async () => {
+    const { check } = await setup();
     const card = open(check, { margin: 2.4, words: ["receive", "relieve"] });
     expect(card.chips).toEqual([]);
     expect(card.rows.map((r) => r.label)).toEqual([
@@ -96,7 +97,7 @@ describe("the word card", () => {
   });
 
   it("Should be: the text says the meant word, the label stays the reading, and the ink is written in the hand", async () => {
-    const { check, store } = setup();
+    const { check, store } = await setup();
     const hand = { offer: vi.fn(), write: vi.fn(), writes: () => true };
     const card = open(check, { margin: 2.4, words: ["receive"] }, false, hand);
     const row = card.rows.find((r) => r.label.startsWith("Should be"));
@@ -118,7 +119,7 @@ describe("the word card", () => {
   });
 
   it("Should be without the writer: the text alone, and no line about the hand", async () => {
-    const { check, store } = setup();
+    const { check, store } = await setup();
     const card = open(check, { margin: 2.4, words: ["receive"] });
     const row = card.rows.find((r) => r.label.startsWith("Should be"));
     expect(row?.sub).toBeUndefined();
@@ -127,7 +128,7 @@ describe("the word card", () => {
   });
 
   it("keeps the misread card as it was: chips first, no Should be, and a chip teaches", async () => {
-    const { check, store } = setup();
+    const { check, store } = await setup();
     const card = open(check, { margin: 0.3, words: ["receive", "recline"] });
     expect(card.chips).toEqual(["receive", "recline"]);
     expect(card.rows.map((r) => r.label)).toEqual([
@@ -143,7 +144,7 @@ describe("the word card", () => {
   });
 
   it("It says: the reading is what the ink says, and it is learned", async () => {
-    const { check, store } = setup();
+    const { check, store } = await setup();
     const card = open(check, { margin: 2.4, words: ["receive"] });
     card.rows[0].run();
     const [answer] = await saved(store);
@@ -152,8 +153,8 @@ describe("the word card", () => {
     expect(check.answeredAt).toHaveLength(1);
   });
 
-  it("Correct on a word whose ink says the reading: Type first, then It says and Should be", () => {
-    const { check } = setup();
+  it("Correct on a word whose ink says the reading: Type first, then It says and Should be", async () => {
+    const { check } = await setup();
     const card = open(check, { margin: 2.4, words: ["receive"] }, true);
     expect(card.rows.map((r) => r.label)).toEqual([
       "Type what it says…",
@@ -163,13 +164,87 @@ describe("the word card", () => {
     ]);
   });
 
-  it("no close word: no Should be", () => {
-    const { check } = setup();
+  it("no close word: no Should be", async () => {
+    const { check } = await setup();
     expect(open(check, null).rows.map((r) => r.label)).toEqual([
       "It says “recieve”",
       "Add to dictionary",
       "Type what it says…",
     ]);
+  });
+});
+
+describe("Should be only for a word its list lacks (Joost's iPad test, 2026-11-25)", () => {
+  const list = "on\nat\nin\ntuesday\nthursday\nroom\nsoon\nreceive\nprovincie\n";
+  const card = (text: string, suggested: string, language?: "en" | "nl") => {
+    shown.length = 0;
+    const check = new WordCheck(
+      {
+        vault: {
+          adapter: { exists: async () => false, read: async () => "", write: async () => {} },
+        },
+      } as never,
+      () => "plug",
+      () => Promise.resolve(list),
+      async (l) => (l === "nl" ? { words: new Set(["provincie"]), underline: false } : null),
+    );
+    return {
+      check,
+      show: () => {
+        shown.length = 0;
+        check.ask(
+          {
+            note: "n.notebook.md",
+            pageId: "p1",
+            word: { text, strokeIds: ["s1"] },
+            strokes: [{ id: "s1", pts: [0, 0, 0.5], t0: 0 }] as never,
+            suggestion: { margin: 2.4, words: [suggested], candidates: 1 },
+            language,
+          },
+          { x: 0, y: 0 },
+          () => {},
+        );
+        return shown[0].rows.map((r) => r.label);
+      },
+    };
+  };
+
+  it("offers none for a listed word, a short one, a number, a code or maths", async () => {
+    for (const [text, suggested] of [
+      ["Tuesday", "Thursday"],
+      ["room", "soon"],
+      ["on", "an"],
+      ["at", "as"],
+      ["B-214", "Be-234"],
+      ["O(log", "clog"],
+      ["n)", "no"],
+      ["10:30", "10:00"],
+    ]) {
+      const { check, show } = card(text, suggested);
+      await check.load();
+      expect(
+        show().some((l) => l.startsWith("Should be")),
+        text,
+      ).toBe(false);
+    }
+  });
+
+  it("still offers one for a plain word the list lacks", async () => {
+    const { check, show } = card("recieve", "receive");
+    await check.load();
+    expect(show()).toContain("Should be “receive”");
+  });
+
+  it("on another language's page, judges by that language's pack, and offers none without it", async () => {
+    const dutch = card("provincie", "province", "nl");
+    await dutch.check.flags("n.notebook.md", "p1", [], "nl");
+    expect(dutch.show().some((l) => l.startsWith("Should be"))).toBe(false);
+    const unknown = card("bestrigdt", "bestrijdt", "nl");
+    await unknown.check.load();
+    // The pack's list was never read: nothing to judge by.
+    expect(unknown.show().some((l) => l.startsWith("Should be"))).toBe(false);
+    await unknown.check.flags("n.notebook.md", "p1", [], "nl");
+    expect(unknown.show()).toContain("Should be “bestrijdt”");
   });
 });
 

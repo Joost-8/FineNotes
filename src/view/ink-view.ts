@@ -4435,7 +4435,14 @@ export class InkView extends TextFileView {
     };
     this.wordPopover?.close();
     this.wordPopover = this.plugin.wordCheck.ask(
-      { note: file.path, pageId: page.id, word, strokes, suggestion },
+      {
+        note: file.path,
+        pageId: page.id,
+        word,
+        strokes,
+        suggestion,
+        language: this.pageReadings.get(page.id)?.language ?? "en",
+      },
       at,
       () => {
         // Answered: search finds the answer, and the page is underlined again without it.

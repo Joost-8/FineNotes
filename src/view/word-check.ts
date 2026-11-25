@@ -37,6 +37,7 @@ import {
   serializeCorrections,
 } from "../recognition/hwr/corrections";
 import { type LexiconSuggestion, SUGGEST_MARGIN, replaceCore } from "../recognition/hwr/lexicon";
+import { offersSpelling } from "../recognition/hwr/spelling-offer";
 import type { Stroke } from "../model/document";
 import type { PageLanguage } from "../recognition/hwr/page-language";
 import type { PackWords } from "./language-packs";
@@ -69,6 +70,8 @@ export interface CheckedWord {
   strokes: readonly Stroke[];
   /** The list words its ink fits best (lexicon.ts), when they were worked out. */
   suggestion?: LexiconSuggestion | null;
+  /** The page's language (page-language.ts); English when absent. */
+  language?: PageLanguage;
 }
 
 /** Writing a checked word in the writer's own hand (`write-in-hand.ts`), when the writer can. */
@@ -89,6 +92,8 @@ export class WordCheck {
   private loading: Promise<void> | null = null;
   /** Said once a session: there is no word list, so nothing is underlined. */
   private toldNoList = false;
+  /** Language packs' word lists, as `flags` last read them, for the card's Should be. */
+  private readonly packLists = new Map<PageLanguage, ReadonlySet<string>>();
   /** Told after each answer is saved, with how many answers there are now. */
   answered: (count: number) => void = () => {};
 
@@ -196,6 +201,7 @@ export class WordCheck {
     await this.load();
     if (language !== "en") {
       const pack = await this.packs(language);
+      if (pack) this.packLists.set(language, pack.words);
       if (!pack?.underline) return [];
       return flagWords(
         words,
@@ -309,8 +315,11 @@ export class WordCheck {
     // The ink really says the reading, and a list word is close: the writer may have meant it.
     const closest = !misread && found?.words[0] ? replaceCore(read, found.words[0]) : null;
     const inHand = !!hand && !!closest && hand.writes(closest);
+    // Only when it is very likely a misspelling (spelling-offer.ts): never for a listed word
+    // ("on", "Tuesday"), a short one, a code or maths ("B-214", "O(log"); Joost, 2026-11-25.
+    const listed = this.listedFor(word.language ?? "en");
     const spelled: WordPopoverRow[] =
-      closest && closest !== read
+      closest && listed && offersSpelling(read, closest, listed, (word.language ?? "en") === "en")
         ? [
             {
               icon: "spell-check",
@@ -356,11 +365,27 @@ export class WordCheck {
     );
   }
 
+  /**
+   * Whether a word (lower case) is in `language`'s list or answered as
+   * right; null when that list is not known (another language whose pack's
+   * list `flags` has not read), so nothing can be judged by it.
+   */
+  private listedFor(language: PageLanguage): ((word: string) => boolean) | null {
+    const list = language === "en" ? this.words : this.packLists.get(language);
+    if (!list) return null;
+    const ignored = ignoredWords(this.corrections);
+    return (word) => list.has(word) || ignored.has(word);
+  }
+
   /** Whether a word as read is one `flags` never underlines: listed, answered as right, or no plain word. */
-  private unflagged(read: string): boolean {
+  private unflagged(read: string, language: PageLanguage = "en"): boolean {
     const word = plainWord(read);
     if (!word) return true;
-    return this.words?.has(word) === true || ignoredWords(this.corrections).has(word);
+    if (ignoredWords(this.corrections).has(word)) return true;
+    if (language === "en") return this.words?.has(word) === true;
+    // Another language: its pack's list, as `flags` last read it; none known, nothing to judge by.
+    const list = this.packLists.get(language);
+    return !list || list.has(word);
   }
 
   /**
