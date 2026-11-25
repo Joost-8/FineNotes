@@ -55,6 +55,8 @@ import {
   joinPunctuation,
   pickQuestions,
   sureWords,
+  unsureCandidates,
+  writeUnasked,
   wordCore,
   wordSureness,
   wordsOf,
@@ -306,16 +308,7 @@ export class NeatenService {
     // Of the words Grape is not sure of, the least sure few are asked about with the word card,
     // about one per line (Joost, 25 November: ten cards for two lines was far too many). An
     // answered word is written as answered; a skipped one stays the writer's ink.
-    const questions = pickQuestions(
-      jobs.flatMap((job, line) =>
-        job.read.flatMap((w, word) =>
-          !job.rewrite[word] && /[\p{L}\p{N}]/u.test(w) && job.words[word]?.length
-            ? [{ line, word, sure: job.sure[word] ?? 0 }]
-            : [],
-        ),
-      ),
-      lines.length,
-    );
+    const questions = pickQuestions(unsureCandidates(jobs));
     const asked = new Set(questions.map((q) => jobs[q.line].words[q.word][0]));
     if (questions.length > 0 && request.ask) {
       request.asking?.();
@@ -327,13 +320,7 @@ export class NeatenService {
     // Every other word is written as read; the read-back below keeps one that does not read
     // back as itself in the writer's ink.
     jobs = jobs
-      .map((job) => ({
-        ...job,
-        rewrite: job.rewrite.map((r, w) => {
-          const ink = job.words[w] ?? [];
-          return r || (ink.length > 0 && !asked.has(ink[0]));
-        }),
-      }))
+      .map((job) => ({ ...job, ...writeUnasked(job, asked) }))
       .filter((job) => job.rewrite.some(Boolean));
     if (jobs.length === 0) return { kind: "tidy" };
     if (request.stop()) return { kind: "stopped" };
@@ -393,6 +380,7 @@ export class NeatenService {
         strokes: job.strokes,
         words: job.words,
         rewrite,
+        answered: job.answered,
         written: levelledStrokes(written, written.char, job.text),
         // Written at the writer's own x-height, or at the least the model writes legibly with their pen.
         xHeight: {
@@ -426,6 +414,8 @@ export class NeatenService {
     rewrite: boolean[];
     /** How sure Grape is of each word (`wordSureness`); 1 for a word the writer answered. */
     sure: number[];
+    /** Set once asked: the words the writer answered on a card. */
+    answered?: boolean[];
     xHeight: number | null;
   } | null {
     if (!reading || !reading.wordStrokes || !reading.chars) return null;

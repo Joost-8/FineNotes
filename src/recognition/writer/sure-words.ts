@@ -168,15 +168,62 @@ export interface Question {
 export const ASK_BELOW = 0.9;
 
 /**
- * Which unsure words to ask about: the least sure first, at most `budget`
- * of them (about one per line selected: Joost, 25 November, after ten
- * cards for two lines), and only those under `ASK_BELOW`.
+ * Which unsure words to ask about: on each line the least sure one, if it is
+ * under `ASK_BELOW` (Joost, 25 November, after ten cards for two lines:
+ * "way fewer and dependent on the amount of lines"). Lines in order.
  */
-export function pickQuestions(candidates: readonly Question[], budget: number): Question[] {
-  return candidates
-    .filter((q) => q.sure < ASK_BELOW)
-    .sort((a, b) => a.sure - b.sure || a.line - b.line || a.word - b.word)
-    .slice(0, Math.max(0, budget));
+export function pickQuestions(candidates: readonly Question[], perLine = 1): Question[] {
+  const byLine = new Map<number, Question[]>();
+  for (const q of candidates) {
+    if (q.sure >= ASK_BELOW) continue;
+    byLine.set(q.line, [...(byLine.get(q.line) ?? []), q]);
+  }
+  return [...byLine.keys()]
+    .sort((a, b) => a - b)
+    .flatMap((line) =>
+      (byLine.get(line) ?? [])
+        .sort((a, b) => a.sure - b.sure || a.word - b.word)
+        .slice(0, Math.max(0, perLine)),
+    );
+}
+
+/** A line's words as Beautify sees them before asking: their text, ink, whether sure, and how sure. */
+export interface LineChoice {
+  read: readonly string[];
+  words: readonly (readonly string[])[];
+  rewrite: readonly boolean[];
+  sure: readonly number[];
+}
+
+/** The words Beautify could ask about: not sure enough to write, with a letter or digit, and ink. */
+export function unsureCandidates(lines: readonly LineChoice[]): Question[] {
+  return lines.flatMap((line, li) =>
+    line.read.flatMap((w, word) =>
+      !line.rewrite[word] && /[\p{L}\p{N}]/u.test(w) && line.words[word]?.length
+        ? [{ line: li, word, sure: line.sure[word] ?? 0 }]
+        : [],
+    ),
+  );
+}
+
+/**
+ * After the questions: which words of a line are written. A word asked about
+ * and not answered stays the writer's ink; an answered one is sure by now;
+ * every other word with ink is written as read, and the read-back keeps one
+ * that does not read back as itself in the writer's ink (Joost, 25 November:
+ * the words not asked about are handled without a card). `asked` holds the
+ * first stroke id of each word asked about.
+ */
+export function writeUnasked(
+  line: Pick<LineChoice, "words" | "rewrite">,
+  asked: ReadonlySet<string>,
+): { rewrite: boolean[]; answered: boolean[] } {
+  const rewrite = line.rewrite.map((r, w) => {
+    const ink = line.words[w] ?? [];
+    return r || (ink.length > 0 && !asked.has(ink[0]));
+  });
+  const answered = line.rewrite.map((r, w) => r && asked.has(line.words[w]?.[0] ?? ""));
+  return { rewrite, answered };
 }
 
 /** An answer the writer gave about a word (corrections.json): what it is, and its strokes. */
