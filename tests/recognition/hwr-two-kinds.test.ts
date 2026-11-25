@@ -5,7 +5,6 @@ import {
   correctionLines,
   emptyCorrections,
   ignoredWords,
-  learnable,
   mergeCorrections,
   parseCorrections,
   serializeCorrections,
@@ -59,21 +58,44 @@ describe("a word the writer wrote wrong (meant)", () => {
     ]);
   });
 
-  it("is never learned from, nor shared, nor counted", () => {
-    const file = emptyCorrections();
-    const a = addCorrection(file, correction({ meant: "receive" }));
-    const b = addCorrection(
-      a,
-      correction({
-        kind: "misread",
-        read: "single",
-        text: "simple",
-        strokes: [{ id: "s9", pts: [1, 1, 0.5], t0: 0 }],
-      }),
-    );
-    expect(correctionLines(b).map((l) => l.text)).toEqual(["simple"]);
-    expect(correctionDrafts(b).map((d) => d.text)).toEqual(["simple"]);
-    expect(b.corrections.filter(learnable)).toHaveLength(1);
+  it("what each answer teaches Grape and shares with Help improve Grape: what the ink says, never the meant word", () => {
+    const ink = (id: string) => [{ id, pts: [1, 1, 0.5, 3, 4, 0.5], t0: 0 }];
+    const answers: Correction[] = [
+      // Grape misread it: the typed word.
+      correction({ kind: "misread", read: "single", text: "simple", strokes: ink("a") }),
+      // It says "…": the reading.
+      correction({ read: "coprime", text: "coprime", strokes: ink("b") }),
+      // Should be "receive" / I wrote it wrong: the reading, as the writer wrote it.
+      correction({ meant: "receive", strokes: ink("c") }),
+      // Add to dictionary: learned, never shared (mostly names).
+      correction({ kind: "ignore", read: "Oskar", text: "Oskar", strokes: ink("d") }),
+      // A piece of a calculation note's sum: an equation.
+      correction({ kind: "misread", read: "3+4", text: "3+4=", source: "calc", strokes: ink("e") }),
+    ];
+    const file = answers.reduce(addCorrection, emptyCorrections());
+    expect(correctionLines(file).map((l) => l.text)).toEqual([
+      "simple",
+      "coprime",
+      "recieve",
+      "Oskar",
+      "3+4=",
+    ]);
+    const shared = correctionDrafts(file).map((d) => ({
+      kind: d.kind,
+      text: d.text,
+      answer: d.answer,
+    }));
+    expect(shared).toEqual([
+      { kind: "word", text: "simple", answer: "misread" },
+      { kind: "word", text: "coprime", answer: "mistake" },
+      { kind: "word", text: "recieve", answer: "mistake" },
+      { kind: "equation", text: "3+4=", answer: "misread" },
+    ]);
+    // Only the ink and what it says leave the device: no meant word, note, page or ids.
+    const sent = JSON.stringify(correctionDrafts(file));
+    for (const secret of ["receive", "Week 3", "notebook.md", '"p1"', '"c"']) {
+      expect(sent).not.toContain(secret);
+    }
   });
 
   it("still stops the word being underlined, like any answer that the ink says the reading", () => {

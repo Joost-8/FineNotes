@@ -204,7 +204,6 @@
   "ai.word.addToDictionary": "사전에 추가",
   "ai.word.neverUnderline": "다시는 밑줄 긋지 않기",
   "ai.word.saveFailed": "FineNotes: 교정 내용을 저장하지 못했어요 — {message}",
-  "ai.word.title": "무엇이라고 적혀 있나요?",
   "ai.word.field": "단어",
   "ai.task.edit": "할 일 편집",
   "ai.task.make": "할 일 만들기",

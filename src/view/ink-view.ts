@@ -433,6 +433,7 @@ import { type ReadingContext, inkForReading, readingText } from "./handwriting";
 import { pageWords } from "../recognition/hwr/page-words";
 import { type HandwrittenLink, findHandwrittenLinks } from "../recognition/handwritten-links";
 import type { PageReading } from "../recognition/hwr/recognizer";
+import type { PageLanguage } from "../recognition/hwr/page-language";
 import { type ReadWord, readWords, strokeKey } from "../recognition/hwr/corrections";
 import { answeredTexts } from "../recognition/hwr/answered-reading";
 import {
@@ -741,6 +742,8 @@ interface PageWords {
   readLines: ReadLine[];
   /** The worker's id for it, while it keeps its log-probabilities. */
   id?: number;
+  /** The page's language (page-language.ts): the English word list is for "en" only. */
+  language: PageLanguage;
 }
 
 /** What lassoed ink says, for a dialog's field. */
@@ -4365,26 +4368,34 @@ export class InkView extends TextFileView {
 
   /** Remember a page's reading, so lassoed ink on it can use its words. */
   private keepReading(page: Page, hash: string, reading: PageReading): PageWords {
-    const path = this.file?.path;
-    // What search finds: the reading with the writer's answers in it (answered-reading.ts).
-    const shown = answeredTexts(
-      reading.lines,
-      path ? this.plugin.wordCheck.shownOn(path, page.id) : new Map<string, string>(),
-    );
     const entry: PageWords = {
       hash,
       words: readWords(reading.lines),
       read: new Set(reading.lines.flatMap((line) => line.strokeIds)),
       lines: reading.lines.map((line) => line.text),
-      readLines: reading.lines.map((line, i) => ({ text: shown[i], words: line.words })),
+      readLines: reading.lines.map((line) => ({ text: line.text, words: line.words })),
       id: reading.id,
+      language: reading.language ?? "en",
     };
     this.pageReadings.set(page.id, entry);
-    // Kept on this device, so Home's search finds the page (search-store.ts).
-    if (path) {
-      saveReading(vaultKeyOf(this.app), path, page.id, { hash, text: shown.join("\n") });
-    }
+    this.searchAnswered(page.id);
     return entry;
+  }
+
+  /**
+   * What search finds on a page: its kept reading with the writer's answers
+   * in it (answered-reading.ts), for in-note search and, kept on this
+   * device, Home's (search-store.ts). Again after each answer, so a
+   * correction is found at once.
+   */
+  private searchAnswered(pageId: string): void {
+    const entry = this.pageReadings.get(pageId);
+    const path = this.file?.path;
+    if (!entry || !path) return;
+    const lines = entry.lines.map((text, i) => ({ text, words: entry.readLines[i]?.words ?? [] }));
+    const shown = answeredTexts(lines, this.plugin.wordCheck.shownOn(path, pageId));
+    entry.readLines = lines.map((line, i) => ({ text: shown[i], words: line.words }));
+    saveReading(vaultKeyOf(this.app), path, pageId, { hash: entry.hash, text: shown.join("\n") });
   }
 
   /** A finger tapped (or a mouse right-clicked) an underlined word: ask what it says. */
@@ -4427,7 +4438,8 @@ export class InkView extends TextFileView {
       { note: file.path, pageId: page.id, word, strokes, suggestion },
       at,
       () => {
-        // Answered: underline the page's words again, without this one.
+        // Answered: search finds the answer, and the page is underlined again without it.
+        this.searchAnswered(page.id);
         const checked = this.checkedWords.get(page.id);
         if (!checked || this.surface !== surface) return;
         void this.plugin.wordCheck.flags(file.path, page.id, checked.words).then((flagged) =>
@@ -4593,7 +4605,8 @@ export class InkView extends TextFileView {
     const cached = checked?.hash === entry.hash ? checked.suggestions?.get(key) : undefined;
     if (cached !== undefined) return cached;
     const lexicon = this.plugin.wordCheck.lexicon();
-    if (!lexicon || !word.at) return null;
+    // The list is English: on a page in another language it would offer English spellings.
+    if (!lexicon || !word.at || entry.language !== "en") return null;
     if (entry.id === undefined) return undefined;
     const { line, start, end } = word.at;
     try {
@@ -7735,7 +7748,7 @@ export class InkView extends TextFileView {
   ): Promise<SpellingFix[]> {
     const file = this.file;
     const lexicon = this.plugin.wordCheck.lexicon();
-    if (!file || !lexicon) return [];
+    if (!file || !lexicon || entry.language !== "en") return [];
     try {
       const flagged = (await this.plugin.wordCheck.flags(file.path, page.id, words)).filter(
         (w) => w.at,
@@ -7818,11 +7831,9 @@ export class InkView extends TextFileView {
     for (const { word, text } of edits) {
       const ids = new Set(word.strokeIds);
       const strokes = page.strokes.filter((stroke) => ids.has(stroke.id));
-      void this.plugin.wordCheck.record(
-        { note: file.path, pageId: page.id, word, strokes },
-        "misread",
-        text,
-      );
+      void this.plugin.wordCheck
+        .record({ note: file.path, pageId: page.id, word, strokes }, "misread", text)
+        .then(() => this.searchAnswered(page.id));
     }
   }
 

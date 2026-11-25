@@ -264,7 +264,7 @@ export const ai = {
   "ai.word.addToDictionary": "Add to dictionary",
   "ai.word.neverUnderline": "Never underline it again",
   "ai.word.saveFailed": "FineNotes: could not save the correction — {message}",
-  "ai.word.title": "What does it say?",
+  "ai.word.correctTitle": "Correct “{word}”",
   "ai.word.field": "The word",
   "ai.word.misreadIt": "Grape misread it",
   "ai.word.wroteWrong": "I wrote it wrong",

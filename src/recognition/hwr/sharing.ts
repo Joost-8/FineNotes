@@ -33,12 +33,7 @@
  * Obsidian's web views and Node both have.
  */
 
-import {
-  type Correction,
-  type CorrectionKind,
-  type CorrectionsFile,
-  learnable,
-} from "./corrections";
+import type { Correction, CorrectionKind, CorrectionsFile } from "./corrections";
 
 /** The kinds of labelled ink that are shared. */
 export type ShareKind = "practice" | "word" | "equation";
@@ -434,8 +429,6 @@ export function practiceDrafts(lines: readonly PracticeSource[]): ShareDraft[] {
 export function correctionDrafts(file: CorrectionsFile): ShareDraft[] {
   const out: ShareDraft[] = [];
   for (const c of file.corrections) {
-    // A word written wrong is never a label: its reading may be wrong too.
-    if (!learnable(c)) continue;
     const kind = correctionKind(c);
     const strokes = normalise(c.strokes);
     if (!kind || strokes.length === 0) continue;

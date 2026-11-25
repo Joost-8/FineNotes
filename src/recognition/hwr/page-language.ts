@@ -20,14 +20,20 @@
 export const PAGE_LANGUAGES = ["en", "nl", "de", "fr", "es", "pt", "it"] as const;
 export type PageLanguage = (typeof PAGE_LANGUAGES)[number];
 
+/**
+ * Words of two letters or more only: a lone letter is as often a bullet, a
+ * variable or a misread mark ("a = 5", "o" for a bullet) as a word. A word
+ * English shares ("do", "no", "as", "per") is listed under English too, so
+ * a to-do list ("buy a cake / do the dishes") stays English.
+ */
 const WORDS: Record<PageLanguage, string> = {
-  en: "the and of to is in that it for with on are be this as by at or from not we you have an was if can when each every before after which there their will would should",
+  en: "the and of to is in that it for with on are be this as by at or from not we you have an was if can when each every before after which there their will would should do no per",
   nl: "de het een en van voor met op niet dat zijn wordt ook maar naar bij aan om er je ik wat hoe deze die dit tot uit nog kan moet elke geen worden heeft wel dan",
   de: "der die das und ist nicht mit ein eine den dem des zu von auf fur sich auch es im wir sie bei nach wird oder wenn jede jeder vor aus sind werden kann noch",
   fr: "le la les des et est un une du dans pour que qui pas sur au avec ce se il nous vous sont par plus chaque avant ou mais leur cette entre",
-  es: "el la los las y es un una del en que por con para se no lo al como mas pero su cada antes esta este son entre sobre",
-  pt: "o a os as e da do das dos em um uma que para com nao se por mais na no cada antes esta sao ao pelo pela entre sobre",
-  it: "il lo la gli le e di del della che per con non un una sono nel alla al ogni prima questo questa piu si tra",
+  es: "el la los las es un una del en que por con para se no lo al como mas pero su cada antes esta este son entre sobre",
+  pt: "os as da do das dos em um uma que para com nao se por mais na no cada antes esta sao ao pelo pela entre sobre",
+  it: "il lo la gli le di del della che per con non un una sono nel alla al ogni prima questo questa piu si tra",
 };
 
 /** Each word, with the languages it belongs to: a word of several counts a share in each. */

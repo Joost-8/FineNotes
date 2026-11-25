@@ -219,7 +219,6 @@
   "ai.word.addToDictionary": "Добавить в словарь",
   "ai.word.neverUnderline": "Больше не подчёркивать",
   "ai.word.saveFailed": "FineNotes: не удалось сохранить исправление — {message}",
-  "ai.word.title": "Что там написано?",
   "ai.word.field": "Слово",
   "ai.task.edit": "Изменить задачу",
   "ai.task.make": "Создать задачу",

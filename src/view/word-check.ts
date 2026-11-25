@@ -25,7 +25,6 @@ import {
   type CorrectionsFile,
   type ReadWord,
   addCorrection,
-  learnable,
   shownAnswers,
   answeredOn,
   emptyCorrections,
@@ -172,9 +171,9 @@ export class WordCheck {
     await adapter.write(file, serializeCorrections(this.corrections));
   }
 
-  /** When each answer to learn from was given (ms since the epoch), for counting the new ones. */
+  /** When each answer was given (ms since the epoch), for counting the new ones. */
   get answeredAt(): number[] {
-    return this.corrections.corrections.filter(learnable).map((c) => c.at);
+    return this.corrections.corrections.map((c) => c.at);
   }
 
   /** The words of a reading to underline on page `pageId` of `note`. */
@@ -274,7 +273,7 @@ export class WordCheck {
         done();
         if (hand && kind === "misread") hand.offer(text);
       });
-    // Written wrong: the text shows `text`, and nothing is learned (corrections.ts).
+    // Written wrong: the text shows `text`; the label stays the reading, what the ink says (corrections.ts).
     const meant = (text: string, write: boolean) =>
       void this.answer(word, "mistake", read, undefined, text).then(() => {
         done();
@@ -339,14 +338,19 @@ export class WordCheck {
     return this.words?.has(word) === true || ignoredWords(this.corrections).has(word);
   }
 
-  /** Record an answer given elsewhere (a lassoed title corrected in its dialog). */
+  /**
+   * Record an answer given elsewhere (a lassoed title corrected in its
+   * dialog, Beautify asking about a word). `text` is what the ink says;
+   * `meant`, on a "mistake" only, what the writer meant to write.
+   */
   record(
     word: CheckedWord,
     kind: CorrectionKind,
     text: string,
     source?: Correction["source"],
+    meant?: string,
   ): Promise<void> {
-    return this.answer(word, kind, text, source);
+    return this.answer(word, kind, text, source, kind === "mistake" ? meant : undefined);
   }
 
   private async answer(
@@ -383,9 +387,12 @@ export class WordCheck {
 }
 
 /**
- * "What does it say?": one field, prefilled with the reading, and two
- * buttons that say which is wrong: Grape misread it (Enter, as before), or
- * I wrote it wrong (`wrong`: the text is fixed, Grape learns nothing).
+ * "Correct “…”": one field, prefilled with the reading, and two buttons
+ * that say which is wrong: Grape misread it (Enter, as before: the typed
+ * word is what the ink says), or I wrote it wrong (`wrong`: the typed word
+ * is what the writer meant; the text shows it, and the ink is labelled with
+ * the reading, which the writer says is what they wrote). The buttons stay
+ * above the iPad's keyboard with the field.
  */
 class WordCorrectionModal extends Modal {
   private readonly keyboard: DialogKeyboard;
@@ -401,7 +408,7 @@ class WordCorrectionModal extends Modal {
 
   override onOpen(): void {
     this.modalEl.addClass("goodobsidian-dialog");
-    this.titleEl.setText(t("ai.word.title"));
+    this.titleEl.setText(t("ai.word.correctTitle", { word: this.read }));
     const body = this.contentEl;
     body.addClass("goodobsidian-ask");
     const row = body.createDiv({ cls: "goodobsidian-contents-field-row" });
@@ -411,8 +418,8 @@ class WordCorrectionModal extends Modal {
       attr: { "aria-label": t("ai.word.field"), autocapitalize: "none", spellcheck: "false" },
     });
     field.value = this.read;
-    this.keyboard.watch(field, row);
     const buttons = body.createDiv({ cls: "modal-button-container" });
+    this.keyboard.watch(field, row, buttons);
     const done = (wrong: boolean) => {
       const text = field.value.trim();
       if (!text) return;

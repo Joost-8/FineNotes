@@ -204,7 +204,6 @@
   "ai.word.addToDictionary": "添加到词典",
   "ai.word.neverUnderline": "不再为它加下划线",
   "ai.word.saveFailed": "FineNotes：无法保存更正：{message}",
-  "ai.word.title": "它写的是什么？",
   "ai.word.field": "字词",
   "ai.task.edit": "编辑任务",
   "ai.task.make": "创建任务",

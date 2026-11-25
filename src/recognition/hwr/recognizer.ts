@@ -220,13 +220,22 @@ function lineNetwork(
   };
 }
 
-/** A line's network output decoded as `options` ask (the language model, the reread). */
-function decodeLine(bundle: HwrBundle, net: LineNetwork, options: ReadOptions): LineReading {
+/**
+ * A line's network output decoded as `options` ask (the language model, the
+ * reread). `start`: the clock when decoding began (the network's end when it
+ * follows at once, as in `readLine`).
+ */
+function decodeLine(
+  bundle: HwrBundle,
+  net: LineNetwork,
+  options: ReadOptions,
+  start = net.done,
+): LineReading {
   const now = options.now ?? (() => 0);
   const { logp, frames, greedy, order } = net;
   if (!logp || !greedy)
     return { greedy: "", text: "", confidence: 0, frames: 0, timings: net.timings };
-  const t3 = net.done;
+  const t3 = start;
   const alphabet = bundle.meta.alphabet;
   const lm = options.useLm === false ? null : bundle.lm;
   const decoder = { ...bundle.meta.decoder, ...options.beam };
@@ -341,7 +350,7 @@ export function readPage(
       const ink = inks[index];
       const net = nets[index];
       if (net.logp) options.logp?.(index, net.logp, net.frames);
-      const { wordStrokes, ...reading } = decodeLine(bundle, net, decode);
+      const { wordStrokes, ...reading } = decodeLine(bundle, net, decode, now());
       return {
         ...reading,
         strokeIds: ink.map((s) => s.id),

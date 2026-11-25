@@ -204,7 +204,6 @@
   "ai.word.addToDictionary": "辞書に追加",
   "ai.word.neverUnderline": "今後は下線を引かない",
   "ai.word.saveFailed": "FineNotes: 修正を保存できませんでした — {message}",
-  "ai.word.title": "何と書いてありますか?",
   "ai.word.field": "単語",
   "ai.task.edit": "タスクを編集",
   "ai.task.make": "タスクを作成",

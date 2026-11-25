@@ -12,13 +12,14 @@
  * - **ignore**: a real word the list lacks (a name, course jargon); the
  *   label is the reading, and it is never underlined again.
  *
- * An answer may also say what the writer **meant** ("recieve" should be
- * "receive", "Should be …" on the card, "I wrote it wrong" in its dialog):
- * the text shows the meant word (`shownAnswers`), and the answer is never
- * learned from. Nothing in the ink tells a misread from a misspelling (the
- * reading fits the ink about as well in both: RESEARCH-LOG 2026-11-25), so
- * only the writer's own choice of answer says which it is, and a word whose
- * reading may itself be wrong must not teach Grape the reading.
+ * A mistake may also say what the writer **meant** ("recieve" should be
+ * "receive": "Should be …" on the card, "I wrote it wrong" in its dialog).
+ * The text shows the meant word (`shownAnswers`); the label stays what the
+ * ink says, the reading, so learning and Help improve Grape use it as any
+ * mistake, and the meant word is never a label and never shared. Nothing
+ * in the ink tells a misread from a misspelling (the reading fits the ink
+ * about as well in both: RESEARCH-LOG 2026-11-25), so only the writer's
+ * own choice of answer says which it is; it is never guessed.
  *
  * The ink is copied into the record, so a label outlives edits to its page.
  * Stored as `<plugin>/handwriting/corrections.json`.
@@ -50,7 +51,7 @@ export interface Correction {
   text: string;
   /**
    * What the writer meant to write, when they wrote it wrong (a "mistake"
-   * only): shown in place of the word, and never learned from. Builds
+   * only): shown in place of the word, never a label (`text` is). Builds
    * before 2.11 drop it when they rewrite the file.
    */
   meant?: string;
@@ -176,11 +177,6 @@ export function mergeCorrections(file: CorrectionsFile, older: CorrectionsFile):
   return { version: 1, corrections: [...added, ...file.corrections] };
 }
 
-/** Whether an answer teaches Grape: all but a word the writer wrote wrong. */
-export function learnable(c: Pick<Correction, "meant">): boolean {
-  return c.meant === undefined;
-}
-
 /**
  * What each answered word on page `page` of `note` should show, by its
  * stroke-id key (`strokeKey`): the writer's text for a misread, the meant
@@ -206,14 +202,13 @@ function inkKey(c: Pick<Correction, "note" | "page" | "strokes">): string {
 }
 
 /**
- * The labelled words to learn from: every answer, its ink and its text,
- * except a word the writer wrote wrong (`meant`): its reading may be wrong
- * too, and it only repeats what Grape already read.
+ * The labelled words to learn from: every answer, its ink and its text
+ * (what the ink says; never the word a writer `meant`).
  */
 export function correctionLines(
   file: CorrectionsFile,
 ): Array<{ strokes: InkStroke[]; text: string }> {
-  return file.corrections.filter(learnable).map((c) => ({
+  return file.corrections.map((c) => ({
     strokes: c.strokes.map((s) => ({ pts: s.pts, t0: s.t0 })),
     text: c.text,
   }));

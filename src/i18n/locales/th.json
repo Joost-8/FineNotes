@@ -204,7 +204,6 @@
   "ai.word.addToDictionary": "เพิ่มในพจนานุกรม",
   "ai.word.neverUnderline": "ไม่ต้องขีดเส้นใต้อีก",
   "ai.word.saveFailed": "FineNotes: บันทึกการแก้ไขไม่ได้ — {message}",
-  "ai.word.title": "เขียนว่าอะไร",
   "ai.word.field": "คำ",
   "ai.task.edit": "แก้ไขงาน",
   "ai.task.make": "สร้างงาน",

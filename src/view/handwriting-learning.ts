@@ -23,7 +23,6 @@ import { t } from "../i18n/translate";
 import {
   type CorrectionsFile,
   correctionLines,
-  learnable,
   parseCorrections,
 } from "../recognition/hwr/corrections";
 import { correctionsPath } from "./word-check";
@@ -307,16 +306,11 @@ export async function readCorrectionLines(host: LearningHost): Promise<LabelledL
   return correctionLines(await readCorrections(host));
 }
 
-/**
- * The corrections file as it is in the vault now, without the words the
- * writer wrote wrong (`learnable`): learning, its counts and Help improve
- * Grape read it, and none of them may use those.
- */
+/** The corrections file as it is in the vault now. */
 export async function readCorrections(host: LearningHost): Promise<CorrectionsFile> {
   const adapter = host.app.vault.adapter;
   const file = correctionsPath();
-  const all = parseCorrections((await adapter.exists(file)) ? await adapter.read(file) : null);
-  return { ...all, corrections: all.corrections.filter(learnable) };
+  return parseCorrections((await adapter.exists(file)) ? await adapter.read(file) : null);
 }
 
 /** Every practice file's copied lines, in one list, and how many came from each file. */

@@ -21,9 +21,11 @@ extracted from the matching section of this file by `release.yml`.
 
 - **Corrections tell Grape's misreads from your own mistakes.** On the word
   card, **Should be “…”** says you wrote the word wrong: the page's text
-  (what search finds) shows the word you meant, and Grape does not learn
-  from it. **Type what it says…** now asks which it was: **Grape misread
-  it** teaches Grape, **I wrote it wrong** only fixes the text. Every
+  (what search finds) shows the word you meant, while Grape (and Help
+  improve Grape) keep the ink labelled with what you really wrote, never
+  the word you meant. **Type what it says…** now asks which it was:
+  **Grape misread it** teaches Grape the word you typed, **I wrote it
+  wrong** fixes the text the same way as Should be. Every
   answer now changes what search finds on the page, not only what Grape
   learns. Editing a lassoed title (Add to contents, Link to…) no longer
   teaches Grape unless you chose **Correct**. Pages written in Dutch,

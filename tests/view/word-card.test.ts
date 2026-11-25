@@ -1,7 +1,7 @@
 /**
  * The word card's answers and what each records (word-check.ts `ask`):
  * Grape's misreads teach it; a word the writer wrote wrong ("Should be …")
- * fixes the text and teaches nothing (RESEARCH-LOG 2026-11-25).
+ * fixes the text, and the ink keeps its reading as label (RESEARCH-LOG 2026-11-25).
  */
 import { describe, expect, it, vi } from "vitest";
 
@@ -95,7 +95,7 @@ describe("the word card", () => {
     ]);
   });
 
-  it("Should be: the text says the meant word, nothing is learned, and the ink is written in the hand", async () => {
+  it("Should be: the text says the meant word, the label stays the reading, and the ink is written in the hand", async () => {
     const { check, store } = setup();
     const hand = { offer: vi.fn(), write: vi.fn(), writes: () => true };
     const card = open(check, { margin: 2.4, words: ["receive"] }, false, hand);
@@ -111,7 +111,7 @@ describe("the word card", () => {
     });
     await vi.waitFor(() => expect(hand.write).toHaveBeenCalledWith("receive"));
     expect(hand.offer).not.toHaveBeenCalled();
-    expect(check.answeredAt).toEqual([]);
+    expect(check.answeredAt).toHaveLength(1);
     expect([...check.shownOn("Notes/Week 3.notebook.md", "p1")]).toEqual([
       [strokeKey(["s1", "s2"]), "receive"],
     ]);

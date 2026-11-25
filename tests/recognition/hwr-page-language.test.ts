@@ -29,7 +29,7 @@ describe("pageLanguage", () => {
     ).toBe("fr");
     expect(
       pageLanguage(
-        "O resultado depende do valor inicial.\nA diferenca entre os dois metodos e pequena e nao muda.",
+        "O resultado depende do valor inicial.\nA diferenca entre os dois metodos e pequena e nao muda.\nCada aluno trabalha numa parte diferente da aula.",
       ).language,
     ).toBe("pt");
     expect(
@@ -51,6 +51,14 @@ describe("pageLanguage", () => {
       pageLanguage("Armoede = poverty\nis de provincie\nvan de groep\nthe was is to").language,
     ).toBe("en");
     expect(pageLanguage("").language).toBe("en");
+    // Lists, notes and maths with few "the" (found by the reviewer: lone letters counted as Portuguese).
+    expect(pageLanguage("buy a cake\ndo the dishes\ncall a plumber\nno milk").language).toBe("en");
+    expect(pageLanguage("Todo\nwrite a summary\nmake a plan\nbook a room").language).toBe("en");
+    expect(
+      pageLanguage("Network layer: a packet has a header and a payload; a router reads a header")
+        .language,
+    ).toBe("en");
+    expect(pageLanguage("f(x) = a x2 + b x + c\na = 2\nsolve for a\no o o e").language).toBe("en");
     expect(pageLanguage("3x + 4 = 19\n- - --").language).toBe("en");
   });
 
@@ -89,6 +97,23 @@ describe("readPage and the page's language", () => {
     expect(on.language).toBe("en");
     expect(off.language).toBe("en");
     expect(on.lines.map((l) => l.text)).toEqual(off.lines.map((l) => l.text));
+  });
+
+  it("times each line's decoding from its own start, not from the end of every line's network", () => {
+    // Two lines far apart, so the page has more than one line to time.
+    const two = [
+      ...strokes,
+      ...strokes.map((s) => ({
+        ...s,
+        id: `${s.id}b`,
+        pts: s.pts.map((v, i) => (i % 3 === 1 ? v + 400 : v)),
+      })),
+    ];
+    let tick = 0;
+    const reading = readPage(bundle, two, { now: () => tick++ });
+    expect(reading.lines.length).toBeGreaterThan(1);
+    // Each decode reads the clock twice in a row: its start and its end.
+    for (const line of reading.lines) expect(line.timings.beam).toBe(1);
   });
 
   it("hands each line's log-probabilities over once, by its index", () => {

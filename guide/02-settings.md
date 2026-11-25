@@ -206,7 +206,7 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 ### Underline words it may have misread (experimental)
 
 - **Id:** `settingUnderlineMisread`
-- **What:** Experimental, off by default. A dotted underline marks words Grape is unsure of; tap one with a finger to correct it, confirm it, fix your own spelling (Should be …) or ignore it. Words Grape misread help it learn; your own spelling fixes change the text only. Pages in another language than English are not underlined.
+- **What:** Experimental, off by default. A dotted underline marks words Grape is unsure of; tap one with a finger to correct it, confirm it, fix your own spelling (Should be …) or ignore it. Your answers help it learn; a spelling fix changes the text, while Grape learns what you really wrote. Pages in another language than English are not underlined.
 - **Where:** Settings › Reading and voice › Underline words it may have misread
 - **Notes:** Shown only while Read handwriting with is not Off.
 - **Words:** underline, misread, correct reading, wrong word, spell check handwriting, correction
