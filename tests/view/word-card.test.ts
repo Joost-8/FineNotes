@@ -172,3 +172,40 @@ describe("the word card", () => {
     ]);
   });
 });
+
+describe("underlines on a page in another language", () => {
+  const read = (text: string, id: string) => ({ text, strokeIds: [id] });
+  const words = [read("tentamen", "a"), read("rekenmashine", "b"), read("exam", "c")];
+  const make = (pack: { words: string[]; underline: boolean } | null) =>
+    new WordCheck(
+      {
+        vault: {
+          adapter: { exists: async () => false, read: async () => "", write: async () => {} },
+        },
+      } as never,
+      () => "plug",
+      () => Promise.resolve("exam\ntentamen\n"),
+      async (language) =>
+        language === "nl" && pack
+          ? { words: new Set(pack.words), underline: pack.underline }
+          : null,
+    );
+
+  it("checks a Dutch page against the Dutch pack's list when it may underline", async () => {
+    const check = make({ words: ["tentamen", "exam"], underline: true });
+    const flagged = await check.flags("n.notebook.md", "p1", words, "nl");
+    expect(flagged.map((w) => w.text)).toEqual(["rekenmashine"]);
+  });
+
+  it("underlines nothing there when the pack may not, or is not here", async () => {
+    expect(await make({ words: ["exam"], underline: false }).flags("n", "p1", words, "nl")).toEqual(
+      [],
+    );
+    expect(await make(null).flags("n", "p1", words, "nl")).toEqual([]);
+  });
+
+  it("still checks an English page against the English list", async () => {
+    const flagged = await make(null).flags("n", "p1", words, "en");
+    expect(flagged.map((w) => w.text)).toEqual(["rekenmashine"]);
+  });
+});

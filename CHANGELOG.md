@@ -28,10 +28,16 @@ extracted from the matching section of this file by `release.yml`.
   wrong** fixes the text the same way as Should be. Every
   answer now changes what search finds on the page, not only what Grape
   learns. Editing a lassoed title (Add to contents, Link to…) no longer
-  teaches Grape unless you chose **Correct**. Pages written in Dutch,
-  German, French, Spanish, Portuguese or Italian are now read without
-  Grape's English language model and are not underlined, which roughly
-  halves the words misread there.
+  teaches Grape unless you chose **Correct**.
+- **Grape reads Dutch, German, French, Spanish, Portuguese and Italian.**
+  A page written in one of them is recognised by its words and read with
+  that language's own pack (Grape in Nederlands, Deutsch, …: a one-time
+  download of 1 to 2 MB, offered the first time such a page is read), which
+  cuts the words misread there to about a third. On French, Spanish and
+  Italian pages, words the pack does not know are underlined, and the word
+  card suggests the language's own words everywhere. Without its pack, a
+  page in another language is read without Grape's English model and is not
+  underlined. Accented letters are still read without their accents.
 - **Beautify handwriting.** Lasso some lines and choose **Beautify** in the ⋯
   menu, or hold a handwritten word and tap the brush beside **Correct** to
   beautify its line. The words Grape is sure of are written again, neater, in

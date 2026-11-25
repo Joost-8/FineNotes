@@ -38,6 +38,8 @@ import {
 } from "../recognition/hwr/corrections";
 import { type LexiconSuggestion, SUGGEST_MARGIN, replaceCore } from "../recognition/hwr/lexicon";
 import type { Stroke } from "../model/document";
+import type { PageLanguage } from "../recognition/hwr/page-language";
+import type { PackWords } from "./language-packs";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { onEnterKey } from "./enter-key";
 import { WordPopover, type WordPopoverRow } from "./word-popover";
@@ -95,6 +97,9 @@ export class WordCheck {
     private readonly pluginDir: () => string,
     /** The bundled word list's text (models/words.txt). */
     private readonly bundled: () => Promise<string | null> = bundledWords,
+    /** A language pack's word list (language-packs.ts), when it is here. */
+    private readonly packs: (language: PageLanguage) => Promise<PackWords | null> = async () =>
+      null,
   ) {}
 
   /** Read the word list and the corrections, once (`reload` to read them again). */
@@ -176,9 +181,29 @@ export class WordCheck {
     return this.corrections.corrections.map((c) => c.at);
   }
 
-  /** The words of a reading to underline on page `pageId` of `note`. */
-  async flags(note: string, pageId: string, words: readonly ReadWord[]): Promise<ReadWord[]> {
+  /**
+   * The words of a reading to underline on page `pageId` of `note`. A page
+   * in another language (page-language.ts) is checked against its language
+   * pack's list, when the pack is here and may underline; else nothing is
+   * underlined there (the English list would mark most of its words).
+   */
+  async flags(
+    note: string,
+    pageId: string,
+    words: readonly ReadWord[],
+    language: PageLanguage = "en",
+  ): Promise<ReadWord[]> {
     await this.load();
+    if (language !== "en") {
+      const pack = await this.packs(language);
+      if (!pack?.underline) return [];
+      return flagWords(
+        words,
+        pack.words,
+        ignoredWords(this.corrections),
+        answeredOn(this.corrections, note, pageId),
+      );
+    }
     if (!this.words || this.words.size === 0) {
       if (!this.toldNoList) {
         this.toldNoList = true;

@@ -281,6 +281,9 @@ export const ai = {
   "ai.task.label": "Task",
   "ai.task.add": "Add",
   "ai.grape.label": "Grape (handwriting recognizer model)",
+  "ai.grape.packLabel": "Grape in {language}",
+  "ai.grape.packPurpose":
+    "Grape reads pages written in {language} better with it, and checks their words; on this device.",
   "ai.grape.purpose":
     "It reads your handwriting on this device for search, titles and links; what you write never leaves the device.",
 

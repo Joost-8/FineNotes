@@ -385,7 +385,7 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     area: "settings",
     title: "Underline words it may have misread (experimental)",
     words: "underline, misread, correct reading, wrong word, spell check handwriting, correction",
-    what: "Experimental, off by default. A dotted underline marks words Grape is unsure of; tap one with a finger to correct it, confirm it, fix your own spelling (Should be …) or ignore it. Your answers help it learn; a spelling fix changes the text, while Grape learns what you really wrote. Pages in another language than English are not underlined.",
+    what: "Experimental, off by default. A dotted underline marks words Grape is unsure of; tap one with a finger to correct it, confirm it, fix your own spelling (Should be …) or ignore it. Your answers help it learn; a spelling fix changes the text, while Grape learns what you really wrote. Pages in another language are checked against that language's pack (French, Spanish and Italian), or not underlined.",
     where: "Settings › Reading and voice › Underline words it may have misread",
     notes: "Shown only while Read handwriting with is not Off.",
     settings: ["checkHandwrittenWords"],
@@ -431,8 +431,8 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     area: "settings",
     title: "Models on this device (download or remove)",
     words:
-      "download model, models, whisper, voice model, grape download, remove model, storage, disk space, ocr model",
-    what: "The models that run on the device: Voice (Whisper, for transcribing recordings), Handwriting (Grape), your own handwriting model, and Scanned pages (reading printed PDF pages). Each shows its state with Download, or ⋯ to re-download or remove it. Nothing they read or hear leaves the device.",
+      "download model, models, whisper, voice model, grape download, remove model, storage, disk space, ocr model, language pack, dutch, german, french, spanish, portuguese, italian",
+    what: "The models that run on the device: Voice (Whisper, for transcribing recordings), Handwriting (Grape), Grape's language packs once a page in that language was read (Grape in Nederlands, Deutsch, …), your own handwriting model, and Scanned pages (reading printed PDF pages). Each shows its state with Download, or ⋯ to re-download or remove it. Nothing they read or hear leaves the device.",
     where: "Settings › Reading and voice › Models on this device",
   },
   {

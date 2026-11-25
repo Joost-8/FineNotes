@@ -92,11 +92,16 @@ export class HandwritingReader {
   /** The version of the word list the worker has (`suggest`). */
   private lexiconVersion: number | null = null;
 
+  /** The language packs the worker has, by key. */
+  private readonly packKeys = new Set<string>();
+
   constructor(
     private readonly app: App,
     private readonly source: () => ModelSource,
     /** Grape, or null when it is not here (grape-files.ts then offers the download). */
     private readonly grape: () => Promise<StoredModel | null>,
+    /** The language packs on this device (language-packs.ts), sent to the worker once each. */
+    private readonly packs: () => Promise<readonly StoredModel[]> = async () => [],
   ) {}
 
   /** What the model in the worker is, or null before one is loaded. Never loads one. */
@@ -168,6 +173,7 @@ export class HandwritingReader {
     if (!client) throw new Error("the recogniser stopped");
     try {
       await this.sendLexicon(client, context.lexicon ?? null);
+      await this.sendPacks(client);
       return await client.readPage(inkForReading(strokes), true, keep, {
         words: context.words,
         reread: context.lexicon !== undefined ? context.lexicon !== null : false,
@@ -185,6 +191,23 @@ export class HandwritingReader {
     if (!lexicon || this.lexiconVersion === lexicon.version) return;
     await client.setLexicon(lexicon.words());
     this.lexiconVersion = lexicon.version;
+  }
+
+  /**
+   * Give the worker the language packs it does not have yet. A pack that
+   * cannot be read is skipped (and tried again next time): a page in its
+   * language is then read without one, as before packs existed.
+   */
+  private async sendPacks(client: HwrWorkerClient): Promise<void> {
+    for (const pack of await this.packs()) {
+      if (this.packKeys.has(pack.key)) continue;
+      try {
+        await client.loadPack(await pack.read());
+        this.packKeys.add(pack.key);
+      } catch (error) {
+        console.warn("FineNotes: a language pack could not be read", error);
+      }
+    }
   }
 
   /**
@@ -288,5 +311,6 @@ export class HandwritingReader {
     this.client = null;
     this.loaded = null;
     this.lexiconVersion = null;
+    this.packKeys.clear();
   }
 }

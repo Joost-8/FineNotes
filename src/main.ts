@@ -21,7 +21,8 @@ import { FileExplorerNotebookButton } from "./view/file-explorer-notebook-button
 import { ExplorerFolderNotebooks } from "./view/explorer-folder-notebooks";
 import type { SharingFeature } from "./view/sharing-feature";
 import { loadSharing } from "./view/sharing-load";
-import { WordCheck } from "./view/word-check";
+import { WordCheck, bundledWords } from "./view/word-check";
+import { LanguagePacks } from "./view/language-packs";
 import { NeatenService } from "./view/neaten";
 import type { NeatnessControl } from "./view/neatness-row";
 import { neatnessOf } from "./recognition/writer/neatness";
@@ -504,6 +505,8 @@ export default class GoodObsidianPlugin extends Plugin {
 
   /** Grape, downloaded on first use, or written from the bundle (grape-files.ts). */
   readonly grape = new GrapeFiles(this.models);
+  /** Grape's language packs on this device (language-packs.ts). */
+  readonly languagePacks = new LanguagePacks(this.app, () => this.pluginDir, this.models);
   /** Whether a newer FineNotes is out: the dot on the gear (update-notice.ts). */
   readonly updates = new UpdateNotice({
     current: this.manifest.version,
@@ -538,6 +541,7 @@ export default class GoodObsidianPlugin extends Plugin {
           : "",
     }),
     () => this.grape.source(),
+    () => this.languagePacks.ready(),
   );
 
   /**
@@ -552,7 +556,12 @@ export default class GoodObsidianPlugin extends Plugin {
   readonly learner = new HandwritingLearner(() => this.learningHost());
 
   /** Checking words read on the device, and the answers to learn from. */
-  readonly wordCheck = new WordCheck(this.app, () => this.pluginDir);
+  readonly wordCheck = new WordCheck(
+    this.app,
+    () => this.pluginDir,
+    bundledWords,
+    (language) => this.languagePacks.words(language),
+  );
 
   /** Neaten: selected handwriting rewritten in the writer's own hand (view/neaten.ts). */
   readonly neaten = new NeatenService({

@@ -9,6 +9,7 @@
 
 import { forward } from "./blstm";
 import type { HwrBundle } from "./bundle";
+import type { CharLm } from "./char-lm";
 import {
   type BeamOptions,
   type WordBias,
@@ -135,6 +136,14 @@ export interface ReadOptions {
    * every page as English, as before 2.11).
    */
   language?: boolean;
+  /**
+   * `readPage` only: the language packs at hand (language-pack.ts), by
+   * language. A page found to be in one of them is read with its model and
+   * its own list for the reread; a page in another language with none.
+   */
+  languageModels?: ReadonlyMap<PageLanguage, LanguageModel> | null;
+  /** Read with this character model instead of the bundle's (a language pack's). */
+  lm?: CharLm | null;
   lateStrokes?: boolean;
   strokeTimes?: boolean;
   pageWordBias?: boolean;
@@ -148,6 +157,29 @@ export interface ReadOptions {
   rereadMargin?: number;
   /** The page words' trie, built once by `readPage` for all its lines. */
   bias?: WordBias | null;
+}
+
+/** A language pack's model and its word list, ready to read with (language-pack.ts). */
+export interface LanguageModel {
+  lm: CharLm;
+  rereadList: RereadList | null;
+}
+
+/**
+ * How a page in `language` is decoded (`options` as the page was asked
+ * for): English as asked; another language with its pack's model, and its
+ * own list for the reread, when `options.languageModels` has one; else
+ * without any model, which reads it better than the English one does.
+ */
+export function pageDecodeOptions(language: PageLanguage, options: ReadOptions): ReadOptions {
+  if (language === "en") return options;
+  const pack = options.languageModels?.get(language);
+  if (!pack || options.useLm === false) return { ...options, useLm: false };
+  return {
+    ...options,
+    lm: pack.lm,
+    rereadList: options.reread === false ? null : pack.rereadList,
+  };
 }
 
 /** The word bias `options` asks for, or null. */
@@ -237,7 +269,7 @@ function decodeLine(
     return { greedy: "", text: "", confidence: 0, frames: 0, timings: net.timings };
   const t3 = start;
   const alphabet = bundle.meta.alphabet;
-  const lm = options.useLm === false ? null : bundle.lm;
+  const lm = options.useLm === false ? null : (options.lm ?? bundle.lm);
   const decoder = { ...bundle.meta.decoder, ...options.beam };
   const math = options.math === true;
   let text = greedy.text;
@@ -338,10 +370,7 @@ export function readPage(
     options.language === false
       ? "en"
       : pageLanguage(nets.map((net) => net.greedy?.text ?? "").join("\n")).language;
-  const decode: ReadOptions =
-    language === "en"
-      ? { ...lineOptions, bias: biasOf(options) }
-      : { ...lineOptions, useLm: false };
+  const decode = pageDecodeOptions(language, { ...lineOptions, bias: biasOf(options) });
   return {
     segment,
     wordGap,

@@ -4329,9 +4329,10 @@ export class InkView extends TextFileView {
     const words = readWords(reading.lines);
     const checked: CheckedPage = { hash, words };
     this.checkedWords.set(page.id, checked);
-    // The word list is English: on a page in another language it would underline most words.
-    const english = (reading.language ?? "en") === "en";
-    const flagged = english ? await this.plugin.wordCheck.flags(file.path, page.id, words) : [];
+    // A page in another language is checked against its own pack, if any (word-check.ts flags).
+    const language = reading.language ?? "en";
+    this.plugin.languagePacks.seen(language);
+    const flagged = await this.plugin.wordCheck.flags(file.path, page.id, words, language);
     if (this.surface === surface)
       surface.setWordFlags(
         page.id,
@@ -4605,8 +4606,8 @@ export class InkView extends TextFileView {
     const cached = checked?.hash === entry.hash ? checked.suggestions?.get(key) : undefined;
     if (cached !== undefined) return cached;
     const lexicon = this.plugin.wordCheck.lexicon();
-    // The list is English: on a page in another language it would offer English spellings.
-    if (!lexicon || !word.at || entry.language !== "en") return null;
+    // A page in another language: the worker answers from its pack's list, or with nothing.
+    if (!lexicon || !word.at) return null;
     if (entry.id === undefined) return undefined;
     const { line, start, end } = word.at;
     try {
@@ -7748,11 +7749,11 @@ export class InkView extends TextFileView {
   ): Promise<SpellingFix[]> {
     const file = this.file;
     const lexicon = this.plugin.wordCheck.lexicon();
-    if (!file || !lexicon || entry.language !== "en") return [];
+    if (!file || !lexicon) return [];
     try {
-      const flagged = (await this.plugin.wordCheck.flags(file.path, page.id, words)).filter(
-        (w) => w.at,
-      );
+      const flagged = (
+        await this.plugin.wordCheck.flags(file.path, page.id, words, entry.language)
+      ).filter((w) => w.at);
       if (flagged.length === 0) return [];
       // The underlines' own suggestions, when this reading was checked already.
       const checked = this.checkedWords.get(page.id);
