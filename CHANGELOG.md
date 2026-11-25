@@ -21,8 +21,8 @@ extracted from the matching section of this file by `release.yml`.
 
 - **Beautify handwriting.** Lasso some lines and choose **Beautify** in the ⋯
   menu, or hold a handwritten word and tap the brush beside **Correct** to
-  beautify its line. The words Grape is sure of are written again, neater, in
-  your own hand, where yours were, by Dostoyev (handwriting writer model, a
+  beautify its line. Your words are written again, neater, in your own hand,
+  where yours were, by Dostoyev (handwriting writer model, a
   one-time download, run on your device); every line is set level (on the
   paper's rules when it has them), wandering baselines are straightened,
   margins aligned and shaky strokes smoothed. Writing in your hand needs your
@@ -40,6 +40,12 @@ extracted from the matching section of this file by `release.yml`.
   two tries that read equally well, Beautify keeps the more even one. It
   writes with Dostoyev 2.1, the same model started from less noise, which
   reads better and writes more evenly.
+  ink to neatest. For the word Grape is least sure of on each line, at most,
+  Beautify first opens the word card (as **Correct** does): answer it and that
+  word is written too, and Grape learns from it; close the card and the word
+  stays as you wrote it. A word whose new writing does not read back as itself
+  stays as you wrote it too, level with the line, and nothing is pushed past
+  the page's edge.
 - **Insert space on boards, and on paper without lines**
   ([discussion #276](https://github.com/Joost-8/FineNotes/discussions/276)).
   With the lasso on **By line**, press anywhere on a board and drag down: everything

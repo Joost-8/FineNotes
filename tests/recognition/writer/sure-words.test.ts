@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import type { CharReading } from "../../../src/recognition/hwr/char-readings";
 import {
+  ASK_BELOW,
   SURE_BARS,
   applyAnswers,
   joinPunctuation,
+  pickQuestions,
   sureWords,
-  unsureWords,
   wordCore,
+  wordSureness,
   wordsOf,
 } from "../../../src/recognition/writer/sure-words";
 
@@ -36,15 +38,40 @@ describe("applyAnswers when the card read a word otherwise than Beautify (the re
   });
 });
 
-describe("unsureWords", () => {
-  it("lists the ink of words left as written that have a letter or digit", () => {
-    expect(
-      unsureWords({
-        words: ["test", "again,", "but", "-", "simple"],
-        ink: [["a"], ["b"], ["c"], ["d"], []],
-        rewrite: [true, false, true, false, false],
-      }),
-    ).toEqual([["b"]]);
+describe("pickQuestions (Joost's iPad, 25 November: ten cards for two lines)", () => {
+  const q = (line: number, word: number, sure: number) => ({ line, word, sure });
+
+  it("asks about the least sure words first, at most the budget", () => {
+    const got = pickQuestions([q(0, 1, 0.5), q(0, 3, 0.1), q(1, 0, 0.3), q(1, 2, 0.6)], 2);
+    expect(got).toEqual([q(0, 3, 0.1), q(1, 0, 0.3)]);
+  });
+
+  it("never asks about a word read surely enough, nor with no budget", () => {
+    expect(pickQuestions([q(0, 0, ASK_BELOW), q(0, 1, 0.97)], 5)).toEqual([]);
+    expect(pickQuestions([q(0, 0, 0.1)], 0)).toEqual([]);
+  });
+});
+
+describe("wordSureness", () => {
+  it("is a word's least sure letter, halved when the list could hold it and does not", () => {
+    const text = "Meeting on room xyzzy";
+    const chars = readings(text, { 1: { confidence: 0.8 } });
+    const list = (w: string) => ["meeting", "room"].includes(w.toLowerCase());
+    const got = wordSureness(text, text, chars, list);
+    expect(got[0]).toBeCloseTo(0.8, 6);
+    // "on" is too short for the list (it keeps three letters or more): not halved.
+    expect(got[1]).toBeCloseTo(0.99, 6);
+    expect(got[2]).toBeCloseTo(0.99, 6);
+    expect(got[3]).toBeCloseTo(0.495, 6);
+  });
+
+  it("is 0 where the text and the letters as written disagree", () => {
+    const got = wordSureness(
+      "Meeting on Tuesday",
+      "Meeting en Tuesday",
+      readings("Meeting en Tuesday"),
+    );
+    expect(got).toEqual([0.99, 0, 0.99]);
   });
 });
 
@@ -201,6 +228,23 @@ describe("sureWords", () => {
     // "cat," is looked up as "cat"; "42" has no letter and is not looked up.
     expect(out).toEqual([true, true, false, true]);
     expect(seen).toEqual(["the", "cat", "sat"]);
+  });
+
+  it("does not look up words the list cannot hold: under three letters, or with digits (Joost's iPad)", () => {
+    const t = "Meeting on Tuesday at 10:30 in room B-214.";
+    const list = new Set(["meeting", "tuesday", "room"]);
+    const inList = (w: string): boolean => list.has(w.toLowerCase());
+    const any = (): boolean => true;
+    expect(sureWords(t, t, readings(t), any, SURE_BARS, new Set(), inList)).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ]);
   });
 
   it("does not need the list when none is given", () => {

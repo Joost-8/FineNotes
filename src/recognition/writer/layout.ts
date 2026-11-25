@@ -8,8 +8,9 @@
  * x-height measure), held within 20 % of the factor the other lines got. It
  * stands at the original line's left edge on its baseline. Then its words are
  * laid out left to right with the word gap the writer left on that line; a
- * word that is not rewritten keeps the writer's own strokes, moved only along
- * the line. Tidy runs over the result afterwards (the caller's step).
+ * word that is not rewritten keeps the writer's own strokes, moved along the
+ * line and onto its level. Nothing goes past the page's right edge: the gaps
+ * narrow first, then the rightmost written words go back to the writer's ink. Tidy runs over the result afterwards (the caller's step).
  *
  * PURE: no DOM, no Obsidian.
  */
@@ -27,6 +28,8 @@ export const SIZE_SPREAD = 1.2;
 export const BODY_GAP = 0.5;
 /** ... and never nearer than this (in x-heights): a gap between letters of one word. */
 export const LETTER_REACH = 0.9;
+/** How far the word gaps of a line may narrow (as a share of its own) before a written word goes back to ink. */
+export const MIN_GAP_SHARE = 0.5;
 
 /**
  * A word's own run of ink along the line: its strokes grouped where their x
@@ -83,8 +86,8 @@ export interface LineToPlace<S extends PageInk> {
 export interface PlacedLine {
   /** New strokes: x, y, pressure triples, page px; `word` is the word they write. */
   added: { pts: number[]; word: number }[];
-  /** The writer's strokes that stay, and how far each moves along the line. */
-  kept: Map<string, number>;
+  /** The writer's strokes that stay, and how far each moves: along the line, and up or down onto it. */
+  kept: Map<string, { dx: number; dy: number }>;
   /** The writer's strokes the new ones replace. */
   removed: string[];
 }
@@ -115,10 +118,12 @@ function median3(pts: ArrayLike<number>, at: number): number {
 /**
  * Put the lines back. `profile` is the writer's hand on this page (Tidy's
  * `measureHand`). A line with nothing rewritten is returned unchanged.
+ * `pageWidth` (page px) is the edge nothing may be pushed past.
  */
 export function placeLines<S extends PageInk>(
   lines: readonly LineToPlace<S>[],
   profile: HandProfile,
+  pageWidth?: number,
 ): PlacedLine[] {
   const unit = profile.xHeight / MODEL_X_HEIGHT;
   const gap = profile.wordGap * profile.xHeight;
@@ -172,9 +177,12 @@ export function placeLines<S extends PageInk>(
   });
   return lines.map((line, li) => {
     const made = scaled[li];
-    if (!line.rewrite.some(Boolean) || made.length === 0) {
-      return { added: [], kept: new Map(line.strokes.map((s) => [s.id, 0])), removed: [] };
-    }
+    const still = (): PlacedLine => ({
+      added: [],
+      kept: new Map(line.strokes.map((s) => [s.id, { dx: 0, dy: 0 }])),
+      removed: [],
+    });
+    if (!line.rewrite.some(Boolean) || made.length === 0) return still();
     const f =
       exact[li] ?? Math.min(pageF * SIZE_SPREAD, Math.max(pageF / SIZE_SPREAD, raw[li] ?? pageF));
     const fit = fits[li];
@@ -184,6 +192,9 @@ export function placeLines<S extends PageInk>(
     const baseY = home
       ? home.slope * left + home.level
       : Math.max(...line.strokes.flatMap((s) => every(s.pts, 1)));
+    // A kept word stands on the written words' level line: lifted by where the writer's own
+    // line was under its middle ("B-214." stayed above a tilted line, 25 November).
+    const lift = (mid: number): number => (home ? baseY - (home.slope * mid + home.level) : 0);
     const gl = Math.min(...made.flatMap((s) => xsOf(s.pts)));
     const pressure = median(line.strokes.map((s) => median3(s.pts, 2)));
     // The written words, sized and stood on the writer's baseline.
@@ -210,37 +221,68 @@ export function placeLines<S extends PageInk>(
       .map((s, i) => s.x0 - spans[i].x1)
       .filter((g) => g > 0);
     const lineGap = gaps.length ? median(gaps) : gap;
-    const units: { word: number; written: boolean; x0: number; x1: number }[] = [];
-    words.forEach((ids, w) => {
-      const xs = line.rewrite[w]
-        ? placed.filter((s) => s.word === w).flatMap((s) => xsOf(s.pts))
-        : ids.flatMap((id) => xsOf(byId.get(id)?.pts ?? []));
-      if (xs.length)
-        units.push({ word: w, written: line.rewrite[w], x0: Math.min(...xs), x1: Math.max(...xs) });
-    });
-    // Between two kept words the writer's own gap stays: the reading may split one written
-    // word in two ("prepen dS"), and a word gap opened there would split it on the page.
-    const shift = new Map<number, number>();
-    let right = -Infinity;
-    let prev: (typeof units)[number] | null = null;
-    for (const u of units) {
-      const space = prev && !prev.written && !u.written ? u.x0 - prev.x1 : lineGap;
-      const s = right === -Infinity ? left - u.x0 : right + space - u.x0;
-      shift.set(u.word, s);
-      right = u.x1 + s;
-      prev = u;
+    // Nothing goes past the page's edge (less an x-height), unless the writer's own line did.
+    const limit =
+      pageWidth === undefined ? Infinity : Math.max(pageWidth - profile.xHeight, Math.max(...allX));
+    const rewrite = [...line.rewrite];
+    const arrange = (share: number) => {
+      const units: { word: number; written: boolean; x0: number; x1: number }[] = [];
+      words.forEach((ids, w) => {
+        const xs = rewrite[w]
+          ? placed.filter((s) => s.word === w).flatMap((s) => xsOf(s.pts))
+          : ids.flatMap((id) => xsOf(byId.get(id)?.pts ?? []));
+        if (xs.length)
+          units.push({ word: w, written: rewrite[w], x0: Math.min(...xs), x1: Math.max(...xs) });
+      });
+      // Between two kept words the writer's own gap stays: the reading may split one written
+      // word in two ("prepen dS"), and a word gap opened there would split it on the page.
+      const shift = new Map<number, number>();
+      let right = -Infinity;
+      let prev: (typeof units)[number] | null = null;
+      for (const u of units) {
+        const space = prev && !prev.written && !u.written ? u.x0 - prev.x1 : lineGap * share;
+        const s = right === -Infinity ? left - u.x0 : right + space - u.x0;
+        shift.set(u.word, s);
+        right = u.x1 + s;
+        prev = u;
+      }
+      return { units, shift, right };
+    };
+    // Written words wider than the writer's push the line right. Past the page's edge, the
+    // gaps narrow (to half); past it still, the rightmost written word goes back to the
+    // writer's own ink, until the line fits.
+    let laid = arrange(1);
+    while (laid.right > limit) {
+      const tight = arrange(MIN_GAP_SHARE);
+      if (tight.right <= limit) {
+        const wide = laid.right - tight.right;
+        const share = wide > 0 ? 1 - ((1 - MIN_GAP_SHARE) * (laid.right - limit)) / wide : 1;
+        laid = arrange(Math.max(MIN_GAP_SHARE, Math.min(1, share)));
+        break;
+      }
+      const last = rewrite.lastIndexOf(true);
+      if (last < 0) break;
+      rewrite[last] = false;
+      laid = arrange(1);
     }
+    if (!rewrite.some(Boolean)) return still();
+    const { units, shift } = laid;
     const added = placed
-      .filter((s) => s.word >= 0 && line.rewrite[s.word] && shift.has(s.word))
+      .filter((s) => s.word >= 0 && rewrite[s.word] && shift.has(s.word))
       .map((s) => {
         const dx = shift.get(s.word) as number;
         return { pts: s.pts.map((v, i) => (i % 3 === 0 ? v + dx : v)), word: s.word };
       });
-    const rewritten = new Set(words.flatMap((ids, w) => (line.rewrite[w] ? ids : [])));
-    const kept = new Map<string, number>();
+    const rewritten = new Set(words.flatMap((ids, w) => (rewrite[w] ? ids : [])));
+    const kept = new Map<string, { dx: number; dy: number }>();
+    const midOf = (ids: readonly string[]): number => {
+      const xs = ids.flatMap((id) => xsOf(byId.get(id)?.pts ?? []));
+      return xs.length ? 0.5 * (Math.min(...xs) + Math.max(...xs)) : left;
+    };
     words.forEach((ids, w) => {
-      if (line.rewrite[w]) return;
-      for (const id of ids) kept.set(id, shift.get(w) ?? 0);
+      if (rewrite[w]) return;
+      const move = { dx: shift.get(w) ?? 0, dy: lift(midOf(ids)) };
+      for (const id of ids) kept.set(id, move);
     });
     // Ink the reading gave no word (a comma, a stray dot) moves with the word to its left,
     // keeping its distance from that word's end (the first word's start, before it).
@@ -255,9 +297,10 @@ export function placeLines<S extends PageInk>(
       if (rewritten.has(s.id) || kept.has(s.id)) continue;
       const x = xsOf(s.pts);
       const mid = x.length ? 0.5 * (Math.min(...x) + Math.max(...x)) : 0;
-      const left = ends.filter((e) => e.x1 <= mid).sort((a, b) => b.x1 - a.x1)[0];
-      const right = ends.filter((e) => e.x1 > mid).sort((a, b) => a.x0 - b.x0)[0];
-      kept.set(s.id, left ? left.n1 - left.x1 : right ? right.n0 - right.x0 : 0);
+      const before = ends.filter((e) => e.x1 <= mid).sort((a, b) => b.x1 - a.x1)[0];
+      const after = ends.filter((e) => e.x1 > mid).sort((a, b) => a.x0 - b.x0)[0];
+      const dx = before ? before.n1 - before.x1 : after ? after.n0 - after.x0 : 0;
+      kept.set(s.id, { dx, dy: lift(mid) });
     }
     return { added, kept, removed: [...rewritten] };
   });
