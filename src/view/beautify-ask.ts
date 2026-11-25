@@ -30,7 +30,7 @@ export const ANSWER_GRACE_MS = 400;
 
 const pause = (ms: number): Promise<void> =>
   new Promise((done) => {
-    activeWindow.setTimeout(done, ms);
+    window.setTimeout(done, ms);
   });
 
 /**
