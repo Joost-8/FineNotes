@@ -19433,12 +19433,19 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     const latest = this.history.latest;
     const chosen = new Set(sel.strokes);
     // `liveSelection` makes a new object each time: compare what is selected, not the object.
+    // Once Beautify asks about words, a tap that closes a card (and the selection) skips that
+    // word; only an edit stops it.
+    let asked = false;
     const stop = (): boolean => {
-      const now = this.selection;
-      return (
+      if (
         this.history.latest !== latest ||
         this.groupDrag !== null ||
-        this.callbacks.isLocked?.() === true ||
+        this.callbacks.isLocked?.() === true
+      )
+        return true;
+      if (asked) return false;
+      const now = this.selection;
+      return (
         !now ||
         now.pageId !== sel.pageId ||
         now.strokes.length !== chosen.size ||
@@ -19455,6 +19462,9 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
         selected: new Set(sel.strokes.map((stroke) => stroke.id)),
         rules: writingLines(page.backdrop, page.geometry),
         stop,
+        asking: () => {
+          asked = true;
+        },
       });
     } finally {
       this.selectionFrameEl.removeClass("is-working");

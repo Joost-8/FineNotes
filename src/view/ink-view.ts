@@ -457,6 +457,7 @@ import {
 } from "../recognition/hwr/selection-words";
 import type { SpellingFix } from "./spelling-row";
 import type { WordPopover } from "./word-popover";
+import { type WordCardHost, askUnsureWords } from "./beautify-ask";
 import { type TranslateAi, TranslateWindow, type TranslateTarget } from "./translate-window";
 import { nextDeviceStep } from "../recognition/device-reading";
 import type { LinkableNote } from "../search/link-choices";
@@ -4402,6 +4403,7 @@ export class InkView extends TextFileView {
     suggestion: LexiconSuggestion | null,
     at: { x: number; y: number },
     asked: boolean,
+    after: { done?: () => void; closed?: () => void } = {},
   ): void {
     const file = this.file;
     const surface = this.surface;
@@ -4411,12 +4413,14 @@ export class InkView extends TextFileView {
     surface.setActiveWordFlag(page.id, word.strokeIds);
     const closed = () => {
       if (this.surface === surface) surface.setActiveWordFlag(null);
+      after.closed?.();
     };
     this.wordPopover?.close();
     this.wordPopover = this.plugin.wordCheck.ask(
       { note: file.path, pageId: page.id, word, strokes, suggestion },
       at,
       () => {
+        after.done?.();
         // Answered: underline the page's words again, without this one.
         const checked = this.checkedWords.get(page.id);
         if (!checked || this.surface !== surface) return;
@@ -4430,6 +4434,30 @@ export class InkView extends TextFileView {
       closed,
       asked,
     );
+  }
+
+  /**
+   * The word card for ink on page `pageId`, as Correct opens it, for
+   * Beautify's question about its unsure words (`beautify-ask.ts`): null
+   * when the ink is in no word the page's reading has.
+   */
+  private wordCards(pageId: string): WordCardHost {
+    return {
+      open: async (strokeIds, after) => {
+        const surface = this.surface;
+        const index = surface?.document.pages.findIndex((p) => p.id === pageId) ?? -1;
+        const page = surface?.document.pages[index];
+        if (!surface || !page) return false;
+        const found = await this.readWordAt(page, pageContentHash(page), strokeIds).catch(
+          () => null,
+        );
+        const at = found ? surface.wordInk(index, found.word.strokeIds) : null;
+        if (!found || !at) return false;
+        this.openWordCard(page, found.word, found.suggestion, at, true, after);
+        return true;
+      },
+      dialogOpen: () => activeDocument.querySelector(".modal-container") !== null,
+    };
   }
 
   /**
@@ -5162,7 +5190,12 @@ export class InkView extends TextFileView {
         },
         onFlaggedWord: (index, strokeIds, at) => this.askAboutWord(index, strokeIds, at),
         onCorrectWord: (index, strokeIds) => void this.correctWord(index, strokeIds),
-        onNeaten: (request) => this.plugin.neaten.run({ ...request, note: this.file?.path }),
+        onNeaten: (request) =>
+          this.plugin.neaten.run({
+            ...request,
+            note: this.file?.path,
+            ask: (words) => askUnsureWords(this.wordCards(request.pageId), words, request.stop),
+          }),
         canNeaten: () => this.plugin.neaten.available(),
         canCorrectWords: () => this.settings.handwritingOnDevice !== false,
         onReadingPoint: (index, y) => {

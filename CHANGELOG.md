@@ -29,7 +29,10 @@ extracted from the matching section of this file by `release.yml`.
   practice sheets (at least 10 copied lines); without them Beautify only
   tidies. Formulas and tables are left alone. One undo puts it all back. How
   neat it writes is a slider in the Lasso tool's popover, from most like your
-  ink to neatest.
+  ink to neatest. When Grape is unsure of a word, Beautify first opens the
+  word card on it (as **Correct** does): answer it and that word is written
+  too, and Grape learns from it; close the card and the word stays as you
+  wrote it.
 - **Insert space on boards, and on paper without lines**
   ([discussion #276](https://github.com/Joost-8/FineNotes/discussions/276)).
   With the lasso on **By line**, press anywhere on a board and drag down: everything
