@@ -171,7 +171,12 @@ import { InkSurface, type SearchFocus } from "./ink-surface";
 import { PdfBackdropCache } from "./pdf-backdrop";
 import { PdfTextCache } from "./pdf-text-source";
 import { type PdfTabReadHost, askPdfTabs, readPdfTab } from "./ask-pdf-tab-read";
-import { type AskPdfReading, pdfTabsPrompt } from "../recognition/ask-pdf-tabs";
+import {
+  type AskPdfReading,
+  pdfTabsPrompt,
+  readingNote,
+  withReadingNotes,
+} from "../recognition/ask-pdf-tabs";
 import { type PdfWorker, acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
 import { vaultPathFromDrop } from "../model/file-drop";
 import { droppedText, outsideDropEffect, takesDrag } from "./drop-text";
@@ -1008,8 +1013,10 @@ export class InkView extends TextFileView {
   private readonly tabSessions = new Map<string, SurfaceSession>();
   /** The tab shown: {@link NOTES_TAB}, or a `BesidePdf` id. */
   private activeTab = NOTES_TAB;
-  /** The PDF tab and page in view when Ask was last opened; `null` when it was opened on the notes. */
-  private askReading: AskPdfReading | null = null;
+  /** The PDF tab and page last read before going back to the notes, until a question takes it. */
+  private lastTabRead: AskPdfReading | null = null;
+  /** The reading note each question was first sent with ("" for none). */
+  private readonly askReadingNotes = new Map<string, string>();
   /** The tool the notes had in hand when a PDF's tab took over; it comes back with them. */
   private notesTool: ActiveTool | null = null;
   private tabViewTimer = 0;
@@ -2657,7 +2664,9 @@ export class InkView extends TextFileView {
     const items = buildAiMenu({
       setup: this.plugin.aiSetup(),
       pageTranscribable: !!current && hasTranscribableContent(current),
-      notebookAskable: doc.pages.some(hasAskableContent),
+      // PDFs in tabs are something to ask about too, on a blank notebook.
+      notebookAskable:
+        doc.pages.some(hasAskableContent) || (this.takesPdfTabs && stripTabs(doc).length > 0),
       multiPage: doc.pages.length > 1,
       recordings: doc.recordings?.length ?? 0,
       device: this.deviceReading(),
@@ -3109,8 +3118,6 @@ export class InkView extends TextFileView {
   /** Ask, in the layout last chosen: a window, or the sidebar beside the page. */
   private openAsk(): void {
     if (this.isDamaged()) return;
-    // Asked from a PDF's tab: "this slide" is the page in view there.
-    this.askReading = this.pdfTabInView();
     this.showTab(NOTES_TAB);
     if (this.settings.askLayout === "sidebar" && this.chatPanel) {
       this.setChatPanel(true);
@@ -3278,10 +3285,9 @@ export class InkView extends TextFileView {
       this.settings.askShowCost,
       this.file?.path ?? "",
     );
-    // A tab shown beside an open Ask sidebar is what the user reads now.
-    const reading = this.pdfTabInView() ?? this.askReading;
-    const tabs = pdfTabsPrompt(askPdfTabs(this.pdfTabReader()), reading);
+    const tabs = pdfTabsPrompt(askPdfTabs(this.pdfTabReader()));
     const prompt = `${system}\n${buildAskToolsPrompt()}\n${abilities}${tabs ? `\n${tabs}` : ""}`;
+    const sent = this.withPdfReading(turns);
     const turn = { answer: ++this.askAnswers, commands: [] as Command[] };
     this.askTurn = turn;
     // Everything the answer changed is one step of the notebook's undo.
@@ -3289,14 +3295,14 @@ export class InkView extends TextFileView {
       if (this.askTurn === turn) this.askTurn = null;
       this.surface?.groupSteps(turn.commands, t("view.ask.stepLabel"));
     };
-    const withTools = askAiWithTools(config, prompt, turns, {
+    const withTools = askAiWithTools(config, prompt, sent, {
       totalPages: () => this.doc.pages.length,
       run: (call) => this.runAskToolAsAi(call, turn.answer),
       onStatus,
     }).finally(finish);
     if (config.vendor !== "custom") return withTools;
     // A self-hosted server may not do tools: then it answers from what was sent.
-    return withTools.catch(() => askAi(config, system, turns));
+    return withTools.catch(() => askAi(config, system, sent));
   }
 
   /** `search_vault` and `read_note`: the other notes the settings let Ask AI read, as text. */
@@ -3479,6 +3485,30 @@ export class InkView extends TextFileView {
     surface.applyCommand(result);
     this.sidebar?.flush();
     this.requestSave();
+  }
+
+  /**
+   * The turns as sent: a new question carries the PDF page the user is
+   * reading (a tab shown beside the Ask sidebar) or read last before coming
+   * back to the notes, once; earlier questions keep the note they were sent
+   * with, so the conversation the model sees never changes.
+   */
+  private withPdfReading(turns: readonly ChatTurn[]): ChatTurn[] {
+    // The session rebuilds its turns for each request: a question is known
+    // by its place among the questions and its text.
+    const questions = turns.filter((turn) => turn.role === "user");
+    const keyOf = (turn: ChatTurn): string => `${questions.indexOf(turn)}\n${turn.text}`;
+    const question = questions[questions.length - 1];
+    if (question && !this.askReadingNotes.has(keyOf(question))) {
+      const shown = this.pdfTabInView();
+      const reading = shown ?? this.lastTabRead;
+      this.lastTabRead = null;
+      this.askReadingNotes.set(
+        keyOf(question),
+        reading ? readingNote(reading, shown !== null) : "",
+      );
+    }
+    return withReadingNotes(turns, (turn) => this.askReadingNotes.get(keyOf(turn)));
   }
 
   /** The PDF tab shown and its page in view; `null` on the notes. */
@@ -6616,6 +6646,8 @@ export class InkView extends TextFileView {
   showTab(id: string): void {
     const surface = this.surface;
     if (!surface || id === this.activeTab) return;
+    // Ask, opened next from the notes, knows which slide "this slide" is.
+    if (this.onPdfTab) this.lastTabRead = this.pdfTabInView();
     if (id === NOTES_TAB) {
       const notes = this.notesSession;
       if (!notes) return;

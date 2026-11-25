@@ -721,7 +721,7 @@ export function toolStatus(call: AskToolCall): string {
     case "read_note":
       return t("ai.tool.readingNote", { name: noteName(call.path) });
     case "read_pdf_tab":
-      return t("ai.tool.readingNote", { name: call.tab });
+      return t("ai.tool.readingNote", { name: noteName(call.tab) });
     case "linked_notes":
       return t("ai.tool.lookingAtLinks");
     case "finenotes_help":

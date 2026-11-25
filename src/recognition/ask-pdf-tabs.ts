@@ -1,7 +1,7 @@
 /**
  * Ask AI and the notebook's PDF tabs (#263): the lecture PDFs kept beside
- * the notes. The model is told which tabs there are and which one the user
- * was reading, and reads a tab's pages with `read_pdf_tab`: their printed
+ * the notes. The model is told which tabs there are, each question says
+ * which page the user was reading, and it reads a tab's pages with `read_pdf_tab`: their printed
  * text, and a picture of the pages that have little text (a diagram, a
  * scanned slide), so a question about "this slide" can be answered.
  *
@@ -11,6 +11,8 @@
  *
  * Pure: no DOM, no Obsidian, no network.
  */
+
+import type { ChatTurn } from "./ai-chat";
 
 /** A PDF tab as Ask sees it. */
 export interface AskPdfTab {
@@ -128,7 +130,10 @@ export function pagesToPicture(texts: ReadonlyArray<{ page: number; text: string
 /** What the model hears when no tab fits the name it gave. */
 export function unknownTabText(tabs: readonly AskPdfTab[], name: string): string {
   if (tabs.length === 0) return "This notebook has no PDF tabs.";
-  return `No single PDF tab is called “${name}”. The tabs are: ${tabs.map((tab) => `“${tab.label}”`).join(", ")}.`;
+  const names = tabs.map((tab) =>
+    sameLabel(tabs, tab) ? `“${tab.label}” (${tab.path})` : `“${tab.label}”`,
+  );
+  return `No single PDF tab is called “${name}”. The tabs are: ${names.join(", ")}. Give the path where two names are the same.`;
 }
 
 /**
@@ -169,30 +174,56 @@ export function pdfTabText(
 }
 
 /**
- * The lines the system prompt gets about the tabs: their names and sizes,
- * and the page the user was reading. Empty when the notebook has none, so
- * the prompt of a notebook without tabs is unchanged.
+ * The lines the system prompt gets about the tabs: their names and sizes
+ * (and paths, where two names are the same). Empty when the notebook has
+ * none, so the prompt of a notebook without tabs is unchanged. What the user
+ * is reading is not here: it changes between questions, and the system
+ * prompt must not (the prompt cache), so it goes with each question
+ * ({@link readingNote}).
  */
-export function pdfTabsPrompt(tabs: readonly AskPdfTab[], reading: AskPdfReading | null): string {
+export function pdfTabsPrompt(tabs: readonly AskPdfTab[]): string {
   if (tabs.length === 0) return "";
   const list = tabs
-    .map((tab) =>
-      tab.pages > 0
-        ? `- “${tab.label}” (${tab.pages} page${tab.pages === 1 ? "" : "s"})`
-        : `- “${tab.label}” (missing from the vault)`,
-    )
+    .map((tab) => {
+      const name = `“${tab.label}”${sameLabel(tabs, tab) ? ` (${tab.path})` : ""}`;
+      return tab.pages > 0
+        ? `- ${name} (${tab.pages} page${tab.pages === 1 ? "" : "s"})`
+        : `- ${name} (missing from the vault)`;
+    })
     .join("\n");
-  const lines = [
-    "PDFs kept in tabs beside this notebook's notes (read them with read_pdf_tab):",
-    list,
-  ];
-  if (reading) {
-    lines.push(
-      `The user opened this chat while reading page ${reading.page} of “${reading.label}”: ` +
-        "“this slide”, “this page” or “here” most likely means that page.",
-    );
-  }
-  return lines.join("\n");
+  return `PDFs kept in tabs beside this notebook's notes (read them with read_pdf_tab):\n${list}`;
+}
+
+/**
+ * The line a question carries about the PDF page the user is reading
+ * (`shown`: the tab is in front of them now) or read last before coming to
+ * the notes. Sent with that question only, and with it on every later
+ * request, so the conversation the model sees never changes.
+ */
+export function readingNote(reading: AskPdfReading, shown: boolean): string {
+  const where = `page ${reading.page} of the PDF tab “${reading.label}”`;
+  return shown
+    ? `[The user is reading ${where}: “this slide”, “this page” or “here” most likely means it.]`
+    : `[The user last read ${where} before coming back to the notes; “this slide” most likely means it.]`;
+}
+
+/**
+ * The turns as sent: each question that has a reading note gets it before
+ * its text. The turns themselves are left as they are (the chat shows them).
+ */
+export function withReadingNotes(
+  turns: readonly ChatTurn[],
+  noteOf: (turn: ChatTurn) => string | undefined,
+): ChatTurn[] {
+  return turns.map((turn) => {
+    const note = turn.role === "user" ? noteOf(turn) : undefined;
+    return note ? { ...turn, text: `${note}\n${turn.text}` } : turn;
+  });
+}
+
+/** Whether another tab has `tab`'s label. */
+function sameLabel(tabs: readonly AskPdfTab[], tab: AskPdfTab): boolean {
+  return tabs.some((other) => other !== tab && other.label === tab.label);
 }
 
 function fileName(path: string): string {

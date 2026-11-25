@@ -10,8 +10,11 @@ import {
   pdfTabRange,
   pdfTabText,
   pdfTabsPrompt,
+  readingNote,
   unknownTabText,
+  withReadingNotes,
 } from "../../src/recognition/ask-pdf-tabs";
+import type { ChatTurn } from "../../src/recognition/ai-chat";
 import { ASK_TOOLS, parseToolCall, toolStatus } from "../../src/recognition/ask-tools";
 
 const tabs: AskPdfTab[] = [
@@ -145,18 +148,51 @@ describe("pdfTabText", () => {
 
 describe("pdfTabsPrompt", () => {
   it("is empty for a notebook without tabs, so its prompt is unchanged", () => {
-    expect(pdfTabsPrompt([], null)).toBe("");
+    expect(pdfTabsPrompt([])).toBe("");
   });
 
-  it("lists the tabs, a missing one as missing", () => {
-    const prompt = pdfTabsPrompt(tabs, null);
+  it("lists the tabs, a missing one as missing, and nothing that changes per question", () => {
+    const prompt = pdfTabsPrompt(tabs);
     expect(prompt).toContain("read_pdf_tab");
     expect(prompt).toContain("“Lecture 4” (30 pages)");
     expect(prompt).toContain("“Textbook” (missing from the vault)");
     expect(prompt).not.toContain("this slide");
   });
 
-  it("says which page the user was reading", () => {
-    expect(pdfTabsPrompt(tabs, { label: "Lecture 5", page: 7 })).toContain("page 7 of “Lecture 5”");
+  it("gives the paths of two tabs with the same name, and finds each by its path", () => {
+    const twins: AskPdfTab[] = [
+      { label: "slides", path: "CourseA/slides.pdf", pages: 10 },
+      { label: "slides", path: "CourseB/slides.pdf", pages: 8 },
+    ];
+    expect(pdfTabsPrompt(twins)).toContain("“slides” (CourseB/slides.pdf) (8 pages)");
+    expect(findPdfTab(twins, "slides")).toBeNull();
+    expect(unknownTabText(twins, "slides")).toContain("CourseA/slides.pdf");
+    expect(findPdfTab(twins, "CourseB/slides.pdf")?.pages).toBe(8);
+  });
+});
+
+describe("reading notes", () => {
+  it("says which page the user is reading, or read last", () => {
+    expect(readingNote({ label: "Lecture 5", page: 7 }, true)).toContain(
+      "is reading page 7 of the PDF tab “Lecture 5”",
+    );
+    expect(readingNote({ label: "Lecture 5", page: 7 }, false)).toContain("last read page 7");
+  });
+
+  it("goes before the question it was sent with, and leaves the turns as they are", () => {
+    const turns: ChatTurn[] = [
+      { role: "user", text: "explain this slide" },
+      { role: "assistant", text: "It shows…" },
+      { role: "user", text: "and the next?" },
+    ];
+    const sent = withReadingNotes(turns, (turn) => (turn === turns[0] ? "[note]" : undefined));
+    expect(sent[0]?.text).toBe("[note]\nexplain this slide");
+    expect(sent[2]).toBe(turns[2]);
+    expect(turns[0]?.text).toBe("explain this slide");
+  });
+
+  it("never goes on an answer", () => {
+    const turns: ChatTurn[] = [{ role: "assistant", text: "Hi" }];
+    expect(withReadingNotes(turns, () => "[note]")[0]?.text).toBe("Hi");
   });
 });
