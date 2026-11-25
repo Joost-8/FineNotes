@@ -353,9 +353,13 @@ export class NeatenService {
       if (!done || request.stop()) return { kind: "stopped" };
       // Words flat and level, letters standing and leaning evenly; no letter redrawn.
       const written = straighten(done.written, done.written.char, job.text, strength);
+      // What is placed is what was read: a straightened line is read once more.
+      const read =
+        written === done.written ? done.read : await this.host.handwriting.readRows(written);
+      if (request.stop()) return { kind: "stopped" };
       // A word whose writing Grape does not read back as the word stays in the writer's own
       // ink: the model wrote "simple" as "single" and "again" as "ag ain" on Joost's iPad.
-      const rewrite = readBackRewrite(job.text, done.read, job.rewrite);
+      const rewrite = readBackRewrite(job.text, read, job.rewrite);
       if (!rewrite.some(Boolean)) continue;
       placing.push({
         strokes: job.strokes,

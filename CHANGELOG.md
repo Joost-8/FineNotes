@@ -37,7 +37,9 @@ extracted from the matching section of this file by `release.yml`.
   on the line, and their letters stand on it and lean the same way, with your
   letter shapes kept: nothing is redrawn. The neatness slider now sets how far
   the letters are straightened, so its "neatest" end is still your hand. Of
-  two tries that read equally well, Beautify keeps the more even one.
+  two tries that read equally well, Beautify keeps the more even one. It
+  writes with Dostoyev 2.1, the same model started from less noise, which
+  reads better and writes more evenly.
 - **Insert space on boards, and on paper without lines**
   ([discussion #276](https://github.com/Joost-8/FineNotes/discussions/276)).
   With the lasso on **By line**, press anywhere on a board and drag down: everything
