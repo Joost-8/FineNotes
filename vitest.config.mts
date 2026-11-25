@@ -64,6 +64,7 @@ export default defineConfig({
         "src/canvas/layer-rect.ts",
         "src/canvas/damage.ts",
         "src/canvas/frame-pace.ts",
+        "src/canvas/coast.ts",
         "src/canvas/image-geometry.ts",
         "src/canvas/image-crop.ts",
         "src/canvas/image-raster.ts",

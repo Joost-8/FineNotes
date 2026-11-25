@@ -372,6 +372,7 @@ import {
 } from "../ink/stroke-builder";
 import { stabilizationOf } from "../model/pen-stabilization";
 import { InkTracer } from "../ink/freehand";
+import { coasting } from "../canvas/coast";
 import { FramePace } from "../canvas/frame-pace";
 import { FrameRun } from "../canvas/frame-run";
 import { type RunBox, type RunMark, boundsSince, unionBox } from "../ink/run-window";
@@ -6623,6 +6624,7 @@ export class InkSurface {
       // The next frame is the display's next: the time between them is a frame.
       this.frameFollows = true;
       this.requestFrame();
+      this.prefetchCoasting(complete, zooming || settling || carrying);
       return;
     }
     this.settleIfIdle();
@@ -6814,6 +6816,20 @@ export class InkSurface {
       );
       if (more) this.schedulePrefetch();
     });
+  }
+
+  /**
+   * A turn in its last px (`coast.ts`): this frame makes the next pages' tiles,
+   * which waited until the spring had stopped and so were missing when one
+   * turn followed another (FineNotes#201).
+   */
+  private prefetchCoasting(complete: boolean, zooming: boolean): void {
+    if (!this.renderer || this.renderer.isTransient) return;
+    const held = this.pinch !== null || this.pressing;
+    const remaining = this.scroller.remaining;
+    if (!coasting({ remaining, complete, held, zooming: zooming || this.zoomTransient })) return;
+    const budget = this.pace.budget(PREFETCH_BUDGET_MS);
+    this.renderer.prefetch(this.doc, this.inkPressure, budget, this.pagesToTurnTo());
   }
 
   /** The last turn went back a page: the pages before this one are made first. */

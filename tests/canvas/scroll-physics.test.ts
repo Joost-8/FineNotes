@@ -803,3 +803,54 @@ describe("a column held to the pane's width (discussion #43)", () => {
     expect(s.position.y).toBe(1020);
   });
 });
+
+describe("remaining", () => {
+  it("is null at rest, under a finger and on a fling", () => {
+    const s = wideTall();
+    expect(s.remaining).toBeNull();
+    s.dragStart(500, 500, 0);
+    s.dragMove(500, 300, 40);
+    expect(s.remaining).toBeNull();
+    s.dragEnd(50);
+    expect(s.isAnimating).toBe(true);
+    expect(s.remaining).toBeNull();
+  });
+
+  it("counts a snap down to its end, then is null again", () => {
+    const s = wideTall();
+    s.snapTo(600, null, 0);
+    expect(s.remaining).toBe(600);
+    let last = 600;
+    let t = 0;
+    while (s.step((t += 16))) {
+      const left = s.remaining;
+      expect(left).not.toBeNull();
+      expect(left as number).toBeLessThan(last);
+      last = left as number;
+    }
+    expect(s.position.x).toBe(600);
+    expect(s.remaining).toBeNull();
+  });
+
+  it("is null while the other axis is still flinging", () => {
+    const s = wideTall();
+    s.dragStart(500, 500, 0);
+    s.dragMove(500, 300, 40);
+    s.dragEnd(50);
+    // A snap across with the fling up and down still going.
+    s.snapTo(600, null, 50);
+    s.step(66);
+    expect(s.velocity.y).not.toBe(0);
+    expect(s.remaining).toBeNull();
+  });
+
+  it("counts a glide to its end on both axes", () => {
+    const s = wideTall();
+    s.glideTo(300, 400, 0);
+    expect(s.remaining).toBe(500);
+    s.step(GLIDE_MS / 2);
+    expect(s.remaining as number).toBeLessThan(250);
+    s.step(GLIDE_MS);
+    expect(s.remaining).toBeNull();
+  });
+});

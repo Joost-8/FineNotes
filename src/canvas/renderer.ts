@@ -833,6 +833,11 @@ export class Renderer {
   /** Where a page's preview should look, if not at the whole page ({@link setPreviewWindow}). */
   private previewWindow: ((box: PageBox) => Bounds | null) | null = null;
   private readonly paths = new WeakMap<Stroke, PathEntry>();
+  /** How far {@link tracePage} has traced each page's ink (`next`), and for which strokes. */
+  private readonly traced = new WeakMap<
+    Page,
+    { strokes: readonly Stroke[]; count: number; usePressure: boolean; next: number }
+  >();
   private shadow: ShadowSprite | null = null;
   /** What the dry layer shows, or null when it must be painted whole. */
   private dryShown: DryShown | null = null;
@@ -2050,6 +2055,15 @@ export class Renderer {
       marginLayout,
     );
 
+    // First the ink's paths, a stroke at a time. The first tile or preview
+    // of a page traced every stroke on it, in one frame whatever the budget.
+    for (const box of around) {
+      if (!this.tracePage(doc.pages[box.index], usePressure, deadline)) return true;
+    }
+    for (const index of whole) {
+      const page = this.layout.boxes[index] ? doc.pages[index] : undefined;
+      if (page && !this.tracePage(page, usePressure, deadline)) return true;
+    }
     for (const box of around) {
       const page = doc.pages[box.index];
       const preview = this.previews.peek(page.id);
@@ -2103,6 +2117,28 @@ export class Renderer {
       }
     }
     return false;
+  }
+
+  /**
+   * Trace a page's ink ahead of painting it, until `deadline`: whether all
+   * of it is traced. Painting any part of a page asks every stroke on it for
+   * its path (the path holds the bounds that say whether it is in the part),
+   * so a page's first tile cost as much as tracing all its ink: 22-58 ms for
+   * 300 strokes with the CPU slowed 4x, against 0.4-7 ms for the tiles after
+   * it (FineNotes#201). Only an optimisation: painting traces what this
+   * missed.
+   */
+  private tracePage(page: Page, usePressure: boolean, deadline: number): boolean {
+    const strokes = page.strokes;
+    const count = strokes.length;
+    const last = this.traced.get(page);
+    const same =
+      last?.strokes === strokes && last.count === count && last.usePressure === usePressure;
+    // Carries on where the last frame's budget ended.
+    let next = same ? last.next : 0;
+    while (next < count && now() <= deadline) this.pathEntry(strokes[next++], usePressure);
+    this.traced.set(page, { strokes, count, usePressure, next });
+    return next >= count;
   }
 
   /** Paint one tile of a page: paper, backdrop, edge, then the ink that overlaps it. */
