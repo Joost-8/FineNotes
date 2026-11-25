@@ -35,7 +35,8 @@ import { isOutOfMemory } from "../recognition/writer/protocol";
 import { type LineToPlace, placeLines } from "../recognition/writer/layout";
 import { proseLike } from "../recognition/writer/pool";
 import { neatenLine, readBackRewrite } from "../recognition/writer/repair";
-import { type TaggedLine, levelledStrokes } from "../recognition/writer/rows";
+import { type TaggedLine, levelledStrokes, median } from "../recognition/writer/rows";
+import { inkXHeight, leastXHeight, writtenXHeight } from "../recognition/writer/x-height";
 import { DEFAULT_TRIES } from "../recognition/writer/flow-meta";
 import { type WriterKind, WRITER_KINDS, kindFor } from "../recognition/writer/kinds";
 import { guidanceAt } from "../recognition/writer/neatness";
@@ -326,6 +327,12 @@ export class NeatenService {
         words: job.words,
         rewrite,
         written: levelledStrokes(done.written, done.written.char, job.text),
+        // Written at the writer's own x-height, or at the least the model writes legibly with their pen.
+        xHeight: {
+          ink: job.xHeight,
+          written: writtenXHeight(done.written, done.written.char, job.text),
+          least: leastXHeight(median(job.strokes.map((s) => s.size))),
+        },
       });
     }
     const placed = placeLines(placing, profile);
@@ -342,7 +349,13 @@ export class NeatenService {
     writable: (ch: string) => boolean,
     listed: ReadonlySet<string> | null,
     answers: readonly WordAnswer[],
-  ): { text: string; strokes: Stroke[]; words: string[][]; rewrite: boolean[] } | null {
+  ): {
+    text: string;
+    strokes: Stroke[];
+    words: string[][];
+    rewrite: boolean[];
+    xHeight: number | null;
+  } | null {
     if (!reading || !reading.wordStrokes || !reading.chars) return null;
     const read = wordsOf(reading.text);
     const ink = reading.wordStrokes.map((word) =>
@@ -368,7 +381,14 @@ export class NeatenService {
     );
     const joined = joinPunctuation({ words: answered.words, ink, rewrite });
     if (!joined.rewrite.some(Boolean)) return null;
-    return { text: joined.words.join(" "), strokes, words: joined.ink, rewrite: joined.rewrite };
+    return {
+      text: joined.words.join(" "),
+      strokes,
+      words: joined.ink,
+      rewrite: joined.rewrite,
+      // The writer's x-height on this line, from the strokes Grape read as x-height letters.
+      xHeight: inkXHeight(strokes, reading.chars),
+    };
   }
 
   /** Every prose-like copied line of the vault's practice sheets (not yet tied to its letters). */

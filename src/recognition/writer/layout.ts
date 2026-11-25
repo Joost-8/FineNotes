@@ -70,6 +70,13 @@ export interface LineToPlace<S extends PageInk> {
   rewrite: readonly boolean[];
   /** The written line, model units (x right, y up), each stroke with its word. */
   written: readonly WrittenStroke[];
+  /**
+   * The x-heights to match (`x-height.ts`): the writer's on this line (page
+   * px), the written line's (model units), and the least the model writes
+   * legibly at (page px). With both measures the new words are written at
+   * the writer's x-height, or at `least` when theirs is smaller.
+   */
+  xHeight?: { ink: number | null; written: number | null; least: number };
 }
 
 /** A line put back. */
@@ -155,12 +162,21 @@ export function placeLines<S extends PageInk>(
   });
   const known = raw.filter((f): f is number => f !== null);
   const pageF = known.length ? median(known) : 1;
+  // Best of all, the size of the writer's own words: their x-height on this line, measured
+  // on x-height letters only (Joost, 25 November), and never under what the model writes
+  // legibly. Exact, so not held to the other lines.
+  const exact = lines.map((line) => {
+    const x = line.xHeight;
+    if (!x || x.ink === null || x.written === null || x.written <= 0) return null;
+    return Math.max(x.ink, x.least) / (x.written * unit);
+  });
   return lines.map((line, li) => {
     const made = scaled[li];
     if (!line.rewrite.some(Boolean) || made.length === 0) {
       return { added: [], kept: new Map(line.strokes.map((s) => [s.id, 0])), removed: [] };
     }
-    const f = Math.min(pageF * SIZE_SPREAD, Math.max(pageF / SIZE_SPREAD, raw[li] ?? pageF));
+    const f =
+      exact[li] ?? Math.min(pageF * SIZE_SPREAD, Math.max(pageF / SIZE_SPREAD, raw[li] ?? pageF));
     const fit = fits[li];
     const home = homeOf(line.strokes);
     const allX = line.strokes.flatMap((s) => xsOf(s.pts));

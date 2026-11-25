@@ -210,7 +210,7 @@ export function median(values: readonly number[]): number {
 }
 
 /** Points along each row's curve, `per` per curve (ends included), y up. */
-function curvePoints(
+export function curvePoints(
   r: Rows,
   per: number,
 ): { pts: Float64Array; start: Float64Array; end: Float64Array } {

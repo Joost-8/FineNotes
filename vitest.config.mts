@@ -27,6 +27,7 @@ export default defineConfig({
         "src/recognition/writer/flow-meta.ts",
         "src/recognition/writer/neatness.ts",
         "src/recognition/writer/protocol.ts",
+        "src/recognition/writer/x-height.ts",
         "src/model/sponsors.ts",
         "src/model/note-merge.ts",
         "src/settings-data.ts",
