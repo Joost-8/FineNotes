@@ -59,6 +59,16 @@ describe("pageLanguage", () => {
         .language,
     ).toBe("en");
     expect(pageLanguage("f(x) = a x2 + b x + c\na = 2\nsolve for a\no o o e").language).toBe("en");
+    // Formula pages that repeat one symbol (the reviewer's second round): a word counts once.
+    for (const page of [
+      "Inductor\nV = L di/dt\ndi/dt = V/L\ndi = V dt / L",
+      "lim\nda/dt\nda = 2 dt\nda/dx",
+      "Na+ Cl-\nNa2SO4\n2 Na + Cl2\nNa metal",
+      "Polar\nr = 2 cos t\nem field\nE = em\nem wave",
+      "u = x2, du = 2x dx\n= int cos u du\ndu dv du",
+    ]) {
+      expect(pageLanguage(page).language).toBe("en");
+    }
     expect(pageLanguage("3x + 4 = 19\n- - --").language).toBe("en");
   });
 

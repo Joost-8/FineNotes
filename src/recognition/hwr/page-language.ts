@@ -61,13 +61,17 @@ export interface LanguageGuess {
  * language has at least `MIN_EVIDENCE` hits and leads English by `LEAD`
  * times: reading English without its model costs little (2.0 → 2.7 % CER
  * on the test lines), reading Dutch with it costs more (5.8 → 9.1 %).
+ *
+ * Each word counts once a page, however often it is written: a formula
+ * page that repeats one symbol ("di/dt", "da/dt", "Na") is one piece of
+ * evidence, not a language (found by the reviewer on such pages).
  */
 export function pageLanguage(text: string): LanguageGuess {
   const scores = Object.fromEntries(PAGE_LANGUAGES.map((l) => [l, 0])) as Record<
     PageLanguage,
     number
   >;
-  for (const token of text.toLowerCase().split(/[^a-z']+/)) {
+  for (const token of new Set(text.toLowerCase().split(/[^a-z']+/))) {
     const langs = INDEX.get(token);
     if (!langs) continue;
     for (const lang of langs) scores[lang] += 1 / langs.length;
