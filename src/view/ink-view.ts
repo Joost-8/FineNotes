@@ -125,7 +125,7 @@ import {
   practiceSheets,
   readCorrections,
 } from "./handwriting-learning";
-import { sheetButton } from "../recognition/hwr/learn-window-model";
+import { sheetButton, sheetJustFilled } from "../recognition/hwr/learn-window-model";
 import { practiceLines, promptCount } from "../recognition/practice";
 import { CalcNotes } from "./calc-notes";
 import { ColumnNotes } from "./column-notes";
@@ -5164,12 +5164,9 @@ export class InkView extends TextFileView {
           // A line copied or erased on a practice sheet: its Learn button
           // counts it, once the pen rests.
           if (this.isPractice) {
-            this.quietWork.run("learn", writing, () => {
-              // As before #275 (each edit reset it in `syncSingle`): the
-              // sheet-full sharing invite stays off until Joost decides it.
-              this.practiceFull = null;
-              this.syncLearnButton();
-            });
+            // Before #275 each edit reset `practiceFull` in `syncSingle`, so
+            // the sheet-full sharing invite never fired; now it does.
+            this.quietWork.run("learn", writing, () => this.syncLearnButton());
           }
           // Undoing or redoing "Convert to notebook" flips `single`. Only
           // then: it re-reads every practice sheet, and lays out the panel (#275).
@@ -6611,7 +6608,7 @@ export class InkView extends TextFileView {
     // The last line just went down: the moment to ask about sharing. A line
     // counts from its first stroke, so wait until the pen has rested, and
     // ask only if the sheet is still full then (not erased again).
-    if (full && this.practiceFull === false) {
+    if (sheetJustFilled(this.practiceFull, full)) {
       window.clearTimeout(this.sheetInviteTimer);
       this.sheetInviteTimer = window.setTimeout(() => {
         if (this.practiceFull) this.plugin.sharing?.inviteAfterSheet();

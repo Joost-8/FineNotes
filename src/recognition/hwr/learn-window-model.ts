@@ -269,6 +269,16 @@ function materialText(lines: number, corrections: number): string {
 }
 
 /**
+ * Whether the sheet's last line just went down: it was counted not full
+ * (`before === false`), and now is. `null` is a sheet not counted yet in
+ * this view (just opened): opening a finished sheet is not finishing it.
+ * The moment to ask about sharing (#236).
+ */
+export function sheetJustFilled(before: boolean | null, full: boolean): boolean {
+  return full && before === false;
+}
+
+/**
  * The practice sheet's button: its count, and whether it is the next step.
  * Outlined, "4 / 10", until there is enough; filled, "30 lines", after.
  */
