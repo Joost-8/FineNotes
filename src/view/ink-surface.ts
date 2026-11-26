@@ -539,6 +539,7 @@ import {
   translatePoints,
   textScaleRange,
 } from "../model/selection-commands";
+import { selectionText } from "../model/selection-text";
 import {
   CropImage,
   type FlipAxis,
@@ -737,6 +738,7 @@ import { cleanPastedText, inkFirst, isPictureFile, pastedTextOrigin } from "./pa
 import {
   canReadSystemClipboard,
   onSystemTextWritten,
+  writeSelectionText,
   readSystemClipboard,
   writeSystemText,
 } from "./system-clipboard";
@@ -745,7 +747,11 @@ import { scrollDirectionOf } from "../model/scroll-direction";
 import { joinedPagesOf } from "../model/joined-pages";
 import type { PanelFill, SelectionAction } from "./selection-bar-model";
 import { selectionKind, selectionMenu } from "./selection-kind";
-import { writePngToClipboard } from "./picture-clipboard";
+import {
+  copySelectionPngToSystemClipboard,
+  isOwnClipboardPng,
+  writePngToClipboard,
+} from "./picture-clipboard";
 import { type KeyAction, keyOutcome } from "./surface-keys";
 import {
   type PointerReading,
@@ -16693,15 +16699,26 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
       if (!this.paste({ pageId, at }) && !ink) new Notice(t("surface.notice.nothingToPaste"));
       return;
     }
-    void readSystemClipboard().then((found) => {
+    const { session, doc } = this;
+    const version = clipboard.version;
+    void readSystemClipboard().then(async (found) => {
+      const own =
+        found.kind === "image" &&
+        (await isOwnClipboardPng(clipboard, found.file, this.imagesShown));
+      if (!this.renderer || this.session !== session || this.doc !== doc) return;
       const index = this.doc.pages.findIndex((page) => page.id === pageId);
-      if (index < 0 || this.callbacks.isLocked?.()) return;
+      if (index < 0 || this.callbacks.isLocked?.() || clipboard.version !== version) return;
+      if (own) {
+        this.paste({ pageId, at });
+        return;
+      }
       const onImage = this.imagesShown ? this.callbacks.onPasteImage : undefined;
       if (found.kind === "image" && onImage) {
         onImage(found.file, { pageIndex: index, x: at.x, y: at.y });
         return;
       }
       if (found.kind === "text") {
+        if (clipboard.matchesOwnText(found.text) && this.paste({ pageId, at })) return;
         this.addPastedText(index, at, found.text);
         return;
       }
@@ -16889,24 +16906,37 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
   }
 
   /** Copy the selection. A lone picture is offered to the host for the system clipboard too. */
-  private copySelection(): boolean {
+  private copySelection(copyGroupToSystem = true): boolean {
     const live = this.liveSelection();
     // A shape is copied with what it holds (discussion #148).
     const group = live ? this.withShapeContent(live) : null;
     if (group) {
       const bounds = this.groupBounds(group);
       if (!bounds) return false;
-      clipboard.put(
-        {
-          strokes: group.strokes,
-          images: group.images.filter((image) => image.locked !== true),
-          textBoxes: group.textBoxes,
-          tables: group.tables,
-          graphs: group.graphs,
-          equations: group.equations,
-        },
-        bounds,
-      );
+      const copied = {
+        strokes: group.strokes,
+        images: group.images.filter((image) => image.locked !== true),
+        textBoxes: group.textBoxes,
+        tables: group.tables,
+        graphs: group.graphs,
+        equations: group.equations,
+      };
+      clipboard.put(copied, bounds);
+      if (copyGroupToSystem) {
+        const version = clipboard.version;
+        const rich = selectionText(copied);
+        if (rich) {
+          void writeSelectionText(rich, () => clipboard.version === version).then((written) => {
+            if (written) clipboard.noteOwnText(cleanPastedText(rich.text), version);
+          });
+        } else {
+          copySelectionPngToSystemClipboard(clipboard, version, () =>
+            this.selectionPicture({ ...group, images: copied.images }, null).then(
+              (shot) => shot?.blob ?? null,
+            ),
+          );
+        }
+      }
       this.syncActionBar();
       return true;
     }
@@ -16924,7 +16954,7 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
 
   /** Copy the selection, then take it off the page — one undo step, which puts it back. */
   private cutSelection(): void {
-    if (this.callbacks.isLocked?.() || !this.copySelection()) return;
+    if (this.callbacks.isLocked?.() || !this.copySelection(false)) return;
     if (this.liveSelection()) {
       if (this.removeSelection(t("common.cut"))) this.selectionTakenAway();
       return;
@@ -17051,13 +17081,22 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     }
     const inkOnly = this.practice !== null || this.fixedPages;
     const onImage = this.imagesShown && !inkOnly ? this.callbacks.onPasteImage : undefined;
-    const file = onImage ? imageFileOf(event.clipboardData) : null;
+    const file = !inkOnly ? imageFileOf(event.clipboardData) : null;
     const text = inkOnly ? "" : cleanPastedText(event.clipboardData?.getData("text/plain") ?? "");
+    const canMatch =
+      file?.type === "image/png" &&
+      clipboard.ownPngFingerprint !== null &&
+      clipboard.canPaste(this.imagesShown);
     const systemFirst =
-      (file !== null || text !== "") &&
+      ((file !== null && (onImage || canMatch)) || text !== "") &&
       (clipboard.leftSinceCopy || !clipboard.canPaste(this.imagesShown));
-    if (!systemFirst && this.paste()) {
+    if ((!systemFirst || (!file && clipboard.matchesOwnText(text))) && this.paste()) {
       event.preventDefault();
+      return true;
+    }
+    if (file && canMatch) {
+      event.preventDefault();
+      this.pasteClipboardPng(file, text);
       return true;
     }
     if (file && onImage) {
@@ -17075,6 +17114,37 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
       return true;
     }
     return false;
+  }
+
+  /** Preserve the keyboard paste's destination while checking a clipboard image. */
+  private pasteClipboardPng(file: File, text: string): void {
+    const { session, doc } = this;
+    const version = clipboard.version;
+    const page = this.pageAt(this.pageIndex);
+    if (!page) return;
+    const pageId = this.liveSelection()?.pageId ?? this.liveImageSelection()?.pageId ?? page.id;
+    const region = this.visibleRegion(this.pageIndex);
+    const at = region
+      ? { x: (region.minX + region.maxX) / 2, y: (region.minY + region.maxY) / 2 }
+      : { x: page.geometry.width / 2, y: page.geometry.height / 2 };
+    void isOwnClipboardPng(clipboard, file, this.imagesShown).then((own) => {
+      if (
+        !this.renderer ||
+        this.session !== session ||
+        this.doc !== doc ||
+        clipboard.version !== version ||
+        this.callbacks.isLocked?.()
+      )
+        return;
+      const targetId = own ? pageId : page.id;
+      const pageIndex = this.doc.pages.findIndex((candidate) => candidate.id === targetId);
+      if (pageIndex < 0) return;
+      if (own) this.paste({ pageId });
+      else if (this.imagesShown && this.callbacks.onPasteImage) {
+        this.callbacks.onPasteImage(file, { pageIndex, ...at });
+      } else if (text && region) this.addPastedText(pageIndex, at, text);
+      else this.paste({ pageId: targetId });
+    });
   }
 
   // --- A picture's order, lock and crop (0.5) ---------------------------------

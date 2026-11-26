@@ -13,6 +13,7 @@ import { AddPage } from "../../src/model/commands";
 import { type InkDocument, blankPage, emptyDocument } from "../../src/model/document";
 import { History } from "../../src/model/history";
 import { IdSequence } from "../../src/view/id-sequence";
+import type * as PictureClipboard from "../../src/view/picture-clipboard";
 import { StrokeIndex } from "../../src/view/stroke-index";
 import type { SurfaceSession } from "../../src/view/surface-session";
 
@@ -22,6 +23,12 @@ vi.mock("obsidian", () => ({
   setIcon: () => {},
 }));
 
+vi.mock("../../src/view/picture-clipboard", async (original) => ({
+  ...(await original<typeof PictureClipboard>()),
+  isOwnClipboardPng: vi.fn(),
+}));
+
+const { isOwnClipboardPng } = await import("../../src/view/picture-clipboard");
 const { InkSurface } = await import("../../src/view/ink-surface");
 
 type State = Record<string, unknown>;
@@ -299,4 +306,47 @@ describe("setDocument", () => {
     expect(active(surface).doc).toBe(reloaded);
     expect(surface.doc).toBe(reloaded);
   });
+});
+
+describe("a keyboard paste waiting for an image fingerprint", () => {
+  it.each(["scroll", "switch session", "remove page", "lock", "close"] as const)(
+    "preserves the destination when the user can %s before the image check finishes",
+    async (change) => {
+      const doc = docOf("first", "second");
+      let locked = false;
+      const paste = vi.fn();
+      const onPasteImage = vi.fn();
+      const surface = {
+        doc,
+        session: {},
+        renderer: {} as object | null,
+        pageIndex: 0,
+        imagesShown: true,
+        callbacks: { isLocked: () => locked, onPasteImage },
+        liveSelection: () => null,
+        liveImageSelection: () => null,
+        visibleRegion: () => null,
+        pageAt: (index: number) => doc.pages[index],
+        paste,
+      };
+
+      let finish!: (value: boolean) => void;
+      const checking = new Promise<boolean>((resolve) => {
+        finish = resolve;
+      });
+      vi.mocked(isOwnClipboardPng).mockReturnValueOnce(checking);
+      run(surface, "pasteClipboardPng", new File(["png"], "clipboard.png"), "");
+      if (change === "scroll") surface.pageIndex = 1;
+      if (change === "switch session") surface.session = {};
+      if (change === "remove page") doc.pages.shift();
+      if (change === "lock") locked = true;
+      if (change === "close") surface.renderer = null;
+      finish(true);
+      await checking;
+
+      if (change === "scroll") expect(paste).toHaveBeenCalledExactlyOnceWith({ pageId: "first" });
+      else expect(paste).not.toHaveBeenCalled();
+      expect(onPasteImage).not.toHaveBeenCalled();
+    },
+  );
 });

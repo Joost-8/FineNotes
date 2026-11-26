@@ -278,3 +278,29 @@ describe("pastePlacement", () => {
     expect(d).toEqual({ dx: PASTE_OFFSET, dy: PASTE_OFFSET });
   });
 });
+
+describe("InkClipboard own-PNG tracking", () => {
+  it("keeps only the current copy's pixel fingerprint", () => {
+    const clip = new InkClipboard();
+    const elements = { strokes: [stroke("s1")], images: [], textBoxes: [] };
+    clip.put(elements, BOUNDS);
+    const version = clip.version;
+    clip.noteOwnPng("stale", version - 1);
+    expect(clip.ownPngFingerprint).toBeNull();
+    clip.noteOwnPng("current", version);
+    clip.noteOwnText("selection", version);
+    clip.noteWindowLeft();
+    expect(clip.matchesOwnText("selection")).toBe(true);
+    expect(clip.ownPngFingerprint).toBe("current");
+    clip.noteSystemCopy();
+    clip.noteOwnText("selection", version);
+    expect(clip.matchesOwnText("selection")).toBe(false);
+    clip.noteOwnPng("superseded", version);
+    expect(clip.ownPngFingerprint).toBeNull();
+    clip.put(elements, BOUNDS);
+    expect(clip.ownPngFingerprint).toBeNull();
+    clip.noteOwnPng("new", clip.version);
+    clip.clear();
+    expect(clip.ownPngFingerprint).toBeNull();
+  });
+});

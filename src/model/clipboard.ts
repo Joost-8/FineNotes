@@ -65,10 +65,14 @@ export class InkClipboard {
   private entry: ClipboardEntry | null = null;
   private left = false;
   private stamp = 0;
+  private ownPng: string | null = null;
+  private ownText: string | null = null;
 
   /** Hold deep copies of `elements`. An empty selection clears the clipboard. */
   put(elements: PageElements, bounds: Bounds): void {
     this.left = false;
+    this.ownPng = null;
+    this.ownText = null;
     this.stamp++;
     if (isEmptySelection(elements)) {
       this.entry = null;
@@ -92,7 +96,7 @@ export class InkClipboard {
     return this.entry;
   }
 
-  /** Bumped by every {@link put}, so a menu can tell the clipboard changed. */
+  /** Changes when either clipboard gets new content, invalidating pending clipboard work. */
   get version(): number {
     return this.stamp;
   }
@@ -130,7 +134,11 @@ export class InkClipboard {
    * just as after {@link noteWindowLeft}.
    */
   noteSystemCopy(): void {
-    if (this.entry) this.left = true;
+    if (!this.entry) return;
+    this.left = true;
+    this.ownPng = null;
+    this.ownText = null;
+    this.stamp++;
   }
 
   /**
@@ -141,9 +149,28 @@ export class InkClipboard {
     return this.left;
   }
 
+  /** Remember the decoded pixel fingerprint of the PNG for the current copy. */
+  noteOwnPng(fingerprint: string, version: number): void {
+    if (version === this.stamp && this.entry) this.ownPng = fingerprint;
+  }
+
+  get ownPngFingerprint(): string | null {
+    return this.ownPng;
+  }
+
+  noteOwnText(text: string, version: number): void {
+    if (text && version === this.stamp && this.entry) this.ownText = text;
+  }
+
+  matchesOwnText(text: string): boolean {
+    return this.ownText === text;
+  }
+
   clear(): void {
     this.entry = null;
     this.left = false;
+    this.ownPng = null;
+    this.ownText = null;
     this.stamp++;
   }
 }
