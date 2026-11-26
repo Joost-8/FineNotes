@@ -115,6 +115,57 @@ describe("placeWord on Joost's line: only the held word changes", () => {
   });
 });
 
+describe("placeWord on lines the reader got wrong or that climb (found by the reviewer)", () => {
+  /** A zig-zag word from x0 to x1 standing on y = base, 12 px tall. */
+  const zig = (id: string, x0: number, x1: number, base: number, slope = 0) => {
+    const pts: number[] = [];
+    for (let x = x0, up = false; x <= x1; x += 4, up = !up)
+      pts.push(x, base + slope * x - (up ? 12 : 0), 0.5);
+    return { id, t0: 0, pts, tool: "pen", shape: null };
+  };
+  const at = (x: number, y: number, id: string) => ({
+    id,
+    t0: 0,
+    pts: [x, y, 0.5, x + 1, y + 3, 0.5],
+    tool: "pen",
+    shape: null,
+  });
+  const common = {
+    written: writtenLine(1, 3),
+    xHeight: { ink: 12, written: 0.389, least: 3 },
+    foot: { ink: null, written: null },
+  };
+
+  it("leaves out a comma far along the line that the reading gave the held word", () => {
+    const line = [
+      zig("a", 0, 40, 100),
+      at(42, 100, "comma"),
+      zig("b", 160, 190, 100),
+      zig("c", 210, 250, 100),
+    ];
+    const placed = placeWord({ ...common, line, word: ["comma", "b"], held: "b" });
+    if (!placed) throw new Error("not placed");
+    expect(placed.removed).toEqual(["b"]);
+    expect(Math.min(...placed.added.flatMap((s) => xs(s.pts)))).toBeCloseTo(160, 6);
+    expect(placed.kept.get("comma")).toEqual({ dx: 0, dy: 0 });
+  });
+
+  it("moves the words after it along a climbing line, onto it", () => {
+    const slope = -Math.tan((20 * Math.PI) / 180);
+    const line = [
+      zig("a", 0, 40, 200, slope),
+      zig("b", 60, 90, 200, slope),
+      zig("c", 110, 150, 200, slope),
+    ];
+    const placed = placeWord({ ...common, line, word: ["b"], held: "b", slope });
+    const move = placed?.kept.get("c");
+    if (!move) throw new Error("not placed");
+    expect(move.dx).not.toBe(0);
+    expect(move.dy).toBeCloseTo(slope * move.dx, 6);
+    expect(placed?.kept.get("a")).toEqual({ dx: 0, dy: 0 });
+  });
+});
+
 describe("wordAround: a word alone", () => {
   it("gathers the word's own strokes and nothing a line away or far along", () => {
     const word = real.words[0]; // "testing", alone on the page

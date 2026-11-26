@@ -15,7 +15,7 @@
 import { ASKED_LEVEL_SLOPE, lineOfStroke, measureHand } from "../../ink/tidy";
 import type { PageInk } from "../hwr/lines";
 import type { NeatenEdit } from "./apply";
-import { LETTER_REACH, type PlacedLine } from "./layout";
+import { LETTER_REACH, type PlacedLine, bodyOf } from "./layout";
 import { median } from "./rows";
 import type { WrittenStroke } from "./rows";
 
@@ -110,8 +110,12 @@ export function inkToBeautify<S extends PageInk>(strokes: readonly S[], heldId: 
 export interface WordToPlace<S extends PageInk> {
   /** The strokes of the line the word is on (the word's own when it stands alone), page px. */
   line: readonly S[];
-  /** The held word's strokes (ids). */
+  /** The held word's strokes (ids), as read: pieces from elsewhere on the line are left out. */
   word: readonly string[];
+  /** The stroke that was held: the word is the run of ink that holds it. */
+  held?: string;
+  /** How the line climbs (page px down per px along): the words after it move along it. */
+  slope?: number;
   /** The word as the model wrote it, model units (x right, y up). */
   written: readonly WrittenStroke[];
   /** The writer's x-height on the line (page px), the written word's (model units), the least to write at (page px). */
@@ -128,7 +132,13 @@ export interface WordToPlace<S extends PageInk> {
  * past the page's edge.
  */
 export function placeWord<S extends PageInk>(w: WordToPlace<S>): PlacedLine | null {
-  const ids = new Set(w.word);
+  // The word's own run of ink, as for lines (`bodyOf`): a comma the reading gave it stays.
+  const byId = new Map(w.line.map((s) => [s.id, s] as const));
+  const held = w.held !== undefined ? byId.get(w.held) : undefined;
+  const reach = LETTER_REACH * (w.xHeight.ink ?? (held ? heightOf(held.pts) : 0));
+  const body = reach > 0 ? bodyOf(w.word, byId, reach) : [...w.word];
+  if (w.held !== undefined && w.word.includes(w.held) && !body.includes(w.held)) return null;
+  const ids = new Set(body);
   const own = w.line.filter((s) => ids.has(s.id));
   const old = own.map((s) => boxOf(s.pts)).filter((b): b is Box => b !== null);
   const made = w.written.flatMap((s) => {
@@ -169,8 +179,9 @@ export function placeWord<S extends PageInk>(w: WordToPlace<S>): PlacedLine | nu
     );
     return { pts, word: 0 };
   });
-  // The words after it on the line move along by as much as the word grew or shrank.
+  // The words after it move along the line by as much as the word grew or shrank.
   const dx = ox0 + (mx1 - mx0) * size - ox1;
+  const dy = w.slope ? w.slope * dx : 0;
   const oldMid = 0.5 * (ox0 + ox1);
   const kept = new Map<string, { dx: number; dy: number }>();
   let right = -Infinity;
@@ -180,14 +191,19 @@ export function placeWord<S extends PageInk>(w: WordToPlace<S>): PlacedLine | nu
     const box = boxOf(s.pts);
     if (!box) continue;
     const after = 0.5 * (box.x0 + box.x1) > oldMid;
-    kept.set(s.id, { dx: after ? dx : 0, dy: 0 });
+    kept.set(s.id, after ? { dx, dy } : { dx: 0, dy: 0 });
     right = Math.max(right, box.x1 + (after ? dx : 0));
     rightBefore = Math.max(rightBefore, box.x1);
   }
   right = Math.max(right, ...added.flatMap((s) => every(s.pts, 0)));
   rightBefore = Math.max(rightBefore, ox1);
   if (w.pageWidth !== undefined && right > Math.max(w.pageWidth, rightBefore)) return null;
-  return { added, kept, removed: [...w.word] };
+  return { added, kept, removed: body };
+}
+
+function heightOf(pts: ArrayLike<number>): number {
+  const box = boxOf(pts);
+  return box ? box.y1 - box.y0 : 0;
 }
 
 /** The page's edit for one placed word: nothing is tidied, only what moved moves. */

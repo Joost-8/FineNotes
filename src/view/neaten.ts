@@ -351,7 +351,9 @@ export class NeatenService {
     const jobsWith = async () => {
       const answers = request.note ? await this.host.answers(request.note, request.pageId) : [];
       return lines.flatMap((strokes, li) => {
-        const job = this.jobOf(strokes, readings[li], writable, listed, answers);
+        // For a held word only its own letters must be ones the model has (`workWord`).
+        const lineWritable = request.word === undefined ? writable : () => true;
+        const job = this.jobOf(strokes, readings[li], lineWritable, listed, answers);
         return job ? [job] : [];
       });
     };
@@ -523,13 +525,14 @@ export class NeatenService {
     if (!at) return nothing;
     let job = jobs[at.line];
     // Asked about only when Grape is not sure of it, and never about another word.
-    const question = pickQuestions(unsureCandidates([job])).find((q) => q.word === at?.word);
+    const word = at.word;
+    const question = pickQuestions(unsureCandidates([job]).filter((q) => q.word === word))[0];
     if (question && request.ask) {
       request.asking?.();
       const answered = await request.ask([job.words[at.word]]);
       if (request.stop()) return { kind: "stopped" };
-      // Skipped: the word stays the writer's ink.
-      if (answered.length === 0) return nothing;
+      // Skipped: the word stays the writer's ink, and nothing needs saying.
+      if (answered.length === 0) return { kind: "stopped" };
       jobs = await again();
       at = heldWordAt(jobs, held);
       if (!at) return nothing;
@@ -537,12 +540,14 @@ export class NeatenService {
     }
     const text = job.read[at.word];
     const ink = job.words[at.word];
-    if (!text || !ink?.length) return nothing;
     const { manifest, kind } = ctx.model;
+    if (!text || !ink?.length || !Array.from(text).every((ch) => manifest.chars.indexOf(ch) > 0))
+      return nothing;
     const shown = await this.shownFor(text, ctx.pool, manifest, kind);
     if (!shown) {
+      // Its own notice says why; a second one would only repeat it.
       new Notice(problemText({ kind: "rows", detail: "the reader's curves differ" }), 8000);
-      return nothing;
+      return { kind: "stopped" };
     }
     const ref = kind.reference(text, shown, manifest, 1);
     const guidance = manifest.sampling
@@ -581,9 +586,14 @@ export class NeatenService {
     const wordChars = job.chars.filter((c) =>
       c.strokes.every((i) => inWord.has(job.strokes[i]?.id ?? "")),
     );
+    const line = measureLines(job.strokes, ASKED_LEVEL_SLOPE).sort(
+      (a, b) => b.strokes.length - a.strokes.length,
+    )[0];
     const placed = placeWord({
       line: job.strokes,
       word: ink,
+      held,
+      slope: line?.slope ?? 0,
       written: levelledStrokes(written, written.char, text),
       xHeight: {
         ink: job.xHeight,
