@@ -16,6 +16,7 @@
  * AI menu, pages, pictures, scans and export.
  */
 
+import { pageIdStep } from "./pending-page";
 import { SetFurniture, furnitureText } from "../model/furniture";
 import { SetPageTab, nextTabColor } from "../model/page-tabs";
 import { SAVED_STICKERS_COLLECTION } from "./sticker-modal";
@@ -1729,6 +1730,9 @@ export class InkView extends TextFileView {
     }
     // Where the PDF's tab was left goes into this save.
     this.saveTabView();
+    // A page asked for in this file is not one to look for in the next.
+    this.pendingPageId = null;
+    this.pendingHighlightPage = false;
     await super.onUnloadFile(file);
   }
 
@@ -6075,13 +6079,10 @@ export class InkView extends TextFileView {
       return;
     }
     const pages = surface.document.pages;
-    if (targetPageId !== null && !pages.some((p) => p.id === targetPageId)) {
-      if (attempt < 20) {
-        window.setTimeout(() => this.applyPendingPage(attempt + 1), 50);
-      }
-      // Keep `pendingPageId` & `pendingHighlightPage` pending so a delayed
-      // DevicePages sync can still land on and highlight the exact requested page
-      // instead of falling back to a wrong positional index.
+    // A page asked for by id may arrive with the notebook's page files: wait a little, never forever.
+    const byId = pageIdStep(pages, targetPageId, attempt);
+    if (byId.kind === "wait") {
+      window.setTimeout(() => this.applyPendingPage(attempt + 1), 50);
       return;
     }
     this.pendingSubpath = null;
@@ -6089,13 +6090,10 @@ export class InkView extends TextFileView {
     this.pendingPageId = null;
     const highlight = this.pendingHighlightPage;
     this.pendingHighlightPage = false;
-    let index: number | null = null;
-    if (targetPageId !== null) {
-      const byId = pages.findIndex((p) => p.id === targetPageId);
-      if (byId >= 0) index = byId;
-    }
-    if (index === null && subpath !== null) index = pageFromSubpath(subpath, pages.length);
-    else if (index === null && back !== null) index = back < pages.length ? back : null;
+    let index: number | null = byId.kind === "found" ? byId.index : null;
+    // A block's page gone from the notebook: no page by position instead.
+    if (byId.kind === "none" && subpath !== null) index = pageFromSubpath(subpath, pages.length);
+    else if (byId.kind === "none" && back !== null) index = back < pages.length ? back : null;
     // `#Krebs cycle`: a named region, centred (discussion #167). A page comes first.
     const name = subpath !== null && index === null ? regionSubpathName(subpath) : null;
     const region = name !== null ? findRegion(pages, name) : null;

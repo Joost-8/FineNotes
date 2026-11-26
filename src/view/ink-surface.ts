@@ -778,6 +778,7 @@ import { SizeWait, backingScale } from "./surface-size";
 import { StrokeIndex } from "./stroke-index";
 import { REST_MS, ViewRest } from "./view-rest";
 import { IdSequence, strokeIdsOf, textBoxIdsOf } from "./id-sequence";
+import { INLINE_GROW_REACH_PX, flashRing, inGrowBand } from "./inline-surface-model";
 import { newSession, type SurfaceSession, type SurfaceSessionOptions } from "./surface-session";
 import { SnippetDrag, bindSnippetGrip } from "./snippet-drag";
 import { SlideDots } from "./slide-dots";
@@ -6401,23 +6402,17 @@ export class InkSurface {
     const box = this.pageLayout.boxes[pageIndex];
     const page = this.doc.pages[pageIndex];
     if (!box || !page || !(this.scale > 0)) return;
-    const scale = this.scale;
-    const bounds = drawnBounds(page);
-    const pad = 20;
-    const rx = bounds ? Math.max(0, bounds.minX - pad) : 0;
-    const ry = bounds ? Math.max(0, bounds.minY - pad) : 0;
-    const rw = bounds ? Math.min(box.width - rx, bounds.maxX - bounds.minX + pad * 2) : box.width;
-    const rh = bounds ? Math.min(box.height - ry, bounds.maxY - bounds.minY + pad * 2) : box.height;
-    const left = Math.round(this.offsetX + (box.x + rx) * scale);
-    const top = Math.round((box.y + ry - this.viewport.scrollY) * scale);
-    const width = Math.max(40, Math.round(rw * scale));
-    const height = Math.max(40, Math.round(rh * scale));
+    const at = flashRing(box, drawnBounds(page), {
+      scale: this.scale,
+      offsetX: this.offsetX,
+      scrollY: this.viewport.scrollY,
+    });
     const ring = this.surfaceEl.createDiv({ cls: "goodobsidian-page-flash" });
     ring.setCssProps({
-      left: `${left}px`,
-      top: `${top}px`,
-      width: `${width}px`,
-      height: `${height}px`,
+      left: `${at.left}px`,
+      top: `${at.top}px`,
+      width: `${at.width}px`,
+      height: `${at.height}px`,
     });
     this.win.setTimeout(() => ring.remove(), 1500);
   }
@@ -11528,10 +11523,8 @@ export class InkSurface {
   private extendInlineInk(box: PageBox, sample: PointerSample): PageBox {
     if (!this.inlineWidthLocked || !this.callbacks.growInlinePage) return box;
     const at = this.toPage(box, sample);
-    const buffer = 64 / this.unitScale;
-    if (at.x < 0 || at.x >= box.width || at.y < box.height - buffer || at.y > box.height + buffer)
-      return box;
-    if (!this.callbacks.growInlinePage(at.y, buffer)) return box;
+    const buffer = INLINE_GROW_REACH_PX / this.unitScale;
+    if (!inGrowBand(at, box, buffer) || !this.callbacks.growInlinePage(at.y, buffer)) return box;
     this.renderer?.invalidatePage(box.id);
     this.layout();
     const grown = this.pageLayout.boxes[box.index] ?? box;
