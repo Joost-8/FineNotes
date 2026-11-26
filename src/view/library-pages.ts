@@ -16,8 +16,13 @@
 import type { App, TFile } from "obsidian";
 import { type ImagePainter, renderPageThumbnail } from "../canvas/renderer";
 import { parseInkFile } from "../model/serialize";
-import { isDevicePagesPayload } from "../model/device-pages";
-import { devicePagesFolderFor, notebookStatOf, readDevicePagesFolder } from "./device-pages-files";
+import { devicePagesFolderOf, isDevicePagesPayload, notebookIdOfText } from "../model/device-pages";
+import {
+  knownNotebookId,
+  notebookStatOf,
+  readDevicePagesFolder,
+  rememberNotebookId,
+} from "./device-pages-files";
 
 export { notebookStatOf } from "./device-pages-files";
 import { readTextSection } from "../recognition/text-layer";
@@ -105,10 +110,22 @@ export class NotebookPages {
     const text = (): Promise<string> =>
       facts ? this.app.vault.read(file) : this.app.vault.cachedRead(file);
     // Kept as one file per page per device (#274): put together here, from its files.
-    const folder = devicePagesFolderFor(this.app, file);
-    if (folder) {
-      const parsed = parseInkFile(await text());
+    // Its label names its id (its page folder may not be made yet). Read once
+    // per change of the file to know; a one-file notebook goes on to the worker,
+    // which reads it again only when its cache does not hold it.
+    const own = `${file.stat.mtime}:${file.stat.size}`;
+    let raw: string | null = null;
+    let id = knownNotebookId(file.path, own);
+    if (id === undefined) {
+      raw = await text();
+      id = notebookIdOfText(raw);
+      rememberNotebookId(file.path, id, own);
+    }
+    const read = raw === null ? text : () => Promise.resolve(raw);
+    if (id !== null) {
+      const parsed = parseInkFile(await read());
       if (parsed.payload !== undefined && isDevicePagesPayload(parsed.payload)) {
+        const folder = devicePagesFolderOf(file.path, id);
         const doc = await readDevicePagesFolder(this.app, parsed.payload, folder);
         return resultOf(doc, parsed.body, want, facts, searchText);
       }
@@ -117,12 +134,12 @@ export class NotebookPages {
     const client = await this.client();
     if (client) {
       try {
-        return await client.read(key, text, want, facts, searchText);
+        return await client.read(key, read, want, facts, searchText);
       } catch {
         // The worker stopped: this read and every later one on the main thread.
       }
     }
-    const parsed = parseInkFile(await text());
+    const parsed = parseInkFile(await read());
     return resultOf(parsed.doc, parsed.body, want, facts, searchText);
   }
 

@@ -9,6 +9,7 @@
  * No DOM, no Obsidian.
  */
 
+import { isTextNoteName, stripTextNoteSuffix } from "./text-note-file";
 import { localeTag, t, tn } from "../i18n/translate";
 import { type InkDocument, type PageGeometry, type PdfBackdrop, isCoverRuling } from "./document";
 import { inkFileSuffix, stripInkSuffix } from "./new-notebook";
@@ -47,6 +48,11 @@ export interface LibraryEntry {
    * page is a PDF notebook's.
    */
   pictured?: true;
+  /**
+   * A text note (`Title.note.md`): FineNotes' own kind of note, shelved with
+   * the notebooks, its cover and pages drawn from its own blocks.
+   */
+  textNote?: true;
   /** Last edit, ms since the epoch. */
   edited: number;
   /** When the file was made, ms since the epoch; the library fills it from the file. */
@@ -137,13 +143,30 @@ export function fileEntry(path: string, edited: number): LibraryEntry {
   const name = baseName(path);
   const extension = extensionOf(name);
   const kind = fileKind(extension);
+  const textNote = isTextNoteName(name);
   return {
     ...placeholderEntry(path, edited),
     kind,
-    title: extension === "" ? name : name.slice(0, -extension.length - 1),
+    ...(textNote ? { textNote: true as const } : {}),
+    // A text note is `Title.note.md`: neither part of the suffix is its name.
+    title: textNote
+      ? stripTextNoteSuffix(name)
+      : extension === ""
+        ? name
+        : name.slice(0, -extension.length - 1),
     // The page keeps the PDF's own size; the cover reads it as it draws.
     pdf: kind === "pdf" ? { path, page: 0, width: 0, height: 0 } : null,
   };
+}
+
+/**
+ * Whether Home shelves `entry` with the notebooks ("All notebooks", the
+ * "Notebooks only" filter, a folder's notebook count): a notebook, or a
+ * text note, which is FineNotes' own too. Any other file is one of the
+ * vault's files.
+ */
+export function onShelf(entry: Pick<LibraryEntry, "kind" | "textNote">): boolean {
+  return entry.kind === "notebook" || entry.textNote === true;
 }
 
 /** A file's extension, upper case, as a caption names it: "PDF", "CANVAS"; empty for none. */

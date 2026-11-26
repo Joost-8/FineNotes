@@ -120,6 +120,11 @@ export interface CalcNotesHost {
     text: string,
     kind: CorrectionKind,
   ): Promise<void>;
+  /**
+   * A plain number written in the writer's own hand after the "="
+   * (`write-in-hand.ts`), page px; null for the glyphs to write it.
+   */
+  handAnswer?(text: string, at: AnswerPlace): Promise<number[][] | null>;
 }
 
 /** The calculation note open now: what was read, worked out, and what the card did with it. */
@@ -605,23 +610,7 @@ export class CalcNotes {
    * for the doubts. Null when it cannot be read.
    */
   private async read(strokes: readonly Stroke[], eq: EqualsSign): Promise<SumReading | null> {
-    const reader = this.host.reader;
-    const eqIds = new Set(eq.strokes.map((s) => s.id));
-    const body = strokes.filter((s) => !eqIds.has(s.id));
-    const piece = (l: LineReading): PieceReading => ({
-      text: l.text,
-      confidence: l.confidence,
-      greedy: l.greedy,
-      chars: l.chars,
-    });
-    const laidOut = await readLaidOut(body, async (groups) =>
-      (await reader.readGroups(groups.map(inkForReading), { chars: true, math: true })).map(piece),
-    );
-    if (laidOut !== null) return laidOut;
-    // `inkForReading` keeps pen ink only, in order: the indices `chars` names.
-    const ink = strokes.filter((s) => s.tool === "pen" && !s.shape);
-    const [line] = await reader.readGroups([inkForReading(ink)], { chars: true, math: true });
-    return line ? readWhole(ink, piece(line)) : null;
+    return readSumLine(this.host.reader, strokes, eq);
   }
 
   /** The reading worked out, "variables" when it needs ones set above, or null. */
@@ -675,9 +664,14 @@ export class CalcNotes {
     const surface = this.host.surface();
     if (!glyphs || !page || !surface || !stillLast(page, eq, after)) return;
     const pen = eq.strokes[1];
-    const raw = fraction
-      ? writeFraction(fraction.n, fraction.d, glyphs, place)
-      : writeWithPowers(shown, glyphs, place);
+    // A plain number in the writer's own hand when it can; never a fraction or a power.
+    const own = fraction ? null : ((await this.host.handAnswer?.(shown, place)) ?? null);
+    if (own && !stillLast(page, eq, after)) return;
+    const raw =
+      own ??
+      (fraction
+        ? writeFraction(fraction.n, fraction.d, glyphs, place)
+        : writeWithPowers(shown, glyphs, place));
     const lineLeft = Math.min(...note.strokes.map((s) => strokeBounds(s)?.minX ?? Infinity));
     const written = fitAnswer(
       raw,
@@ -779,6 +773,34 @@ export class CalcNotes {
   private async ownGlyphs(): Promise<GlyphSet | null> {
     return writerGlyphs(this.host.app, this.host.learning());
   }
+}
+
+/**
+ * A sum's line, read on this device (as {@link CalcNotes} reads one): a
+ * plain line whole, a line with a raised dot or a fraction piece by piece.
+ * Null when it cannot be read.
+ */
+export async function readSumLine(
+  reader: Pick<HandwritingReader, "readGroups">,
+  strokes: readonly Stroke[],
+  eq: EqualsSign,
+): Promise<SumReading | null> {
+  const eqIds = new Set(eq.strokes.map((s) => s.id));
+  const body = strokes.filter((s) => !eqIds.has(s.id));
+  const piece = (l: LineReading): PieceReading => ({
+    text: l.text,
+    confidence: l.confidence,
+    greedy: l.greedy,
+    chars: l.chars,
+  });
+  const laidOut = await readLaidOut(body, async (groups) =>
+    (await reader.readGroups(groups.map(inkForReading), { chars: true, math: true })).map(piece),
+  );
+  if (laidOut !== null) return laidOut;
+  // `inkForReading` keeps pen ink only, in order: the indices `chars` names.
+  const ink = strokes.filter((s) => s.tool === "pen" && !s.shape);
+  const [line] = await reader.readGroups([inkForReading(ink)], { chars: true, math: true });
+  return line ? readWhole(ink, piece(line)) : null;
 }
 
 /** The writer's glyphs from their symbol sheets (the last sample of each character wins), or null. */

@@ -45,7 +45,7 @@ export const SHARE_KINDS: readonly ShareKind[] = ["practice", "word", "equation"
  * what licence raises it, and everyone who agreed to an older one is asked
  * again before anything more is sent.
  */
-export const CONSENT_VERSION = 3;
+export const CONSENT_VERSION = 4;
 
 /**
  * What donors agree to (Joost's choice, 2026-11-16, replacing CC0): the
@@ -57,8 +57,30 @@ export const CONSENT_VERSION = 3;
  * may be shown to Anthropic's Claude through its API, as a picture of the ink
  * and its text only, under Anthropic's commercial terms (no training on it).
  * Items shared under `finenotes-grape-private-1` never are.
+ *
+ * Version 4 (2026-11-23): items may also train FineNotes' handwriting
+ * writer (neatening, rewriting a corrected word in its writer's hand,
+ * made-up lines that train Grape), released like Grape and holding no
+ * contributor's style; made-up lines in contributors' styles stay private
+ * and may be checked by Claude too; a reading the user acted on counts as
+ * labelled; training may run on Google Cloud in the EU. Agreeing after an
+ * older version covers what was already shared ({@link SharingLedger.upgradeOwed}).
  */
-export const SHARE_LICENCE = "finenotes-grape-private-2";
+export const SHARE_LICENCE = "finenotes-grape-private-3";
+
+/** What changed in the terms, as the "terms changed" dialog lists it. */
+export type ConsentChange = "anthropic" | "writer" | "madeUp" | "used" | "cloud";
+
+/**
+ * The changes since consent version `from`, oldest first: what someone who
+ * agreed to `from` has not agreed to yet.
+ */
+export function consentChanges(from: number): ConsentChange[] {
+  const out: ConsentChange[] = [];
+  if (from < 3) out.push("anthropic");
+  if (from < 4) out.push("writer", "madeUp", "used", "cloud");
+  return out;
+}
 
 /** The batch format, read by the server and the rig. */
 export const SHARE_FORMAT = "finenotes-ink-share/1";
@@ -148,6 +170,13 @@ export interface SharingLedger {
    * the confirmation cannot bring the finished delete back.
    */
   deletedAt: number;
+  /**
+   * The consent version the server must still be told covers what this
+   * contributor already shared (0: nothing owed). Set when someone who
+   * agreed to an older version agrees to this one; sent again until the
+   * server confirms, as a delete is.
+   */
+  upgradeOwed: number;
 }
 
 export function emptyLedger(now = 0): SharingLedger {
@@ -162,6 +191,7 @@ export function emptyLedger(now = 0): SharingLedger {
     declined: [],
     pendingDelete: null,
     deletedAt: 0,
+    upgradeOwed: 0,
   };
 }
 
@@ -221,6 +251,14 @@ export function parseLedger(raw: string | null): SharingLedger {
     out.deletedAt = data.deletedAt;
   }
   if (out.pendingDelete && out.pendingDelete.at <= out.deletedAt) out.pendingDelete = null;
+  if (
+    typeof data.upgradeOwed === "number" &&
+    Number.isInteger(data.upgradeOwed) &&
+    data.upgradeOwed > 0 &&
+    out.contributor
+  ) {
+    out.upgradeOwed = data.upgradeOwed;
+  }
   return out;
 }
 
@@ -241,7 +279,8 @@ export function mergeLedgers(a: SharingLedger, b: SharingLedger): SharingLedger 
   if (a.epoch !== b.epoch) {
     const newer = a.epoch > b.epoch ? a : b;
     const older = newer === a ? b : a;
-    // A delete the older copy still owes is not lost with it.
+    // A delete the older copy still owes is not lost with it. An upgrade it
+    // owed was for the contributor that delete ended, so it goes.
     return {
       ...newer,
       pendingDelete: owed(newer.pendingDelete, older.pendingDelete),
@@ -269,6 +308,7 @@ export function mergeLedgers(a: SharingLedger, b: SharingLedger): SharingLedger 
     ),
     pendingDelete: owed(a.pendingDelete, b.pendingDelete),
     deletedAt,
+    upgradeOwed: contributor ? Math.max(a.upgradeOwed, b.upgradeOwed) : 0,
   };
 }
 
@@ -283,13 +323,23 @@ export function agree(
 ): SharingLedger {
   const contributor = ledger.contributor ?? `c_${base32(random(10))}`;
   const key = ledger.key ?? base32(random(32));
+  // Agreeing after an older version covers what was already shared (the
+  // dialog says so): the server is told, once it can be reached.
+  const upgrading =
+    ledger.consent !== null && ledger.consent.version < CONSENT_VERSION && ledger.sent.length > 0;
   return {
     ...ledger,
     contributor,
     key,
     consent: { version: CONSENT_VERSION, at: now },
     invited: true,
+    upgradeOwed: upgrading ? CONSENT_VERSION : ledger.upgradeOwed,
   };
+}
+
+/** The server confirmed that the consent now covers what was shared before. */
+export function upgradeDone(ledger: SharingLedger, version: number): SharingLedger {
+  return ledger.upgradeOwed <= version ? { ...ledger, upgradeOwed: 0 } : ledger;
 }
 
 /** The invite was answered with "Not now": it is not shown again. */

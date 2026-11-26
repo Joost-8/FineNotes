@@ -194,7 +194,9 @@ export function styledBackdrop(
   style: PaperStyle = {},
 ): SyntheticBackdrop {
   const backdrop = templateBackdrop(ruling, color);
-  if (style.paper && /^#[0-9a-f]{6}$/i.test(style.paper)) {
+  if (style.paper === "transparent") {
+    backdrop.paperColor = "transparent";
+  } else if (style.paper && /^#[0-9a-f]{6}$/i.test(style.paper)) {
     const paper = style.paper.toLowerCase();
     if (paper === "#ffffff") delete backdrop.paperColor;
     else backdrop.paperColor = paper;

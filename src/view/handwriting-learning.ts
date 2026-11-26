@@ -32,9 +32,13 @@ import { parseInkFile } from "../model/serialize";
 import type { HwrWorkerClient } from "../recognition/hwr/client";
 import type { HwrProgress, HwrTuned } from "../recognition/hwr/protocol";
 import type { LabelledLine } from "../recognition/hwr/tune";
+import { PRACTICE_POOL_VERSION, type DrawnLine, drawSheet } from "../recognition/practice-draw";
 import {
+  DRAWN_SET,
   PRACTICE_SETS,
   SYMBOL_SET,
+  askedTexts,
+  isDrawnSet,
   isSymbolSet,
   missingSymbols,
   practiceLines,
@@ -76,8 +80,15 @@ export interface LearningHost {
     practiceNotebookPath?: string;
   };
   saveSettings(): Promise<void>;
-  /** Create practice file `set` (the symbol sheet: only lines `only`) and open it; the file, or null. */
-  createPracticeFile(set: number, only?: readonly number[]): Promise<TFile | null>;
+  /**
+   * Create practice file `set` (the symbol sheet: only lines `only`; a drawn
+   * sheet: the lines in `drawn`) and open it; the file, or null.
+   */
+  createPracticeFile(
+    set: number,
+    only?: readonly number[],
+    drawn?: DrawnSheet,
+  ): Promise<TFile | null>;
   /** The reader should load its model again (a new one was saved, or reset). */
   reloadReader(): void;
   /** Grape's bytes, to learn from; null (after offering the download) when it is not here. */
@@ -156,7 +167,9 @@ export async function learnedFiles(
  */
 export function practiceSetOf(name: string): number | null {
   if (/^symbol practice( \d+)?\.practice\.md$/i.test(name)) return SYMBOL_SET;
-  const match = /(\d+)\.practice\.md$/i.exec(name);
+  // Only the fixed sets' names say their set: a drawn sheet ("Practice
+  // sheet 2") says it in its file.
+  const match = /^handwriting practice\b.*?(\d+)\.practice\.md$/i.exec(name);
   const set = match ? Number(match[1]) : Number.NaN;
   return set >= 1 && set <= PRACTICE_SETS.length ? set : null;
 }
@@ -194,10 +207,45 @@ export function practiceFiles(host: LearningHost): TFile[] {
   return files;
 }
 
-/** Write the next practice set to a new file, and open it. */
+/** A drawn sheet to make: its lines, where they came from, and its number for the cover. */
+export interface DrawnSheet {
+  lines: readonly DrawnLine[];
+  draw: { pool: number; seed: number };
+  sheet: number;
+}
+
+/** Lines drawn on a writer's first sheet after the anchor's ten, and on every later one. */
+export const FIRST_DRAWN = 20;
+export const LATER_DRAWN = 30;
+
+/**
+ * The next drawn sheet for this vault's writer: what every practice sheet
+ * so far asked for (written or not) steers the draw, the first drawn sheet
+ * opens with the anchor, and the number follows the text sheets there are.
+ */
+export async function nextDrawnSheet(
+  host: LearningHost,
+  seed = Math.floor(Math.random() * 0x7fffffff),
+): Promise<DrawnSheet> {
+  const asked: string[] = [];
+  let drawnBefore = false;
+  let textSheets = 0;
+  for (const file of practiceFiles(host)) {
+    const doc = await readPracticeDoc(host, file.path).catch(() => null);
+    if (!doc) continue;
+    const set = practiceSetOfDoc(doc);
+    if (isSymbolSet(set)) continue;
+    asked.push(...askedTexts(doc));
+    if (isDrawnSet(set)) drawnBefore = true;
+    textSheets++;
+  }
+  const lines = drawSheet(asked, drawnBefore ? LATER_DRAWN : FIRST_DRAWN, seed, !drawnBefore);
+  return { lines, draw: { pool: PRACTICE_POOL_VERSION, seed }, sheet: textSheets + 1 };
+}
+
+/** Draw the next practice sheet into a new file, and open it. */
 export async function writePracticePage(host: LearningHost): Promise<void> {
-  const sets = (await practiceSheets(host)).map((sheet) => sheet.set);
-  await host.createPracticeFile(nextPracticeSet(sets));
+  await host.createPracticeFile(DRAWN_SET, undefined, await nextDrawnSheet(host));
 }
 
 /**

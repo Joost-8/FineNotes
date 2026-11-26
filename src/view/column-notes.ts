@@ -103,9 +103,7 @@ function union(boxes: readonly Bounds[]): Bounds {
 function signatureOf(column: Column): string {
   return column.rows
     .map((row) =>
-      [...(row.signStroke ? [row.signStroke] : []), ...row.amount, ...(row.rule?.strokes ?? [])]
-        .map((s) => s.id)
-        .join(","),
+      [...row.signStrokes, ...row.amount, ...(row.rule?.strokes ?? [])].map((s) => s.id).join(","),
     )
     .join("|");
 }
@@ -350,7 +348,7 @@ export class ColumnNotes {
     const rule = column.rule.bounds;
     const rows = note.summary.shown.map((i) => column.rows[i]);
     const ink = [
-      ...rows.flatMap((row) => [...(row.signStroke ? [row.signStroke] : []), ...row.amount]),
+      ...rows.flatMap((row) => [...row.signStrokes, ...row.amount]),
       ...column.rule.strokes,
     ];
     const left = Math.min(...ink.map((s) => strokeBounds(s)?.minX ?? Infinity));

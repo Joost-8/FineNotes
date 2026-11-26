@@ -20,8 +20,9 @@
  * visible part of the grid, and freed again when scrolled far away: a
  * 200-page notebook must not hold 200 canvases on an iPad.
  *
- * The file is saved next to the notebook (never over an existing file), or
- * several pictures into a new folder there; then a single file can be
+ * The file is saved next to the notebook (over an existing file only when
+ * its name was typed, FineNotes#318), or several pictures into a new folder
+ * there; then a single file can be
  * opened in Obsidian, and any of them handed to the system share sheet.
  */
 
@@ -78,15 +79,24 @@ export interface ExportPdfHost {
   setFormat?: (format: ExportFormat) => void;
   /** Paint page `index`'s preview into `canvas`, `cssWidth` CSS px wide, as it will export. */
   paintPreview: (canvas: HTMLCanvasElement, index: number, cssWidth: number) => Promise<void>;
-  /** The file, or folder of pictures, the pages would be saved as. */
-  targetFor: (pages: readonly number[], format: ExportFormat) => ExportTarget;
+  /** The file, or folder of pictures, the pages would be saved as; `typed` is the PDF name field. */
+  targetFor: (pages: readonly number[], format: ExportFormat, typed?: string) => ExportTarget;
   /** Render and save; `onProgress` counts finished pages. Rejects with an `AbortError` when cancelled. */
   export: (
     pages: readonly number[],
     format: ExportFormat,
     onProgress: (done: number, total: number) => void,
     cancelled: () => boolean,
+    typed?: string,
   ) => Promise<ExportedFiles>;
+  /**
+   * The PDF name last typed for this notebook ("" for none): given, the
+   * dialog shows a name field while PDF is picked (FineNotes#318). A typed
+   * name replaces a file of that name; left empty, the PDF gets a free name.
+   */
+  pdfName?: string;
+  /** A PDF was saved under the name field's text: remember it ("" forgets it). */
+  setPdfName?: (typed: string, file: string) => void;
   /** Open a saved file in Obsidian. */
   open: (path: string) => void;
   /**
@@ -111,6 +121,17 @@ export interface ExportPdfHost {
    * shapes follow `pageSize`.
    */
   setMargins?: (margins: ExportMargins) => void;
+  /**
+   * `false`: no All / This page / Choose segment; the grid opens with every
+   * page ticked, and a tap unticks one (a text note, which has no page in view).
+   */
+  scopes?: false;
+  /** `false`: pages export in their own order, ticks show no place numbers. */
+  ordered?: false;
+  /** `false`: no PDF / PNG / JPG control; the host exports in its one format. */
+  formats?: false;
+  /** The dialog's title; "Export" when not given. */
+  title?: string;
 }
 
 /** The margins button's icon and name for each choice: the name is its tooltip. */
@@ -203,13 +224,17 @@ export class ExportPdfModal extends Modal {
     this.preset = opening.preset;
     this.pageScope = opening.scope;
     this.chosen = opening.chosen;
+    if (host.scopes === false && !opening.preset) {
+      this.pageScope = "custom";
+      this.chosen = allPages(host.pageCount);
+    }
     this.format = host.format ?? "pdf";
   }
 
   override onOpen(): void {
     this.closed = false;
     this.modalEl.addClass("goodobsidian-export-modal", "goodobsidian-dialog");
-    this.titleEl.setText(t("notebooks.export.title"));
+    this.titleEl.setText(this.host.title ?? t("notebooks.export.title"));
     this.renderChoose();
   }
 
@@ -226,7 +251,7 @@ export class ExportPdfModal extends Modal {
   private pages(): number[] {
     if (this.pageScope === "all") return allPages(this.host.pageCount);
     if (this.pageScope === "current") return [this.host.currentPage];
-    return this.chosen;
+    return this.host.ordered === false ? [...this.chosen].sort((a, b) => a - b) : this.chosen;
   }
 
   // --- Choose pages ----------------------------------------------------------
@@ -238,7 +263,7 @@ export class ExportPdfModal extends Modal {
     this.scopeButtons.clear();
     const { pageCount, currentPage } = this.host;
 
-    if (pageCount > 1 && !this.preset) {
+    if (pageCount > 1 && !this.preset && this.host.scopes !== false) {
       const seg = contentEl.createDiv({ cls: "goodobsidian-segmented goodobsidian-export-scope" });
       const scopes: ReadonlyArray<{ id: ExportScope; label: string }> = [
         { id: "all", label: t("notebooks.export.scopeAll", { count: pageCount }) },
@@ -287,6 +312,7 @@ export class ExportPdfModal extends Modal {
     const summary = contentEl.createDiv({ cls: "goodobsidian-ask-note" });
     const status = contentEl.createDiv({ cls: "goodobsidian-ask-status" });
     const actions = contentEl.createDiv({ cls: "goodobsidian-ask-actions" });
+    const nameField = this.nameField(actions, () => sync(false));
     const formats = this.formatControl(actions, () => sync(false));
     const template = this.templateSwitch(actions);
     const tapes = this.tapesSwitch(actions);
@@ -373,13 +399,22 @@ export class ExportPdfModal extends Modal {
           exportSummary({
             pages,
             picked: this.pageScope === "custom",
-            target: this.host.targetFor(pages, this.format),
+            target: this.target(pages, nameField),
             format: this.format,
             folder: this.host.folder,
             noun: this.host.noun,
           }),
         );
       }
+      nameField?.toggleClass("is-hidden", this.format !== "pdf");
+      if (nameField && n > 0) {
+        // The free name these pages would take: the placeholder of an empty field.
+        const free = this.host.targetFor(pages, "pdf");
+        nameField.placeholder = free.kind === "file" ? free.name.replace(/\.pdf$/i, "") : "";
+      }
+      const target = n > 0 ? this.target(pages, nameField) : null;
+      const replaces = target?.kind === "file" && target.replaces === true;
+      go.setText(t(replaces ? "notebooks.export.replace" : "notebooks.export.go"));
       go.disabled = n === 0 || rangeError !== null || this.busy;
       this.keyboard.update();
     };
@@ -396,6 +431,7 @@ export class ExportPdfModal extends Modal {
       if (template) template.disabled = true;
       if (tapes) tapes.disabled = true;
       if (margins) margins.disabled = true;
+      if (nameField) nameField.disabled = true;
       status.removeClass("is-error");
       try {
         const saved = await this.host.export(
@@ -410,7 +446,11 @@ export class ExportPdfModal extends Modal {
             );
           },
           () => this.cancelled,
+          this.typed(nameField),
         );
+        if (this.format === "pdf" && nameField && saved.paths.length === 1) {
+          this.host.setPdfName?.(nameField.value, saved.paths[0]);
+        }
         if (this.closed) return;
         this.renderDone(saved);
       } catch (error) {
@@ -424,6 +464,7 @@ export class ExportPdfModal extends Modal {
         if (template) template.disabled = false;
         if (tapes) tapes.disabled = false;
         if (margins) margins.disabled = false;
+        if (nameField) nameField.disabled = false;
         sync(false);
       }
     };
@@ -431,11 +472,46 @@ export class ExportPdfModal extends Modal {
     sync(true);
   }
 
+  /** The name field's text while PDF is picked; nothing for pictures. */
+  private typed(field: HTMLInputElement | null): string | undefined {
+    return field && this.format === "pdf" ? field.value : undefined;
+  }
+
+  private target(pages: readonly number[], field: HTMLInputElement | null): ExportTarget {
+    return this.host.targetFor(pages, this.format, this.typed(field));
+  }
+
+  /**
+   * The PDF's name (FineNotes#318), when the host remembers one: empty, the
+   * export takes the free name shown as the placeholder (kept current by
+   * `sync`); a typed name may replace the file this notebook's export wrote
+   * under it (the button then says so). `changed` runs on every keystroke.
+   */
+  private nameField(parent: HTMLElement, changed: () => void): HTMLInputElement | null {
+    if (this.host.pdfName === undefined || this.host.formats === false) return null;
+    const field = parent.createEl("input", {
+      cls: "goodobsidian-export-name",
+      type: "text",
+      attr: {
+        "aria-label": t("notebooks.export.nameLabel"),
+        autocomplete: "off",
+        spellcheck: "false",
+        enterkeyhint: "done",
+      },
+    });
+    field.value = this.host.pdfName;
+    field.addEventListener("input", changed);
+    onEnterKey(field, () => field.blur());
+    this.keyboard.watch(field, field);
+    return field;
+  }
+
   /**
    * PDF / PNG / JPG, at the start of the actions: one PDF, or a picture of
    * each page. `changed` runs after a pick, for the summary to follow.
    */
   private formatControl(parent: HTMLElement, changed: () => void): HTMLButtonElement[] {
+    if (this.host.formats === false) return [];
     const seg = parent.createDiv({
       cls: "goodobsidian-segmented goodobsidian-export-format",
       attr: { role: "group", "aria-label": t("notebooks.export.format") },
@@ -666,6 +742,7 @@ class PageGrid {
     only?: readonly number[],
   ) {
     this.el = parent.createDiv({ cls: "goodobsidian-export-grid" });
+    this.el.toggleClass("is-unordered", host.ordered === false);
     this.el.setAttribute("aria-label", t("notebooks.export.pages"));
     if (onTap) {
       this.el.setAttribute("role", "listbox");
@@ -730,6 +807,8 @@ class PageGrid {
    */
   setSelection(order: readonly number[], choosing: boolean): void {
     this.el.toggleClass("is-choosing", choosing);
+    // Pages that export in their own order are ticked, not numbered.
+    const numbered = choosing && this.host.ordered !== false;
     const place = new Map(order.map((page, i) => [page, i + 1]));
     this.tiles.forEach((tile) => {
       const index = tile.page;
@@ -739,12 +818,12 @@ class PageGrid {
       frame?.setAttribute("aria-selected", String(at !== undefined));
       frame?.setAttribute(
         "aria-label",
-        at !== undefined && choosing
+        at !== undefined && numbered
           ? t("notebooks.export.pageAs", { page: index + 1, at })
           : t("notebooks.export.page", { page: index + 1 }),
       );
       const label = tile.root.querySelector(".goodobsidian-export-order");
-      if (label) label.textContent = at !== undefined && choosing ? String(at) : "";
+      if (label) label.textContent = at !== undefined && numbered ? String(at) : "";
     });
   }
 

@@ -382,6 +382,17 @@ function regionsOf(
   return [...plain, ...backdrops];
 }
 
+/** Whether `r` covers the page to within `tuning.designEdge` of each side's length on every side. */
+export function fillsPage(
+  r: { x0: number; y0: number; x1: number; y1: number },
+  page: { width: number; height: number },
+  tuning: OcrTuning = OCR_TUNING,
+): boolean {
+  const dx = page.width * tuning.designEdge;
+  const dy = page.height * tuning.designEdge;
+  return r.x0 <= dx && r.y0 <= dy && r.x1 >= page.width - dx && r.y1 >= page.height - dy;
+}
+
 /** What a page is, and what is to be read of it. */
 export interface PagePlan {
   condition: PageCondition;
@@ -403,6 +414,12 @@ export interface PagePlan {
  * are not known (then a page is `TEXT_ONLY`, or, if sparse, `SCANNED`: the
  * way pages were read before pictures were looked at).
  *
+ * `spread` is how far down the page its own text runs (`textSpread`): on a
+ * page whose text runs down most of it, a picture filling the page edge to
+ * edge is the page's design (coloured boxes, a border, a scan under its own
+ * text layer) and is not read. A picture placed on a slide (a screenshot, a
+ * plot) does not fill it, and is read as before.
+ *
  * `BLANK` is never returned: only a raster can tell (see {@link settledCondition}).
  */
 export function classifyPage(
@@ -410,6 +427,7 @@ export function classifyPage(
   scan: FigureScan | null,
   page: { width: number; height: number },
   tuning: OcrTuning = OCR_TUNING,
+  spread = 0,
 ): PagePlan {
   const whole: Region[] = [{ x0: 0, y0: 0, x1: page.width, y1: page.height, dpi: null }];
   if (!scan) {
@@ -417,7 +435,10 @@ export function classifyPage(
       ? { condition: "SCANNED", regions: whole, checkRest: false, known: false }
       : { condition: "TEXT_ONLY", regions: [], checkRest: false, known: false };
   }
-  const regions = regionsOf(scan.figures, tuning, page);
+  const all = regionsOf(scan.figures, tuning, page);
+  const design = (r: Region): boolean =>
+    !sparse && spread >= tuning.designSpread && fillsPage(r, page, tuning);
+  const regions = all.filter((r) => !r.backdrop || !design(r));
   if (!sparse) {
     return regions.length > 0
       ? { condition: "TEXT_WITH_FIGURES", regions, checkRest: false, known: true }

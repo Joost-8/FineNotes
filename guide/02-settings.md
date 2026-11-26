@@ -30,6 +30,7 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 - **What:** Hides Obsidian's title bar, status bar, ribbon and sidebars so FineNotes looks like an app of its own; the tabs stay. While it is on, the buttons under it (or the ⌄ beside Simple look on Home's folder rail) bring back parts one by one: Left sidebar, Right sidebar, Ribbon, Status bar (all off by default; a sidebar brought back starts closed, behind its own button, for other plugins' panels such as a calendar or a timer). With the left sidebar back, Home's folder rail steps aside. Turn the look off to bring everything back.
 - **Where:** Settings › General › Simple look, and the buttons under it. Also Home › folder rail › ⌄ beside Simple look, Notebook settings (gear), the Welcome, and the command Simple look: hide or show….
 - **Words:** simple look, easy mode, hide obsidian, clean, distraction free, focus, sidebars, right sidebar, other plugins, calendar, pomodoro, ribbon, status bar, title bar, app look, full app
+- **Seen as:** left panel disappears, left sidebar gone, side panels disappear, update kills the side panels, sidebars missing after update, panels hidden, cannot open settings, ribbon gone, status bar missing, menus disappeared, file explorer gone
 - **Settings:** `simpleLook`, `simpleLookShow`
 - **Commands:** `toggle-simple-look`
 - **Tip:** `simpleLook`
@@ -40,6 +41,7 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 - **What:** After you do something the slow way a few times, FineNotes names the faster way once. Turn off to stop these hints.
 - **Where:** Settings › General › Hints for faster ways
 - **Words:** hints, nudges, popups, suggestions, hint, stop hints, annoying
+- **Seen as:** popups keep appearing, annoying messages, hints will not go away
 - **Settings:** `gestureHints`
 
 ### Tool, width and colour a notebook opens with
@@ -66,6 +68,7 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 - **Where:** Settings › Writing › Two-finger double-tap to undo
 - **Notes:** Does nothing while the notebook is read-only.
 - **Words:** two finger tap, double tap undo, three finger redo, finger undo, gesture undo
+- **Seen as:** two finger double tap does not undo, accidental undo
 - **Settings:** `fingerTapUndo`
 - **Tip:** `undo`
 
@@ -84,6 +87,7 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 - **What:** Off (default, as in Goodnotes): every new text box fits its text as you type. On: with the Text tool, drag to draw a box's size; a tap still makes a box.
 - **Where:** Settings › Writing › Drag to size text boxes
 - **Words:** text box width, drag text box, size text box, resize text box, fixed width text
+- **Seen as:** text box will not resize, cannot make a text box bigger
 - **Settings:** `textDragSize`
 - **Tip:** `textDragSize`
 
@@ -94,6 +98,7 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 - **Where:** Settings › Writing › Stylus side button
 - **Notes:** Apple Pencil has no side button, so the click choice is hidden on iPad and iPhone. Holding the button while writing may not work on Android tablets; Erase, also hovering does.
 - **Words:** side button, barrel button, stylus button, pen button, wacom, surface pen, samsung s pen, eraser button
+- **Seen as:** side button does not erase, S Pen button not working, barrel button does nothing
 - **Settings:** `barrelButton`, `stylusButtonClick`
 
 ### Pressure-sensitive pens
@@ -102,6 +107,7 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 - **What:** Off by default. On: the fountain pen widens as you press and the brush pen swells and tapers more; the ball pen stays even. Writing can feel a little less smooth with it on.
 - **Where:** Settings › Writing › Pressure-sensitive pens
 - **Words:** pressure, pressure sensitivity, thickness, line width varies, fountain pen pressure, brush pressure
+- **Seen as:** lines all the same thickness, no pressure, pressure not working, strokes too thick
 - **Settings:** `pressureWidth`
 - **Tip:** `pressure`
 
@@ -121,6 +127,7 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 - **Where:** Settings › Writing › Cursor over the page
 - **Notes:** Desktop only: there is no pointer on a tablet.
 - **Words:** cursor, pointer, mouse pointer, crosshair, ink dot
+- **Seen as:** cursor not showing, arrow instead of pen cursor, no dot under the pen
 - **Settings:** `penCursor`
 
 ### Custom colours in the pen's colour row
@@ -199,7 +206,7 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 ### Underline words it may have misread (experimental)
 
 - **Id:** `settingUnderlineMisread`
-- **What:** Experimental, off by default. A dotted underline marks words Grape is unsure of; tap one with a finger to correct, confirm or ignore it, and your answers help it learn.
+- **What:** Experimental, off by default. A dotted underline marks words Grape is unsure of; tap one with a finger to correct it, confirm it, fix your own spelling (Should be …) or ignore it. Your answers help it learn; a spelling fix changes the text, while Grape learns what you really wrote. Pages in another language are checked against that language's pack (French, Spanish and Italian), or not underlined.
 - **Where:** Settings › Reading and voice › Underline words it may have misread
 - **Notes:** Shown only while Read handwriting with is not Off.
 - **Words:** underline, misread, correct reading, wrong word, spell check handwriting, correction
@@ -238,9 +245,9 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 ### Models on this device (download or remove)
 
 - **Id:** `settingModels`
-- **What:** The models that run on the device: Voice (Whisper, for transcribing recordings), Handwriting (Grape), your own handwriting model, and Scanned pages (reading printed PDF pages). Each shows its state with Download, or ⋯ to re-download or remove it. Nothing they read or hear leaves the device.
+- **What:** The models that run on the device: Voice (Whisper, for transcribing recordings), Handwriting (Grape), Grape's language packs once a page in that language was read (Grape in Nederlands, Deutsch, …), your own handwriting model, and Scanned pages (reading printed PDF pages). Each shows its state with Download, or ⋯ to re-download or remove it. Nothing they read or hear leaves the device.
 - **Where:** Settings › Reading and voice › Models on this device
-- **Words:** download model, models, whisper, voice model, grape download, remove model, storage, disk space, ocr model
+- **Words:** download model, models, whisper, voice model, grape download, remove model, storage, disk space, ocr model, language pack, dutch, german, french, spanish, portuguese, italian
 
 ### Voice model size and spoken language
 
@@ -333,6 +340,7 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 - **What:** Prints the raw pen and touch events over the page. Turn it on when reporting strokes that go missing or break.
 - **Where:** Settings › Troubleshooting › Input debug overlay, or the command Show or hide the input debug overlay.
 - **Words:** debug, missing strokes, strokes disappear, broken lines, troubleshooting, lag, input problems
+- **Seen as:** lag, laggy, slow, choppy, stutter, delay, strokes missing, ink appears late
 - **Settings:** `debugHud`
 - **Commands:** `toggle-input-debug-overlay`
 
@@ -343,3 +351,4 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 - **Where:** iPad Settings › Apple Pencil › Scribble. FineNotes' settings show this as a note on the iPad until dismissed.
 - **Notes:** iPad only.
 - **Words:** scribble, missing strokes, strokes missing ipad, fast strokes lost, apple scribble, handwriting to text ipad
+- **Seen as:** strokes missing, pen skips, strokes disappear, letters dropped, ink cut short, handwriting turns into text

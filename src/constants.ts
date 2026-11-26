@@ -9,6 +9,9 @@
 /** The view type id of the notebook view; saved in workspace layouts. */
 export const VIEW_TYPE_INK = "goodobsidian-view";
 
+/** The view type id of the text note view (`Title.note.md`); saved in workspace layouts. */
+export const VIEW_TYPE_NOTE = "finenotes-note";
+
 /** The view type id of the notebook library; saved in workspace layouts. */
 export const VIEW_TYPE_LIBRARY = "finenotes-library";
 

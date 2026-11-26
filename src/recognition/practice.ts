@@ -238,8 +238,24 @@ export function isSymbolSet(set: number | null | undefined): boolean {
   return set === SYMBOL_SET;
 }
 
-/** The labels a sheet asks for: a text set's lines, or the symbol sheet's symbols. */
+/**
+ * The set number of drawn sheets (practice-draw.ts): every sheet has its own
+ * lines, picked from a pool for what its writer has not written yet. Sets 1
+ * to 3 are the fixed sheets from before; they are still read, never made.
+ */
+export const DRAWN_SET = 200;
+
+/** Whether `set` is a drawn sheet. */
+export function isDrawnSet(set: number | null | undefined): boolean {
+  return set === DRAWN_SET;
+}
+
+/**
+ * The labels a sheet asks for: a text set's lines, or the symbol sheet's
+ * symbols. A drawn sheet's are its own printed prompts, so none here.
+ */
 export function practicePrompts(set: number): readonly string[] {
+  if (isDrawnSet(set)) return [];
   if (isSymbolSet(set)) return SYMBOL_LINES.map((line) => line.symbol);
   return PRACTICE_SETS[Math.min(PRACTICE_SETS.length, Math.max(1, Math.round(set))) - 1];
 }
@@ -321,8 +337,9 @@ const SYMBOL_COVER: readonly { heading?: string; text: string }[] = [
 ];
 
 /** The cover: a title, the set, and what to do, printed on plain paper. */
-function coverPage(set: number, geometry: PageGeometry): Page {
+function coverPage(set: number, geometry: PageGeometry, sheet?: number): Page {
   const symbols = isSymbolSet(set);
+  const drawn = isDrawnSet(set);
   const printed: PrintedText[] = [];
   const width = geometry.width - 2 * LEFT;
   // Below where the floating tool pill sits at fit zoom, and large enough
@@ -342,7 +359,9 @@ function coverPage(set: number, geometry: PageGeometry): Page {
     y,
     text: symbols
       ? "Digits, operators and signs · teaches FineNotes to read your maths"
-      : `Set ${set} of ${PRACTICE_SETS.length} · teaches FineNotes to read your handwriting`,
+      : drawn
+        ? `Sheet ${sheet ?? 1} · new lines on every sheet · teaches FineNotes to read your handwriting`
+        : `Set ${set} of ${PRACTICE_SETS.length} · teaches FineNotes to read your handwriting`,
     size: 24,
     color: PROMPT_COLOR,
   });
@@ -431,6 +450,58 @@ export function buildPracticeFile(
 }
 
 /**
+ * A drawn sheet: the cover, then pages of ruled-wide paper laid out as a
+ * text set's, with `lines` (practice-draw.ts `drawSheet`). A prompt's id is
+ * `practice-200-<line id>` ("practice-200-p12"), so the file says which pool
+ * line each prompt is. `sheet` is the writer's sheet number, for the cover.
+ */
+export function buildDrawnFile(
+  geometry: PageGeometry,
+  lines: readonly { id: string; text: string }[],
+  draw: { pool: number; seed: number },
+  sheet: number,
+): InkDocument {
+  const pages: Page[] = [coverPage(DRAWN_SET, geometry, sheet)];
+  const count = Math.ceil(lines.length / PROMPTS_PER_PAGE);
+  for (let p = 0; p < count; p++) {
+    const printed: PrintedText[] = [
+      {
+        x: LEFT,
+        y: PITCH - ABOVE_RULE,
+        text: `Sheet ${sheet} · page ${p + 1} of ${count} · copy each grey line on the empty line below it`,
+        size: 15,
+        color: PROMPT_COLOR,
+      },
+    ];
+    lines.slice(p * PROMPTS_PER_PAGE, (p + 1) * PROMPTS_PER_PAGE).forEach((line, i) => {
+      printed.push({
+        x: LEFT,
+        y: PITCH * (3 + i * 3) - ABOVE_RULE,
+        text: line.text,
+        size: 22,
+        color: PROMPT_COLOR,
+        prompt: `${PRACTICE_PREFIX}${DRAWN_SET}-${line.id}`,
+      });
+    });
+    pages.push({
+      id: `p${p + 1}`,
+      kind: "ink",
+      geometry: { ...geometry },
+      backdrop: { kind: "ruled-wide", printed },
+      strokes: [],
+      images: [],
+      textBoxes: [],
+    });
+  }
+  return {
+    version: SCHEMA_VERSION,
+    view: { scrollY: 0, width: geometry.width, scale: 1 },
+    practice: { format: PRACTICE_FORMAT, set: DRAWN_SET, draw: { ...draw } },
+    pages,
+  };
+}
+
+/**
  * The symbol sheet: the cover, then pages of ruled-wide paper with a symbol
  * every two lines (printed large, its name small beside it), written on the
  * line below. The name is printed text without a prompt id, so it is never
@@ -512,6 +583,18 @@ export function practiceSetOfDoc(doc: InkDocument): number | null {
   if (texts.length === 0) return null;
   const set = PRACTICE_SETS.findIndex((lines) => texts.every((text) => lines.includes(text)));
   return set >= 0 ? set + 1 : null;
+}
+
+/** The texts a practice document asks to copy, printed or in text boxes. */
+export function askedTexts(doc: InkDocument): string[] {
+  const out: string[] = [];
+  for (const page of doc.pages) {
+    if (page.backdrop.kind !== "pdf") {
+      for (const line of page.backdrop.printed ?? []) if (line.prompt) out.push(line.text);
+    }
+    for (const box of page.textBoxes) if (box.id.startsWith(PRACTICE_PREFIX)) out.push(box.text);
+  }
+  return out;
 }
 
 /** How many lines a practice document asks to copy: its prompts, printed or in text boxes. */

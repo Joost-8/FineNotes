@@ -32,6 +32,10 @@ export class CalcGlow {
   private bounds: Bounds | null = null;
   /** The scale it was last drawn at, so a move alone does not redraw. */
   private drawnScale = 0;
+  /** Where it was last placed, so a change of what is asked can redraw it there. */
+  private placed: { left: number; top: number; scale: number } | null = null;
+  /** The doubt the card is asking about ("Which did you write?"), or -1. */
+  private asked = -1;
 
   /**
    * `onOpen` runs on a tap: with the index of the doubt tapped (its dotted
@@ -101,19 +105,35 @@ export class CalcGlow {
     }
     this.bounds = box;
     this.drawnScale = 0;
+    this.asked = -1;
     this.el.toggleClass("is-hidden", box === null);
   }
 
   hide(): void {
     this.spec = null;
     this.bounds = null;
+    this.asked = -1;
     this.el.addClass("is-hidden");
+  }
+
+  /**
+   * Mark doubt `doubt` as the one the card asks about: its ink gets a
+   * highlighter band in the glow's colour, so it is plain which character
+   * "Which did you write?" means. -1 takes the band away.
+   */
+  ask(doubt: number): void {
+    if (doubt === this.asked) return;
+    this.asked = doubt;
+    this.drawnScale = 0;
+    const at = this.placed;
+    if (at) this.place(at.left, at.top, at.scale);
   }
 
   /** Place it over the sum: `left`, `top` are the page's corner in paper px, `scale` paper px per page px. */
   place(left: number, top: number, scale: number): void {
     const b = this.bounds;
     if (!b || !this.spec) return;
+    this.placed = { left, top, scale };
     const pad = PAD;
     const x = (b.minX - pad) * scale;
     const y = (b.minY - pad) * scale;
@@ -143,6 +163,8 @@ export class CalcGlow {
     ctx.translate(PAD - b.minX, PAD - b.minY);
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
+    // While the card asks about one character, only that one is lit.
+    const lit = litFor(spec, this.asked);
     // The halo: only the blurred shadow of the strokes, so the ink under it
     // stays its own colour. The strokes are drawn far off the canvas and
     // their shadow shifted back (a shadow's offset is in device px).
@@ -153,18 +175,27 @@ export class CalcGlow {
     ctx.shadowBlur = 12 * scale * dpr;
     ctx.shadowOffsetX = SHADOW_SHIFT;
     ctx.translate(-SHADOW_SHIFT / (dpr * scale), 0);
-    for (const s of spec.strokes) {
+    for (const s of lit.strokes) {
       ctx.lineWidth = Math.max(5, s.size * 3);
       tracePath(ctx, s.pts);
       ctx.stroke();
     }
     ctx.restore();
+    // The doubt the card asks about, marked as with a highlighter.
+    const band = askedBand(spec, this.asked);
+    if (band) {
+      ctx.save();
+      ctx.fillStyle = accent;
+      ctx.globalAlpha = 0.35;
+      ctx.fillRect(band.minX, band.minY, band.maxX - band.minX, band.maxY - band.minY);
+      ctx.restore();
+    }
     // A dotted line under each group Grape was unsure of.
     ctx.save();
     ctx.strokeStyle = accent;
     ctx.lineWidth = 2.2;
     ctx.setLineDash([0.1, 5]);
-    for (const ids of spec.doubts) {
+    for (const ids of lit.doubts) {
       const group = spec.strokes.filter((s) => ids.includes(s.id));
       const gb = unionBounds(group);
       if (!gb) continue;
@@ -175,6 +206,40 @@ export class CalcGlow {
     }
     ctx.restore();
   }
+}
+
+/**
+ * What glows: every stroke and every doubt's dotted line, or while the card
+ * asks about doubt `asked`, that doubt's ink alone, so nothing else on the
+ * page competes with it.
+ */
+export function litFor(
+  spec: CalcGlowSpec,
+  asked: number,
+): { strokes: readonly Stroke[]; doubts: readonly (readonly string[])[] } {
+  const ids = asked >= 0 ? spec.doubts[asked] : undefined;
+  if (!ids) return { strokes: spec.strokes, doubts: spec.doubts };
+  return { strokes: spec.strokes.filter((s) => ids.includes(s.id)), doubts: [ids] };
+}
+
+/** Room around an asked character's ink for its highlighter band, page px. */
+const BAND_PAD = 4;
+
+/**
+ * The highlighter band for doubt `doubt` of `spec`, page px: its ink's
+ * bounds with a little room, or null when there is no such doubt.
+ */
+export function askedBand(spec: CalcGlowSpec, doubt: number): Bounds | null {
+  const ids = doubt >= 0 ? spec.doubts[doubt] : undefined;
+  if (!ids) return null;
+  const box = unionBounds(spec.strokes.filter((s) => ids.includes(s.id)));
+  if (!box) return null;
+  return {
+    minX: box.minX - BAND_PAD,
+    minY: box.minY - BAND_PAD,
+    maxX: box.maxX + BAND_PAD,
+    maxY: box.maxY + BAND_PAD,
+  };
 }
 
 function tracePath(ctx: CanvasRenderingContext2D, pts: readonly number[]): void {

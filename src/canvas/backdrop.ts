@@ -85,6 +85,13 @@ export interface PaperTheme {
   night?: boolean;
   /** Dark pages only: PDF pages are drawn as they are, not inverted (dark slides). */
   keepPdf?: boolean;
+  /**
+   * Transparent paper (a "Handwrite here" block, `paperColor: "transparent"`)
+   * is left unfilled, so the note shows through: only where the block is
+   * shown in its note. Everywhere else (the notebook view, Home, covers,
+   * thumbnails, export) such a page is drawn on this theme's own paper.
+   */
+  seeThrough?: boolean;
 }
 
 /** The default: real paper-white, whatever the Obsidian theme is doing. */
@@ -205,7 +212,12 @@ export interface PageLook {
  * and so is a PDF page when the theme keeps PDFs ({@link PaperTheme.keepPdf}).
  */
 export function pageLook(backdrop: Backdrop, theme: PaperTheme): PageLook {
-  const own = backdrop.kind !== "pdf" ? backdrop.paperColor : undefined;
+  const stored = backdrop.kind !== "pdf" ? backdrop.paperColor : undefined;
+  if (stored === "transparent" && theme.seeThrough) {
+    return { paper: "transparent", night: theme.night === true, theme };
+  }
+  // Transparent paper outside its note: the theme's own paper.
+  const own = stored === "transparent" ? undefined : stored;
   if (!theme.night) return { paper: own ?? theme.paper, night: false, theme };
   if (backdrop.kind === "pdf") {
     return theme.keepPdf
@@ -299,8 +311,11 @@ export function fillPaper(
   theme: PaperTheme,
   paperColor?: string,
 ): void {
+  let fill = paperColor ?? theme.paper;
+  if (fill === "transparent" && !theme.seeThrough) fill = theme.paper;
+  if (fill === "transparent") return;
   ctx.save();
-  ctx.fillStyle = paperColor ?? theme.paper;
+  ctx.fillStyle = fill;
   ctx.fillRect(0, 0, geometry.width, geometry.height);
   ctx.restore();
 }

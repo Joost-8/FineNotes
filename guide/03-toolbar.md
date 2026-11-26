@@ -259,6 +259,7 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 - **What:** Three size presets drawn as eraser footprints; the ⌄ opens a slider with preview and a reset to default sizes. A preset keeps the size the slider gave it.
 - **Where:** Toolbar › Eraser › pill › size buttons / ⌄ (Eraser size)
 - **Words:** eraser size, big eraser, small eraser, eraser width
+- **Seen as:** eraser size does not stay, eraser size resets, custom eraser size lost
 - **Settings:** `eraserSize`, `eraserPresets`
 
 ### What the eraser erases (highlighter only / pen only)
@@ -458,6 +459,7 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 - **Where:** Toolbar › More tools › Stylus only (the button shows Stylus only: on/off).
 - **Notes:** (meant for touch devices)
 - **Words:** stylus only, palm rejection, pencil only, ignore fingers, hand on screen, ignore touch, palm, only pencil, disable touch, palm makes marks, stray marks
+- **Seen as:** finger draws lines, finger writes instead of scrolling, cannot draw with finger, finger does nothing
 - **Settings:** `onlyStylusMode`
 - **Commands:** `toggle-only-stylus-mode`
 - **Tip:** `stylusOnly`

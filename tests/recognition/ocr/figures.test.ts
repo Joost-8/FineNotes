@@ -5,6 +5,7 @@ import {
   type OpCodes,
   type PageImage,
   classifyPage,
+  fillsPage,
   collectImages,
   gfxOpsFrom,
   isFigureSized,
@@ -401,6 +402,43 @@ describe("a picture behind the page's text", () => {
     expect(back).toHaveLength(1);
     expect(box(back[0])).toEqual([0, 0, 612, 866]);
     expect(plain.map(box)).toEqual([[94, 410, 306, 572]]);
+  });
+
+  it("is the page's design, not read, when the page's own text runs down most of it", () => {
+    // A textbook page: a full-page image of boxes and a border, real text over it.
+    const alone = classifyPage(false, scanFigures(bg, VIEW, PAGE), PAGE, OCR_TUNING, 0.75);
+    expect(alone).toMatchObject({ condition: "TEXT_ONLY", regions: [], known: true });
+    // A real figure on such a page is still read, the design behind it not.
+    const both = classifyPage(
+      false,
+      scanFigures([...bg, ...figure], VIEW, PAGE),
+      PAGE,
+      OCR_TUNING,
+      0.75,
+    );
+    expect(both.condition).toBe("TEXT_WITH_FIGURES");
+    expect(both.regions.map(box)).toEqual([[94, 410, 306, 572]]);
+    // A screenshot behind as much text that does not reach the top: still read.
+    const shot = image(0, 0, 612, 760);
+    const placed = classifyPage(false, scanFigures(shot, VIEW, PAGE), PAGE, OCR_TUNING, 0.75);
+    expect(placed.regions.filter((r) => r.backdrop)).toHaveLength(1);
+    // A slide's title over a full-slide screenshot: the screenshot is still read.
+    const slide = classifyPage(false, scanFigures(bg, VIEW, PAGE), PAGE, OCR_TUNING, 1 / 12);
+    expect(slide.regions.filter((r) => r.backdrop)).toHaveLength(1);
+    expect(OCR_TUNING.designSpread).toBe(0.5);
+  });
+
+  it("fills the page to within 1 % of each side, and not past that", () => {
+    const page = { width: 600, height: 800 };
+    expect(fillsPage({ x0: 0.3, y0: 0, x1: 600, y1: 799.9 }, page)).toBe(true);
+    expect(fillsPage({ x0: 5.9, y0: 7.9, x1: 594.1, y1: 792.1 }, page)).toBe(true);
+    expect(fillsPage({ x0: 6.1, y0: 0, x1: 600, y1: 800 }, page)).toBe(false);
+    expect(fillsPage({ x0: 0, y0: 0, x1: 600, y1: 791 }, page)).toBe(false);
+  });
+
+  it("a sparse page with a picture behind it is a scan however far its few words run", () => {
+    const plan = classifyPage(true, scanFigures(bg, VIEW, PAGE), PAGE, OCR_TUNING, 1);
+    expect(plan.condition).toBe("SCANNED");
   });
 
   it("a sparse page with such a picture is still a scan", () => {

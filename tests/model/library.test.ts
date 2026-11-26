@@ -16,6 +16,7 @@ import {
   entryFromText,
   extensionLabel,
   fileEntry,
+  onShelf,
   fileIcon,
   fileKind,
   folderOf,
@@ -143,6 +144,22 @@ describe("homePreviewPages", () => {
 });
 
 describe("fileEntry", () => {
+  it("names a text note without its suffix", () => {
+    expect(fileEntry("Trips/Dolomites.note.md", 1)).toMatchObject({
+      kind: "note",
+      title: "Dolomites",
+      textNote: true,
+    });
+    expect(fileEntry("Uni/N0 Number theory.md", 1).textNote).toBeUndefined();
+  });
+
+  it("shelves notebooks and text notes together, not the vault's other files", () => {
+    expect(onShelf(fileEntry("Trips/Dolomites.note.md", 1))).toBe(true);
+    expect(onShelf(placeholderEntry("Uni/Algebra.notebook.md", 1))).toBe(true);
+    expect(onShelf(fileEntry("Uni/N0 Number theory.md", 1))).toBe(false);
+    expect(onShelf(fileEntry("Uni/Lecture 1.pdf", 1))).toBe(false);
+  });
+
   it("names a file without its extension and says what kind it is", () => {
     expect(fileEntry("Uni/N0 Number theory.md", 1)).toMatchObject({
       kind: "note",

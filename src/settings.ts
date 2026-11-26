@@ -59,13 +59,20 @@ import {
 } from "./model/simple-mode";
 import { SHORTCUT_NEW_NOTEBOOK_URL, SHORTCUT_PDF_URL } from "./model/inbox";
 import {
+  HANDWRITE_BLOCKS,
+  type HandwriteBlocks,
+  handwriteBlocksOf,
+} from "./model/handwrite-blocks";
+import { EMBED_CODES, drawEmbedPictures } from "./view/embed-pictures";
+import { InlineNotebookPickerModal } from "./view/handwrite-modals";
+import {
   ASSETS_FOLDER,
   DEFAULT_STICKER_FOLDER,
   DEFAULT_TEMPLATE_FOLDER,
   chosenFolder,
 } from "./model/vault-folders";
 import type GoodObsidianPlugin from "./main";
-import { normalizeFolder } from "./model/new-notebook";
+import { normalizeFolder, stripInkSuffix } from "./model/new-notebook";
 import {
   type ImageVendorChoice,
   aiKeyFolded,
@@ -273,11 +280,33 @@ function stylusClickNames(): Record<StylusClickAction, string> {
 }
 
 /** The sections, as the list names them. */
+/** What each embed form shows, under its picture. */
+const EMBED_MEANINGS = {
+  whole: "settings.notes.meaningWhole",
+  page: "settings.notes.meaningPage",
+  region: "settings.notes.meaningRegion",
+  sketch: "settings.notes.meaningSketch",
+  markdown: "settings.notes.meaningMarkdown",
+} as const;
+
+/** The Notes section's state in the list: where sketches go. */
+function notesStatus(mode: HandwriteBlocks): string {
+  switch (mode) {
+    case "note":
+      return t("settings.notes.statusNote");
+    case "ask":
+      return t("settings.notes.statusAsk");
+    case "one":
+      return t("settings.notes.statusOne");
+  }
+}
+
 function sectionNames(): Record<SettingsSection, string> {
   return {
     general: t("settings.section.general"),
     writing: t("settings.writing.heading"),
     pages: t("settings.section.pages"),
+    notes: t("settings.section.notes"),
     shortcuts: t("settings.shortcuts.heading"),
     reading: t("settings.section.reading"),
     ai: t("settings.section.ai"),
@@ -476,6 +505,7 @@ const SECTION_ICONS: Record<SettingsSection, string> = {
   general: "palette",
   writing: "pencil",
   pages: "file-text",
+  notes: "notebook-pen",
   shortcuts: "keyboard",
   reading: "scan-text",
   ai: "sparkles",
@@ -860,6 +890,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             }),
           },
         ];
+      case "notes":
+        return [{ text: notesStatus(settings.handwriteBlocks) }];
       case "shortcuts": {
         const table = this.plugin.shortcuts.table;
         if (table.conflicts.length > 0)
@@ -929,6 +961,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       ...this.generalGroups(),
       ...this.writingGroups(),
       ...this.pagesGroups(),
+      ...this.notesGroups(),
       ...this.shortcutsGroups(),
       ...this.readingGroups(),
       ...this.aiGroups(),
@@ -1701,6 +1734,75 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   /** Whether this device's keys are named with ⌘ ⌥ ⇧ or with Ctrl, Alt, Shift. */
   private get apple(): boolean {
     return Platform.isMacOS || Platform.isIosApp;
+  }
+
+  /**
+   * Notebooks shown inside Markdown notes: where a sketch added with
+   * Handwrite here is kept, and how to embed a notebook, a page, a region or
+   * a sketch (discussion #167, PR #312).
+   */
+  private notesGroups(): SettingDefinitionItem[] {
+    return this.sectionGroups("notes", [
+      [
+        "embeds",
+        t("settings.notes.embedsHeading"),
+        [
+          this.tile(
+            drawnRow(
+              t("settings.handwriteBlocks.name"),
+              t("settings.handwriteBlocks.line"),
+              (s) => this.drawHandwriteBlocks(s),
+              ["handwrite here", "inline handwriting", "markdown", "note", "sketch", "block"],
+            ),
+            "pen-line",
+          ),
+          {
+            ...this.tile(
+              drawnRow(
+                t("settings.handwriteNotebook.name"),
+                t("settings.handwriteNotebook.line"),
+                (s) => this.drawHandwriteNotebook(s),
+                ["handwrite here", "inline handwriting", "notebook", "sketch"],
+              ),
+              "book",
+            ),
+            // Only while "One notebook for everything" is chosen.
+            visible: () => this.plugin.settings.handwriteBlocks === "one",
+          },
+          this.tile(
+            drawnRow(
+              t("settings.notes.embedName"),
+              t("settings.notes.embedLine"),
+              (s) => this.drawEmbedHelp(s),
+              ["embed", "![[", "page embed", "region", "wikilink", "reading view", "transclude"],
+            ),
+            "info",
+          ),
+        ],
+      ],
+    ]);
+  }
+
+  /** The ⓘ of "How to embed a notebook": the link forms, and where Handwrite here is. */
+  private drawEmbedHelp(setting: Setting): void {
+    // Open from the start: the section has the room, and this is its reference.
+    const panel = setting.descEl.createDiv({ cls: "goodobsidian-embed-help" });
+    // A picture of each way to embed, its link as typed and what it shows (embed-pictures.ts).
+    drawEmbedPictures(panel, (form) => ({
+      code: EMBED_CODES[form],
+      meaning: t(EMBED_MEANINGS[form]),
+    }));
+    panel.createDiv({ text: t("settings.notes.syntaxWhere") });
+    setting.addExtraButton((button) => {
+      button
+        .setIcon("info")
+        .setTooltip(t("settings.notes.embedHelp"))
+        .onClick(() => {
+          panel.toggleClass("is-hidden", !panel.hasClass("is-hidden"));
+          button.extraSettingsEl.toggleClass("is-active", !panel.hasClass("is-hidden"));
+        });
+      button.extraSettingsEl.addClass("is-active");
+    });
   }
 
   /** The paper, where new notebooks go, and what Obsidian's file list shows. */
@@ -2557,7 +2659,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         const link = (
           label: string,
           key: string,
-          url: string,
+          url: string | (() => void),
           icon?: string,
           iconOnly = false,
         ): void => {
@@ -2567,10 +2669,13 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
           if (icon) setIcon(button.createSpan({ cls: "goodobsidian-footer-icon" }), icon);
           if (iconOnly) button.setAttribute("aria-label", label);
           else button.createSpan({ text: label });
-          button.addEventListener("click", () => window.open(url));
+          button.addEventListener("click", () =>
+            typeof url === "string" ? window.open(url) : url(),
+          );
         };
         link(t("settings.feedback.ideas"), "ideas", COMMUNITY_LINKS.discussions, "lightbulb");
-        link(t("settings.feedback.bug"), "report", COMMUNITY_LINKS.bugReport, "bug");
+        // Through Tips' search first: what is already explained, then GitHub's form.
+        link(t("settings.feedback.bug"), "report", () => this.plugin.openReport(), "bug");
         link(t("settings.feedback.support"), "support", COMMUNITY_LINKS.support, "heart", true);
         for (const { label, url } of COMMUNITY_LINKS.social) {
           link(label, label.toLowerCase().split(" ")[0] ?? "", url);
@@ -3080,6 +3185,43 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         void this.plugin.saveSettings();
       });
     });
+  }
+
+  /** Where Handwrite here keeps a new block: the same three as its first-use question. */
+  private drawHandwriteBlocks(setting: Setting): void {
+    setting.addDropdown((dropdown) => {
+      // The short names, as in the section list, so the dropdown keeps to its row.
+      for (const mode of HANDWRITE_BLOCKS) dropdown.addOption(mode, notesStatus(mode));
+      dropdown.setValue(this.plugin.settings.handwriteBlocks).onChange(async (value) => {
+        this.plugin.settings.handwriteBlocks = handwriteBlocksOf(value);
+        // Chosen here: the first-use question is answered.
+        this.plugin.settings.handwriteBlocksChosen = true;
+        await this.plugin.saveSettings();
+        this.refresh();
+      });
+    });
+  }
+
+  /** The notebook of "One notebook for everything", by its name; a tap picks another. */
+  private drawHandwriteNotebook(setting: Setting): void {
+    const path = this.plugin.settings.handwriteNotebook;
+    const file = path ? this.app.vault.getFileByPath(path) : null;
+    setting.addButton((button) =>
+      button
+        .setButtonText(
+          file ? stripInkSuffix(file.basename) : t("settings.handwriteNotebook.choose"),
+        )
+        .onClick(async () => {
+          const choice = await InlineNotebookPickerModal.pick(this.app, {
+            placeholder: t("notebooks.handwrite.pickFixedPlaceholder"),
+            currentNotebook: file,
+          });
+          if (choice?.kind !== "existing") return;
+          this.plugin.settings.handwriteNotebook = choice.file.path;
+          await this.plugin.saveSettings();
+          this.refresh();
+        }),
+    );
   }
 
   /** A key row's one line: where the key lives and where it goes. */

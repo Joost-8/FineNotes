@@ -31,7 +31,12 @@ npm run lint         # eslint, no warnings allowed
 npm run lint:review  # Obsidian's plugin-review rules
 npm run format:check # prettier
 npm run build        # production build
+npm run gates        # all that CI runs, in one go
 ```
+
+Run `npm run gates` before you open a pull request. It prints one line per
+step and stops at the first failure, with the end of that step's log.
+`npm run gates -- --only lint,test` runs just those steps.
 
 To try your build in a vault:
 
@@ -40,8 +45,10 @@ To try your build in a vault:
 2. Build: every build is then copied into that folder.
 3. Reload Obsidian.
 
-CI runs lint, the review lint, the type check, the tests and the build on every
-push. A pull request needs all of them green.
+CI runs the same steps as `npm run gates` on every push: the format check,
+lint, the review lint, the CSS lint, three merge checks (the coverage list, the
+size of the largest files, CSS class names), the language tables, the type
+check, the tests and the build. A pull request needs all of them green.
 
 ## Android
 

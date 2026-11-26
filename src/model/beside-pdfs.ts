@@ -20,6 +20,7 @@
  * Pure: no DOM, no Obsidian.
  */
 
+import { mintedId } from "./dot-ids";
 import { DEFAULT_PAGE_HEIGHT, DEFAULT_PAPER_WIDTH, SCHEMA_VERSION } from "../constants";
 import type { BesidePdf, BesideView, InkDocument, Page, PageGeometry, SlideRef } from "./document";
 
@@ -160,6 +161,9 @@ export function besideByPath(doc: InkDocument, path: string): BesidePdf | null {
 
 /** A tab id no tab of `doc` has: `b1`, `b2`, … */
 export function nextTabId(doc: InkDocument): string {
+  // A notebook kept as page files: this device's dot, with a dash (a tab id holds no dot).
+  const minted = mintedId(doc);
+  if (minted) return minted.replace(".", "-");
   let max = 0;
   for (const beside of doc.beside ?? []) {
     const m = /^b(\d+)$/.exec(beside.id);

@@ -43,7 +43,7 @@ import {
   notebookPaths,
   stripInkSuffix,
 } from "../model/new-notebook";
-import { buildInkFile } from "../model/serialize";
+import { devicePagesNotebookText } from "../model/device-pages-writer";
 import { downloadLabel, familiesIn } from "../model/font-catalogue";
 import { vaultFonts } from "./font-store";
 import { errorMessage } from "../util/errors";
@@ -417,7 +417,8 @@ export class ImportNotebookModal extends Modal {
       result.doc,
       result.pageText,
     );
-    const content = buildInkFile(body, result.doc);
+    // Made in one file per page per device (#274) from the start.
+    const content = devicePagesNotebookText(body, result.doc);
     return vault.create(notePath, content);
   }
 

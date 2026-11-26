@@ -26,6 +26,12 @@ import {
   isTruncatedLlmResponse,
 } from "./llm-request";
 import { type ChatImage, type ChatTurn, buildChatRequest, extractRefusal } from "./ai-chat";
+import {
+  type AiTranslateRequest,
+  type AiTranslation,
+  buildAiTranslatePrompt,
+  parseAiTranslation,
+} from "../translate/ai-translate";
 import { ASK_MAX_TOOL_ROUNDS, type AskToolCall, parseToolCall, toolStatus } from "./ask-tools";
 import { TOOL_DIALECTS, type ToolResult } from "./ask-tool-dialects";
 import { type AskUsage, addReplyUsage, emptyUsage } from "./ask-usage";
@@ -218,6 +224,25 @@ async function sendChatTo(
     text: cleanTranscription(extractLlmText(config.vendor, json)),
     cutOff: isTruncatedLlmResponse(config.vendor, json),
   };
+}
+
+// --- Translate -----------------------------------------------------------------------
+
+/**
+ * One text translated by the AI service (the Translate window's AI option):
+ * a one-question chat, no cache; the answer read as `parseAiTranslation`.
+ */
+export async function translateWithAi(
+  config: AiVendorConfig,
+  request: AiTranslateRequest,
+): Promise<AiTranslation> {
+  const { system, question } = buildAiTranslatePrompt(request);
+  const { json, text } = await sendChat(config, system, [{ role: "user", text: question }]);
+  const label = targetLabel(config);
+  const refusal = extractRefusal(config.vendor, json);
+  if (refusal) throw new Error(t("ai.client.refusal", { label, reason: refusal }));
+  if (!text) throw new Error(t("ai.client.noAnswer", { label }));
+  return parseAiTranslation(text);
 }
 
 // --- Transcribe page ----------------------------------------------------------------

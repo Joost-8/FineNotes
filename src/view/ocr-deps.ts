@@ -12,7 +12,7 @@ import { toHex } from "../downloads/model-manifest";
 import type { AssetStore } from "../downloads/model-store";
 import type { ModelRegistry } from "./model-downloads";
 import { OcrRasteriser } from "./ocr-raster";
-import type { ActiveOcrModel, ModelStoreLike, OcrDeps } from "./ocr-service";
+import type { ActiveOcrModel, ModelStoreLike, OcrDeps, OcrGuard } from "./ocr-service";
 
 /** The longest side of the copy of a page checked for ink, px. */
 const INK_EDGE = 256;
@@ -30,6 +30,8 @@ export interface ObsidianOcrHost {
   tier(): OcrTier;
   /** Whether this device is a phone or tablet: the largest model is not registered there. */
   mobile(): boolean;
+  /** This device's crash marks for OCR (ocr-service.ts), once the plugin has loaded them. */
+  guard(): OcrGuard | null;
 }
 
 /** What the service sees of the models: whichever one the setting chooses now. */
@@ -83,6 +85,7 @@ export function obsidianOcrDeps(host: ObsidianOcrHost): { deps: OcrDeps; store: 
   const deps: OcrDeps = {
     pluginDir: () => host.pluginDir(),
     enabled: () => host.enabled(),
+    guard: () => host.guard(),
     // Text inside pictures is read whenever reading is on.
     figures: () => true,
     store,

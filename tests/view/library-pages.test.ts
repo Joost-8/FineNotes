@@ -4,6 +4,7 @@ import { TFile, TFolder } from "./fake-obsidian";
 vi.mock("obsidian", () => import("./fake-obsidian"));
 
 const { NotebookPages, notebookStatOf } = await import("../../src/view/library-pages");
+const { rememberNotebookId } = await import("../../src/view/device-pages-files");
 const { blankPage, emptyDocument } = await import("../../src/model/document");
 const { buildInkFile, encodeDocumentWith, inkFileText } = await import("../../src/model/serialize");
 const { pageFileText } = await import("../../src/model/device-pages");
@@ -23,7 +24,7 @@ function fileAt(path: string, mtime: number, size: number): TFile {
  * A vault of `texts` by path. The notebook's frontmatter id is what the
  * metadata cache reports, and its page folder lists the files under it.
  */
-function vaultOf(texts: Map<string, string>, stamps = new Map<string, number>(), id = "n7k2q9ab") {
+function vaultOf(texts: Map<string, string>, stamps = new Map<string, number>()) {
   const files = new Map<string, TFile>();
   for (const [path, text] of texts) {
     files.set(path, fileAt(path, stamps.get(path) ?? 1, text.length));
@@ -39,10 +40,7 @@ function vaultOf(texts: Map<string, string>, stamps = new Map<string, number>(),
         read: (file: TFile) => Promise.resolve(texts.get(file.path) ?? ""),
         cachedRead: (file: TFile) => Promise.resolve(texts.get(file.path) ?? ""),
       },
-      metadataCache: {
-        getFileCache: (file: TFile) =>
-          file.path === NOTEBOOK ? { frontmatter: { "finenotes-id": id } } : null,
-      },
+      metadataCache: { getFileCache: () => null },
     },
   };
 }
@@ -58,9 +56,18 @@ function devicePagesNotebook(): Map<string, string> {
     rev: 1,
     strokes: [{ id: "a1.1", tool: "pen", color: "#1a1a1a", size: 3, pts: [1, 2, 128] }],
   };
-  const body = "---\nfinenotes-id: n7k2q9ab\n---\n# Physics";
+  const body = "# Physics";
   return new Map([
-    [NOTEBOOK, inkFileText(body, encodeDocumentWith(doc, ["device-pages"]))],
+    [
+      NOTEBOOK,
+      inkFileText(
+        body,
+        encodeDocumentWith(doc, ["device-pages"]).replace(
+          "+device-pages:",
+          "+device-pages=n7k2q9ab:",
+        ),
+      ),
+    ],
     [`${FOLDER}/p2.a1.md`, pageFileText(`v2:${deflateToBase64(JSON.stringify(page))}`)],
   ]);
 }
@@ -79,7 +86,7 @@ describe("Home reading a notebook kept as one file per page per device (#274)", 
     const doc = emptyDocument(1024);
     doc.pages.push(blankPage("p2"));
     const texts = new Map([
-      [NOTEBOOK, buildInkFile("---\nfinenotes-id: n7k2q9ab\n---\n", doc)],
+      [NOTEBOOK, buildInkFile("# Physics", doc)],
       [`${FOLDER}/Someone's note.md`, "Hello"],
     ]);
     const { app, files } = vaultOf(texts);
@@ -88,7 +95,7 @@ describe("Home reading a notebook kept as one file per page per device (#274)", 
     expect(entry.pages).toBe(2);
   });
 
-  it("sees a page file saved without the notebook file changing", () => {
+  it("sees a page file saved without the notebook file changing, once it has read it", async () => {
     const texts = devicePagesNotebook();
     const before = vaultOf(texts, new Map([[NOTEBOOK, 10]]));
     const after = vaultOf(
@@ -98,16 +105,16 @@ describe("Home reading a notebook kept as one file per page per device (#274)", 
         [`${FOLDER}/p2.a1.md`, 20],
       ]),
     );
+    // Before any read the id is unknown (it is in the file's label): the file's own stat.
+    const file = after.files.get(NOTEBOOK) as TFile;
+    rememberNotebookId(NOTEBOOK, null);
+    expect(notebookStatOf(after.app as never, file as never)).toBe(file.stat);
+    // Home reads it: from then on its page files count.
+    const pages = new NotebookPages(before.app as never, () => null as never);
+    await pages.readEntry(before.files.get(NOTEBOOK) as never, 5);
     const was = notebookStatOf(before.app as never, before.files.get(NOTEBOOK) as never);
-    const now = notebookStatOf(after.app as never, after.files.get(NOTEBOOK) as never);
+    const now = notebookStatOf(after.app as never, file as never);
     expect(was.mtime).toBe(10);
     expect(now.mtime).toBe(20);
-    // Another notebook's id, or none: the file's own stat.
-    const other = vaultOf(texts, new Map([[NOTEBOOK, 10]]), "q3x9");
-    const file = other.files.get(NOTEBOOK) as TFile;
-    expect(notebookStatOf(other.app as never, file as never)).toBe(file.stat);
-    const unsafe = vaultOf(texts, new Map([[NOTEBOOK, 10]]), "../x");
-    const same = unsafe.files.get(NOTEBOOK) as TFile;
-    expect(notebookStatOf(unsafe.app as never, same as never)).toBe(same.stat);
   });
 });

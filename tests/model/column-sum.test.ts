@@ -145,7 +145,7 @@ for (const h of [22, 40]) {
       const line = dash(right - h * 3, below, h * 3.2);
       const column = columnAbove([...strokes, line], ruleAtEnd([...strokes, line])!)!;
       expect(column.rows.map((r) => r.sign)).toEqual([1, -1, 1]);
-      expect(column.rows[1].signStroke).not.toBeNull();
+      expect(column.rows[1].signStrokes).toHaveLength(1);
       expect(column.rows[1].label).toHaveLength(5);
     });
 
@@ -301,7 +301,7 @@ describe("columnTotal", () => {
   const amountRow = (sign: 1 | -1 = 1) => ({
     amount: [digit(0, 0, 10)],
     sign,
-    signStroke: null,
+    signStrokes: [],
     label: [],
     bounds: { minX: 0, minY: 0, maxX: 1, maxY: 1 },
     rule: null,
@@ -309,7 +309,7 @@ describe("columnTotal", () => {
   const lineRow = (kind: "subtotal" | "total") => ({
     amount: [],
     sign: 1 as const,
-    signStroke: null,
+    signStrokes: [],
     label: [],
     bounds: { minX: 0, minY: 0, maxX: 1, maxY: 1 },
     rule: { kind, strokes: [], bounds: { minX: 0, minY: 0, maxX: 1, maxY: 1 } },

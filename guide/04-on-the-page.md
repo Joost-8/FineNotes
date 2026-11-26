@@ -13,6 +13,7 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 - **Where:** With the Pen or Highlighter (or the Shapes tool), draw the shape and keep the Pencil still for a moment. Switch: pen's options › Pen settings › Pen gestures › "Make shapes" ("When I hold the pen still" / "When I lift the pen, too"), plus "How curved a stroke may be and still snap".
 - **Notes:** (any pen, mouse or Pencil; not a finger unless Draw with finger is on)
 - **Words:** snap, shape, clean shape, straight line, perfect circle, draw and hold, auto shape, make shapes, tidy shape, square, triangle, star, heart, arc, pie, cloud, polygon, straight lines, draw a straight line, perfect shapes
+- **Seen as:** lines turn into shapes, shapes snap by themselves, snaps too fast, shape does not snap
 - **Settings:** `snapMode`, `snapCurvatureThreshold`, `drawAndHold`, `penAutoShape`
 - **Tip:** `hold`
 
@@ -22,6 +23,7 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 - **What:** With "When I lift the pen, too", a stroke that reads as a shape also snaps when the pen lifts, without holding still. The Shapes tool's "Auto-shape" button does the same for the Shapes tool.
 - **Where:** Pen settings › Pen gestures › Make shapes › "When I lift the pen, too". Shapes tool: "Auto-shape: draw any shape and it snaps clean".
 - **Words:** auto shape, snap on lift, shapes without holding, automatic shapes
+- **Seen as:** lines turn into shapes when I lift, shapes appear by themselves
 - **Settings:** `snapMode`
 
 ### Resize and turn a shape while still holding
@@ -167,6 +169,7 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 - **Where:** Automatic.
 - **Notes:** touch only
 - **Words:** palm, hand resting, accidental scroll, stray marks, wrist
+- **Seen as:** palm draws lines, hand leaves marks, stray marks, page moves when resting my hand
 - **Settings:** `onlyStylusMode`
 
 ### Stylus side button while writing
@@ -417,10 +420,10 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 ### Insert space between lines
 
 - **Id:** `insertSpace`
-- **What:** With the lasso on By line, small arrows sit in the margin of lined paper; drag one down to push the writing below down by whole lines (onto the next page, adding pages if needed), or up to close empty lines.
-- **Where:** Lasso › Lasso type "By line", then drag a margin arrow.
-- **Notes:** (lined paper only)
-- **Words:** insert space, make room, push down, add lines, remove empty lines
+- **What:** With the lasso on By line, small arrows sit in the margin of lined paper; drag one down to push the writing below down by whole lines (onto the next page, adding pages if needed), or up to close empty lines. On a board, or on paper with no lines (blank, dotted, squared, planners), press anywhere and drag down (or right) to push everything below (or right of) the pen, by whole dots or squares; drag back to close empty space. On a notebook page nothing is pushed off the page.
+- **Where:** Lasso › Lasso type "By line", then drag a margin arrow (on a board, drag anywhere).
+- **Notes:** (any paper but PDFs; lined paper from the margin)
+- **Words:** insert space, make room, push down, push right, add lines, remove empty lines, board
 - **Settings:** `lassoMode`
 - **Tip:** `insertSpace`
 

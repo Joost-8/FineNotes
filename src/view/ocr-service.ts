@@ -23,6 +23,12 @@
  *   never makes it be offered.
  * - **Testable.** Everything it runs on comes in as `OcrDeps` (ocr-deps.ts
  *   makes the real ones), so the tests fake the files, the worker and the clock.
+ * - **A crash is not repeated.** Before a page is read a mark is stored on
+ *   this device (`OcrDeps.guard`, reading-guard.ts); a mark still there at
+ *   the next start means Obsidian died reading that PDF, and that PDF is not
+ *   read on this device again until its bytes or FineNotes' version change.
+ *   Reading starts again whenever the notebook opens, so without this one
+ *   PDF too heavy for a device takes it down at every opening.
  * - **Failures are quiet.** A page that cannot be read is logged and left
  *   alone for a while; a notice is shown at most once per session.
  */
@@ -53,6 +59,7 @@ import {
 import { OcrQueue, type PageRef } from "../recognition/ocr/ocr-queue";
 import type { OcrLine, OcrPage, OcrTuning } from "../recognition/ocr/ocr-words";
 import type { OcrFiles } from "../recognition/ocr/protocol";
+import type { ReadingGuard } from "../recognition/reading-guard";
 import { errorMessage } from "../util/errors";
 
 /** Something that shows PDF pages and wants their OCR text (a notebook's text cache). */
@@ -198,7 +205,15 @@ export interface OcrDeps {
   /** Run `fn` after `ms`; returns the cancel. */
   later(fn: () => void, ms: number): () => void;
   sleep(ms: number): Promise<void>;
+  /** This device's crash marks for OCR; absent in tests that do not care. */
+  guard?(): OcrGuard | null;
 }
+
+/** What the service uses of a {@link ReadingGuard}. */
+export type OcrGuard = Pick<ReadingGuard, "skipped" | "begin" | "end">;
+
+/** The key of a PDF's crash mark: a crash takes the whole PDF off this device, not one page. */
+export const OCR_GUARD_KEY = "ocr";
 
 /** What the progress indicator shows. */
 export interface OcrProgress {
@@ -246,6 +261,8 @@ export class OcrService {
   /** Pages with text of their own that were left because the model was not here: read once it is. */
   private readonly waitingForModel = new Map<string, PageRef & { native: NativeInfo }>();
   private pumping = false;
+  /** Callers of `pause` not yet resumed (Neaten): nothing is read meanwhile. */
+  private paused = 0;
   private parked = false;
   private lastActivity = Number.NEGATIVE_INFINITY;
   private running: PageRef | null = null;
@@ -545,6 +562,24 @@ export class OcrService {
     this.pump();
   }
 
+  /**
+   * Another model needs the memory (Neaten's writer): the page being read
+   * finishes, the model is let go, and nothing is read or loaded until the
+   * returned function is called.
+   */
+  async pause(): Promise<() => void> {
+    this.paused++;
+    while (this.running) await this.deps.sleep(50);
+    this.releaseModel();
+    let resumed = false;
+    return () => {
+      if (resumed) return;
+      resumed = true;
+      this.paused = Math.max(0, this.paused - 1);
+      if (this.paused === 0) this.pump();
+    };
+  }
+
   /** The model's files are being removed or replaced. */
   releaseModel(): void {
     this.client?.dispose();
@@ -589,7 +624,7 @@ export class OcrService {
     try {
       for (;;) {
         if (!this.enabled || this.owners.size === 0) return;
-        if (this.holders.size > 0) return;
+        if (this.holders.size > 0 || this.paused > 0) return;
         if (this.parked) {
           if (this.deps.store.state.kind !== "ready") return;
           this.parked = false;
@@ -687,6 +722,9 @@ export class OcrService {
     this.natives.delete(ref);
     // Queued while "Also read text inside figures" was on, and it is off now: left alone.
     if (native.plan?.condition === "TEXT_WITH_FIGURES" && !this.figures) return;
+    const guard = this.deps.guard?.() ?? null;
+    // Obsidian closed while this PDF was read on this device: it is left as it is.
+    if (guard?.skipped(path).get(OCR_GUARD_KEY) === key) return;
     if (!cachedPage(file, page, model.version)) {
       // A page with text of its own is read only if the model is here already;
       // only a page with none at all may make it be offered.
@@ -695,10 +733,16 @@ export class OcrService {
         return;
       }
       const plan = this.planOf(native);
-      const result =
-        plan.condition === "TEXT_WITH_FIGURES" && !plan.checkRest
-          ? await this.readRegions(job, native, plan, model)
-          : await this.readWhole(job, native, plan, model);
+      guard?.begin({ path, key: OCR_GUARD_KEY, hash: key, page: page + 1 });
+      let result: OcrPage | null;
+      try {
+        result =
+          plan.condition === "TEXT_WITH_FIGURES" && !plan.checkRest
+            ? await this.readRegions(job, native, plan, model)
+            : await this.readWhole(job, native, plan, model);
+      } finally {
+        guard?.end();
+      }
       if (!result) return;
       this.failures = 0;
       // The setting changed while the page was read: it was read by a model no longer in use.

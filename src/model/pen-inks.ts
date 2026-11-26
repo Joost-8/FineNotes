@@ -104,6 +104,20 @@ export function penInkFor(inks: PenInks, type: SavedPenType, current: PenInk): P
 }
 
 /**
+ * The colour the highlighter would mark with now, whatever is in hand: the
+ * colour in hand when the highlighter is the pen type, else its own (yellow
+ * until it has been used). What a PDF text selection's Highlight lays down.
+ */
+export function highlighterColor(
+  penType: string | undefined,
+  color: string,
+  inks: PenInks,
+): string {
+  if (penType === "highlighter") return color;
+  return penInkFor(inks, "highlighter", { color }).color;
+}
+
+/**
  * Switch from pen type `from` to `to`: `from` keeps the ink it was writing
  * with (`current`), and `to` brings back its own. Returns the new inks and the
  * ink now in hand. The same type twice changes nothing.

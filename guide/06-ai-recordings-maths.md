@@ -84,7 +84,7 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 - **Where:** Toolbar › AI › "Ask…". Send with the round arrow button or Return; Shift+Return adds a new line.
 - **Notes:** Needs an AI service with a key (or your own endpoint) and internet. Greyed out with the reason when not set up, and "This page is empty" / "This notebook is empty" when nothing is on any page.
 - **Words:** ask ai, chat, chatgpt, claude, question, explain, summarize, summarise, tutor, help me study, ai chat, ask about my notes, conversation
-- **Settings:** `llmVendor`, `llmModel`, `askLayout`, `askSaveChats`, `askVaultScope`, `askShowCost`
+- **Settings:** `llmVendor`, `llmModel`, `askLayout`, `askVaultScope`, `askShowCost`
 
 ### Pick which pages Ask AI sees
 
@@ -130,18 +130,18 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 ### Show Ask AI as a sidebar or a window
 
 - **Id:** `askLayout`
-- **What:** The chat can be a window over the notebook or a sidebar on the left of the page, which pushes the page aside and closes the page sidebar. The choice is remembered.
+- **What:** The chat can be a window over the notebook or a sidebar on the left of the page, which pushes the page aside and closes the page sidebar. The window is moved by its title bar and sized from its bottom-right corner, and opens where it was left on this device. The choice is remembered. In a text note, Ask AI is always the window.
 - **Where:** Ask › "Show in the sidebar" / "Show as a window" button in the chat's top bar.
-- **Words:** sidebar, side panel, window, dock, layout, beside the page
+- **Words:** sidebar, side panel, window, dock, layout, beside the page, move, resize, drag
 - **Settings:** `askLayout`
 
-### Save Ask AI chats and reopen them
+### Where Ask AI chats are kept, and deleting one
 
 - **Id:** `askSaveChats`
-- **What:** "Save chat" keeps the conversation as a Markdown note, by default in an "AI chats" folder next to the notebook; while saved it updates as you go, and tapping again stops saving (the note goes to the trash). "Chats" lists this notebook's saved chats to continue one. "New chat" starts fresh. The Save chat choice is remembered for new chats.
-- **Where:** Ask › top bar: Save chat (bookmark icon), Chats (history icon), New chat. Folder: Settings › Files and folders › "Folder for AI chats".
-- **Words:** save chat, chat history, previous chats, conversation history, keep chat, reopen chat
-- **Settings:** `askSaveChats`, `chatsFolder`
+- **What:** Every Ask AI conversation is kept as a Markdown note in the "AI chats" folder of the notebook or text note it was about, and updates as you go. Open or delete one there, as any file; the chat has no save or history buttons. "New chat" starts fresh.
+- **Where:** The notebook's (or note's) "AI chats" folder in the file list. Folder: Settings › Files and folders › "Folder for AI chats".
+- **Words:** save chat, chat history, previous chats, conversation history, keep chat, delete chat, AI chats folder
+- **Settings:** `chatsFolder`
 
 ### What Ask AI can read (this notebook, its folder, the whole vault)
 

@@ -27,13 +27,17 @@ import { HANDWRITING_FOLDER } from "../model/vault-folders";
 import { practiceLines, practiceSetOfDoc } from "../recognition/practice";
 import {
   type PracticeSource,
+  CONSENT_VERSION,
+  type ConsentChange,
   SHARE_KINDS,
+  SHARE_LICENCE,
   type ShareBatch,
   type ShareClient,
   type ShareItem,
   type ShareKind,
   type SharingLedger,
   agree,
+  consentChanges,
   inviteDismissed,
   buildBatches,
   correctionDrafts,
@@ -49,6 +53,7 @@ import {
   serializeLedger,
   sharingOn,
   stopSharing,
+  upgradeDone,
   withIds,
 } from "../recognition/hwr/sharing";
 import { errorMessage } from "../util/errors";
@@ -80,7 +85,10 @@ export class GrapeSharing implements SharingFeature {
   constructor(private readonly host: SharingHost) {}
 
   start(): void {
-    void this.load().then(() => this.retryDelete(true));
+    void this.load().then(async () => {
+      await this.retryDelete(true);
+      await this.retryUpgrade();
+    });
   }
 
   /**
@@ -309,9 +317,24 @@ export class GrapeSharing implements SharingFeature {
       // Agreeing is recorded with the send, not before: "Not now" leaves nothing behind.
       const agreed = (): SharingLedger => agree(ledger, Date.now(), randomBytes);
       let acted = false;
+      // Someone who agreed to older terms sees what changed, and agrees or stops.
+      const before = ledger.consent?.version;
+      const changes =
+        before !== undefined && before < CONSENT_VERSION ? consentChanges(before) : [];
       const modal = new SharingConsentModal(
         this.host,
         pending,
+        changes,
+        () => {
+          acted = true;
+          void this.saveLedger(agreed())
+            .then(() => this.retryUpgrade())
+            .then(redraw);
+        },
+        () => {
+          acted = true;
+          void this.stop(redraw);
+        },
         () => {
           acted = true;
           void this.send(agreed(), pending, []).then(redraw);
@@ -412,6 +435,33 @@ export class GrapeSharing implements SharingFeature {
     }).open();
   }
 
+  /**
+   * Tell the server the consent now covers what was shared before, when the
+   * ledger owes it. Quiet: it is sent again on the next start until it lands.
+   */
+  private async retryUpgrade(): Promise<void> {
+    const ledger = this.ledger;
+    if (!ledger || ledger.upgradeOwed === 0 || !ledger.contributor || !ledger.key) return;
+    const version = ledger.upgradeOwed;
+    let response;
+    try {
+      response = await requestUrl({
+        url: `${ENDPOINT}/contributors/${ledger.contributor}/consent`,
+        method: "POST",
+        contentType: "application/json",
+        headers: { Authorization: `Bearer ${ledger.key}` },
+        body: JSON.stringify({ version, licence: SHARE_LICENCE }),
+        throw: false,
+      });
+    } catch {
+      return;
+    }
+    // 404: the server holds nothing of this contributor, so nothing older to cover.
+    if (response.status === 200 || response.status === 404) {
+      if (this.ledger) await this.saveLedger(upgradeDone(this.ledger, version));
+    }
+  }
+
   /** Send the delete the ledger owes; `quiet` on load, where only success is worth a word. */
   private async retryDelete(quiet: boolean): Promise<void> {
     const owed = this.ledger?.pendingDelete;
@@ -483,10 +533,14 @@ function deviceKind(): string {
  * tick: Share is the agreement, and Review first shows every item before
  * anything goes (Joost, 2026-11-16).
  */
-class SharingConsentModal extends Modal {
+export class SharingConsentModal extends Modal {
   constructor(
     host: SharingHost,
     private readonly pending: readonly ShareItem[],
+    /** What changed since the terms this person agreed to; empty for someone new. */
+    private readonly changes: readonly ConsentChange[],
+    private readonly onAgree: () => void,
+    private readonly onStop: () => void,
     private readonly onShare: () => void,
     private readonly onReview: () => void,
   ) {
@@ -495,8 +549,12 @@ class SharingConsentModal extends Modal {
 
   override onOpen(): void {
     this.modalEl.addClass("goodobsidian-dialog", "goodobsidian-share");
-    this.titleEl.setText(st("consent.title"));
     const body = this.contentEl;
+    if (this.changes.length > 0) {
+      this.drawChanged(body);
+      return;
+    }
+    this.titleEl.setText(st("consent.title"));
     body.createEl("p", { text: st("consent.intro") });
     body.createEl("p", {
       cls: "goodobsidian-share-what",
@@ -504,21 +562,7 @@ class SharingConsentModal extends Modal {
         this.pending.length > 0 ? whatThereIs(countByKind(this.pending)) : st("consent.nothing"),
     });
 
-    const facts = body.createDiv({ cls: "goodobsidian-share-facts" });
-    const fact = (heading: string, ...lines: string[]): void => {
-      facts.createEl("h4", { text: heading });
-      for (const line of lines) facts.createEl("p", { text: line });
-    };
-    fact(st("consent.sentHeading"), st("consent.sent"));
-    fact(st("consent.neverHeading"), st("consent.never"));
-    fact(
-      st("consent.honestHeading"),
-      st("consent.identifies"),
-      st("consent.who"),
-      st("consent.licence"),
-      st("consent.control"),
-    );
-    facts.createEl("a", { text: st("consent.policy"), href: PRIVACY_URL });
+    drawTerms(body);
 
     const footer = body.createDiv({ cls: "modal-button-container" });
     footer
@@ -537,9 +581,54 @@ class SharingConsentModal extends Modal {
       });
   }
 
+  /**
+   * For someone who agreed to older terms: what changed since, then the
+   * terms in full, and one choice. Agreeing does not send anything by
+   * itself; new items wait for Share in settings, as before.
+   */
+  private drawChanged(body: HTMLElement): void {
+    this.titleEl.setText(st("changed.title"));
+    const list = body.createEl("ul", { cls: "goodobsidian-share-changes" });
+    for (const change of this.changes) list.createEl("li", { text: st(`changed.${change}`) });
+    body.createEl("p", { cls: "goodobsidian-share-desc", text: st("changed.covers") });
+    drawTerms(body);
+    const footer = body.createDiv({ cls: "modal-button-container" });
+    footer
+      .createEl("button", { cls: "mod-warning", text: st("changed.stop") })
+      .addEventListener("click", () => {
+        this.close();
+        this.onStop();
+      });
+    footer
+      .createEl("button", { cls: "mod-cta", text: st("changed.agree") })
+      .addEventListener("click", () => {
+        this.close();
+        this.onAgree();
+      });
+  }
+
   override onClose(): void {
     this.contentEl.empty();
   }
+}
+
+/** The terms in full, as every consent dialog shows them. */
+function drawTerms(body: HTMLElement): void {
+  const facts = body.createDiv({ cls: "goodobsidian-share-facts" });
+  const fact = (heading: string, ...lines: string[]): void => {
+    facts.createEl("h4", { text: heading });
+    for (const line of lines) facts.createEl("p", { text: line });
+  };
+  fact(st("consent.sentHeading"), st("consent.sent"));
+  fact(st("consent.neverHeading"), st("consent.never"));
+  fact(
+    st("consent.honestHeading"),
+    st("consent.identifies"),
+    st("consent.who"),
+    st("consent.licence"),
+    st("consent.control"),
+  );
+  facts.createEl("a", { text: st("consent.policy"), href: PRIVACY_URL });
 }
 
 /** "20 practice lines, 86 corrected words and 33 equations", leaving out what there is none of. */

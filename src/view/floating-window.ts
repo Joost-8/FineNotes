@@ -31,7 +31,7 @@ import { sizeObserver } from "./host-window";
 
 /** Every floating window's class, for bringing one over the others. */
 const FLOATING_WINDOWS =
-  ".goodobsidian-graph-window, .goodobsidian-calc-window, .goodobsidian-zoombox-window, .goodobsidian-eq-window";
+  ".goodobsidian-graph-window, .goodobsidian-calc-window, .goodobsidian-zoombox-window, .goodobsidian-eq-window, .goodobsidian-ask-window, .goodobsidian-tr-window";
 
 export interface FloatingWindowButton {
   icon: string;

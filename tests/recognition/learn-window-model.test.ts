@@ -4,6 +4,7 @@ import {
   learnMaterial,
   learnWindow,
   sheetButton,
+  sheetJustFilled,
 } from "../../src/recognition/hwr/learn-window-model";
 import type { PracticeSheet } from "../../src/recognition/hwr/learned-model";
 
@@ -38,6 +39,27 @@ describe("the Learn your handwriting window", () => {
     expect(view.missing).toBe(10);
     expect(buttons({})).toEqual(["Write sheet 1*"]);
     expect(view.symbols).toBe(true);
+  });
+
+  it("numbers drawn sheets in order after the fixed ones, and lists more than three", () => {
+    const drawn = (n: number, written: number): PracticeSheet => ({
+      path: `FineNotes assets/Handwriting sheets/Practice sheet ${n}.practice.md`,
+      title: `Practice sheet ${n}`,
+      set: 200,
+      written,
+      prompts: 30,
+    });
+    const sheets = [sheet(1, 30), drawn(2, 30), drawn(3, 30), drawn(4, 12)];
+    const view = learnWindow(facts({ sheets }));
+    expect(view.marks.map((m) => [m.set, m.state])).toEqual([
+      [1, "done"],
+      [2, "done"],
+      [3, "done"],
+      [4, "started"],
+    ]);
+    expect(buttons({ sheets })).toContain("Continue sheet 4");
+    // Two drawn sheets written: the next is sheet 3.
+    expect(buttons({ sheets: [drawn(1, 30), drawn(2, 30)] })[0]).toBe("Write sheet 3");
   });
 
   it("counts corrected words toward the 10, and continues a sheet begun", () => {
@@ -108,5 +130,12 @@ describe("what the other places say", () => {
   it("outlines the sheet's button with a count until there is enough", () => {
     expect(sheetButton(4, 0)).toEqual({ count: "4 / 10", ready: false });
     expect(sheetButton(8, 2)).toEqual({ count: "8 lines", ready: true });
+  });
+
+  it("asks about sharing only when the last line goes down, not when a full sheet opens", () => {
+    expect(sheetJustFilled(false, true)).toBe(true);
+    expect(sheetJustFilled(null, true)).toBe(false);
+    expect(sheetJustFilled(true, true)).toBe(false);
+    expect(sheetJustFilled(false, false)).toBe(false);
   });
 });

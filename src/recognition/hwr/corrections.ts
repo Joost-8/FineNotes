@@ -12,6 +12,15 @@
  * - **ignore**: a real word the list lacks (a name, course jargon); the
  *   label is the reading, and it is never underlined again.
  *
+ * A mistake may also say what the writer **meant** ("recieve" should be
+ * "receive": "Should be …" on the card, "I wrote it wrong" in its dialog).
+ * The text shows the meant word (`shownAnswers`); the label stays what the
+ * ink says, the reading, so learning and Help improve Grape use it as any
+ * mistake, and the meant word is never a label and never shared. Nothing
+ * in the ink tells a misread from a misspelling (the reading fits the ink
+ * about as well in both: RESEARCH-LOG 2026-11-25), so only the writer's
+ * own choice of answer says which it is; it is never guessed.
+ *
  * The ink is copied into the record, so a label outlives edits to its page.
  * Stored as `<plugin>/handwriting/corrections.json`.
  *
@@ -40,6 +49,12 @@ export interface Correction {
   read: string;
   /** What the word is: the writer's text for a misread, else the reading. */
   text: string;
+  /**
+   * What the writer meant to write, when they wrote it wrong (a "mistake"
+   * only): shown in place of the word, never a label (`text` is). Builds
+   * before 2.11 drop it when they rewrite the file.
+   */
+  meant?: string;
   /** Vault path of the note, and the page's id in it. */
   note: string;
   page: string;
@@ -104,7 +119,7 @@ export function serializeCorrections(file: CorrectionsFile): string {
 
 function readCorrection(item: unknown): Correction | null {
   if (!isRecord(item)) return null;
-  const { kind, read, text, note, page, strokes, at, source } = item;
+  const { kind, read, text, note, page, strokes, at, source, meant } = item;
   if (!(CORRECTION_KINDS as readonly unknown[]).includes(kind)) return null;
   if (typeof read !== "string" || typeof text !== "string") return null;
   if (typeof note !== "string" || typeof page !== "string") return null;
@@ -123,10 +138,14 @@ function readCorrection(item: unknown): Correction | null {
     ink.push({ id: stroke.id, pts: pts as number[], t0 });
   }
   if (ink.length === 0) return null;
+  const intended = typeof meant === "string" ? meant.trim() : "";
   return {
     kind: kind as CorrectionKind,
     read,
     text: word,
+    ...(kind === "mistake" && intended && intended.length <= MAX_WORD && intended !== word
+      ? { meant: intended }
+      : {}),
     note,
     page,
     strokes: ink,
@@ -158,11 +177,34 @@ export function mergeCorrections(file: CorrectionsFile, older: CorrectionsFile):
   return { version: 1, corrections: [...added, ...file.corrections] };
 }
 
+/**
+ * What each answered word on page `page` of `note` should show, by its
+ * stroke-id key (`strokeKey`): the writer's text for a misread, the meant
+ * word for one written wrong. Answers that leave the reading as it is are
+ * left out.
+ */
+export function shownAnswers(
+  file: CorrectionsFile,
+  note: string,
+  page: string,
+): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const c of file.corrections) {
+    if (c.note !== note || c.page !== page) continue;
+    const shown = c.meant ?? (c.kind === "misread" ? c.text : null);
+    if (shown !== null) out.set(strokeKey(c.strokes.map((s) => s.id)), shown);
+  }
+  return out;
+}
+
 function inkKey(c: Pick<Correction, "note" | "page" | "strokes">): string {
   return JSON.stringify([c.note, c.page, strokeKey(c.strokes.map((s) => s.id))]);
 }
 
-/** The labelled words to learn from: every answer, its ink and its text. */
+/**
+ * The labelled words to learn from: every answer, its ink and its text
+ * (what the ink says; never the word a writer `meant`).
+ */
 export function correctionLines(
   file: CorrectionsFile,
 ): Array<{ strokes: InkStroke[]; text: string }> {

@@ -12,6 +12,7 @@
  * Pure: no DOM, no Obsidian, no file system.
  */
 
+import { mintedId } from "./dot-ids";
 import { t, tn } from "../i18n/translate";
 import type { Command } from "./commands";
 import { type InkDocument, type Page, insertPage } from "./document";
@@ -74,44 +75,53 @@ export function prepareTransfer(pages: readonly Page[], dest: InkDocument): Page
 
   return pages.map((source) => {
     const copy = structuredClone(source);
-    copy.id = `p${++pageSeq}`;
+    copy.id = mintedId(dest) ?? `p${++pageSeq}`;
     const strokeIds = new Map<string, string>();
     for (const stroke of copy.strokes) {
-      const id = `s${++strokeSeq}`;
+      const id = mintedId(dest) ?? `s${++strokeSeq}`;
       strokeIds.set(stroke.id, id);
       stroke.id = id;
     }
-    for (const box of copy.textBoxes) box.id = `t${++textSeq}`;
+    for (const box of copy.textBoxes) box.id = mintedId(dest) ?? `t${++textSeq}`;
     const imageIds = new Map<string, string>();
     for (const image of copy.images) {
-      const id = `i${++imageSeq}`;
+      const id = mintedId(dest) ?? `i${++imageSeq}`;
       imageIds.set(image.id, id);
       image.id = id;
     }
     // The ink and text on a note follow the note's new id.
     relinkNoteInk(copy.strokes, imageIds);
     relinkNoteInk(copy.textBoxes, imageIds);
-    for (const table of copy.tables ?? []) table.id = `g${++tableSeq}`;
-    for (const graph of copy.graphs ?? []) graph.id = `f${++graphSeq}`;
-    for (const equation of copy.equations ?? []) equation.id = `q${++equationSeq}`;
-    for (const comment of copy.comments ?? []) comment.id = `cm${++commentSeq}`;
+    for (const table of copy.tables ?? []) table.id = mintedId(dest) ?? `g${++tableSeq}`;
+    for (const graph of copy.graphs ?? []) graph.id = mintedId(dest) ?? `f${++graphSeq}`;
+    for (const equation of copy.equations ?? [])
+      equation.id = mintedId(dest) ?? `q${++equationSeq}`;
+    for (const comment of copy.comments ?? []) comment.id = mintedId(dest) ?? `cm${++commentSeq}`;
     if (copy.links) {
       const links = copy.links.flatMap((link) => {
         const strokes = link.strokes.flatMap((id) => strokeIds.get(id) ?? []);
-        return strokes.length > 0 ? [{ ...link, id: `l${++linkSeq}`, strokes }] : [];
+        return strokes.length > 0
+          ? [{ ...link, id: mintedId(dest) ?? `l${++linkSeq}`, strokes }]
+          : [];
       });
       if (links.length > 0) copy.links = links;
       else delete copy.links;
     }
     if (copy.connectors) {
-      const connectors = remapConnectors(copy.connectors, strokeIds, () => `cn${++connectorSeq}`);
+      const connectors = remapConnectors(
+        copy.connectors,
+        strokeIds,
+        () => mintedId(dest) ?? `cn${++connectorSeq}`,
+      );
       if (connectors.length > 0) copy.connectors = connectors;
       else delete copy.connectors;
     }
     if (copy.tasks) {
       const tasks = copy.tasks.flatMap((task) => {
         const strokes = task.strokes.flatMap((id) => strokeIds.get(id) ?? []);
-        return strokes.length > 0 ? [{ ...task, id: `ck${++taskSeq}`, strokes }] : [];
+        return strokes.length > 0
+          ? [{ ...task, id: mintedId(dest) ?? `ck${++taskSeq}`, strokes }]
+          : [];
       });
       if (tasks.length > 0) copy.tasks = tasks;
       else delete copy.tasks;

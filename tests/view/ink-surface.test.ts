@@ -27,12 +27,20 @@ import {
 } from "../../src/model/document";
 import { IdSequence, highestIdNumber, strokeIdsOf } from "../../src/view/id-sequence";
 import { PointerHud } from "../../src/view/pointer-hud";
+import { InkLatency } from "../../src/view/ink-latency";
 import { StrokeIndex } from "../../src/view/stroke-index";
 import { SizeWait } from "../../src/view/surface-size";
 import { type SelectionAction, barItems, menuLayout } from "../../src/view/selection-bar-model";
 
+/** Notices shown, newest last. */
+const notices = vi.hoisted((): string[] => []);
+
 vi.mock("obsidian", () => ({
-  Notice: class {},
+  Notice: class {
+    constructor(message: string) {
+      notices.push(message);
+    }
+  },
   Platform: {},
   setIcon: () => {},
 }));
@@ -1110,6 +1118,7 @@ function hud(debug = true): Hud {
   const surface = surfaceWith({
     debug,
     hud: pointerHud,
+    inkLatency: new InkLatency(),
     hudFrame: 0,
     hudLastVerdict: "-",
     hudEl: {
@@ -1656,6 +1665,111 @@ describe("insert space from the margin", () => {
   it("a drag that ends where it began does nothing", async () => {
     const { applied } = await marginDrag(5);
     expect(applied).toHaveLength(0);
+  });
+});
+
+describe("insert space on a board (discussion #276)", () => {
+  /** A drag from (400, 1000) by (dx, dy) on a dotted board, with ink above and below. */
+  function boardDrag(
+    dx: number,
+    dy: number,
+    moved = Math.hypot(dx, dy),
+    on: { board: boolean; height: number } = { board: true, height: 5600 },
+  ) {
+    const p = page("p1", [line("above", 100, 300, 900), line("below", 100, 300, 1200)]);
+    p.backdrop = { kind: "dotted" };
+    p.geometry = { width: 5600, height: on.height };
+    const doc = documentOf(p);
+    const applied: unknown[] = [];
+    const flashes: string[] = [];
+    const taps: string[] = [];
+    const surface = surfaceWith({
+      doc,
+      board: on.board,
+      pressTimer: 0,
+      renderer: null,
+      activePage: null,
+      pageAt: () => p,
+      textBoxFrameOf: () => ({ x: 0, y: 0, w: 0, h: 0 }),
+      flashReadout: (t: string) => flashes.push(t),
+      requestZoomPaint: () => {},
+      offerStrokeTap: () => false,
+      tapSelect: () => taps.push("tap"),
+      applyCommand: (c: { apply(d: InkDocument): void }) => {
+        applied.push(c);
+        c.apply(doc);
+      },
+    });
+    surface.lasso = {
+      box: { index: 0 },
+      mode: "lines",
+      origin: { x: 400, y: 1000 },
+      to: { x: 400 + dx, y: 1000 + dy },
+      held: false,
+      lines: [],
+      space: null,
+      boardSpace: { axis: null, amount: 0, plan: null, text: "" },
+    };
+    run(surface, "dragBoardSpace", surface.lasso, (surface.lasso as State).boardSpace, moved);
+    const axis = ((surface.lasso as State).boardSpace as State).axis;
+    run(surface, "selectEnd");
+    return { p, applied, flashes, axis, taps };
+  }
+
+  it("a drag down pushes what is below the pen down by whole dots, and says so", () => {
+    const { p, applied, flashes, axis } = boardDrag(0, 130);
+    expect(axis).toBe("y");
+    expect(applied).toHaveLength(1);
+    expect(p.strokes.map((s) => s.pts[1])).toEqual([900, 1320]);
+    expect(flashes.at(-1)).toBe("Insert space");
+  });
+
+  it("a drag right pushes what starts right of the pen to the right", () => {
+    const p0 = boardDrag(90, 10);
+    expect(p0.axis).toBe("x");
+    // Both lines start at x = 100, left of the pen: nothing moves.
+    expect(p0.applied).toHaveLength(0);
+  });
+
+  it("a drag up closes the empty space above, never over ink", () => {
+    const { p, flashes } = boardDrag(0, -400);
+    // "above" reaches 901: 99 px empty, two dots of 40.
+    expect(p.strokes.map((s) => s.pts[1])).toEqual([900, 1120]);
+    expect(flashes.at(-1)).toBe("Remove space");
+  });
+
+  it("on notebook paper with no lines it inserts space too, but never past the page's edge", () => {
+    const notebook = { board: false, height: 1300 };
+    const fits = boardDrag(0, 80, undefined, notebook);
+    expect(fits.p.strokes.map((s) => s.pts[1])).toEqual([900, 1280]);
+    // A push that would run past the edge goes as far as fits (99 px: two dots) …
+    expect(boardDrag(0, 130, undefined, notebook).p.strokes[1].pts[1]).toBe(1280);
+    // … and none at all where the ink already reaches the edge.
+    const full = boardDrag(0, 130, undefined, { board: false, height: 1210 });
+    expect(full.applied).toHaveLength(0);
+    expect(full.flashes.at(-1)).toBe("No room left on this page");
+  });
+
+  it("is free space on a board and on unlined paper, not on lines, a PDF or a cover", () => {
+    const at = (kind: string, board = false) =>
+      run<boolean>(surfaceWith({ board }), "insertsFreeSpace", {
+        ...blankPage("p"),
+        backdrop: { kind },
+      });
+    expect(at("ruled-wide", true)).toBe(true);
+    expect(at("dotted")).toBe(true);
+    expect(at("squared")).toBe(true);
+    expect(at("blank")).toBe(true);
+    expect(at("ruled-wide")).toBe(false);
+    expect(at("pdf")).toBe(false);
+    expect(at("cover-plain")).toBe(false);
+  });
+
+  it("a press that never moved past a tap inserts nothing: it is the lasso's tap", () => {
+    const { applied, axis, taps } = boardDrag(0, 4);
+    expect(axis).toBeNull();
+    expect(applied).toHaveLength(0);
+    expect(taps).toEqual(["tap"]);
   });
 });
 
@@ -3494,5 +3608,177 @@ describe("the lasso on a PDF's tab", () => {
     expect(lift("rect", false, true)).toEqual(["select"]);
     expect(lift("free", false, true)).toEqual(["select", "outline"]);
     expect(lift("rect", false, false)).toEqual(["select", "area"]);
+  });
+});
+
+describe("Tidy on a selection", () => {
+  /** One written line that climbs: letters as small zigzags, 24 of them in six words. */
+  function climbingLine(slope = 0.06): Stroke[] {
+    const strokes: Stroke[] = [];
+    let x = 40;
+    let t0 = 0;
+    for (let word = 0; word < 6; word++) {
+      for (let letter = 0; letter < 4; letter++) {
+        const base = 300 - slope * (x - 40);
+        const pts: number[] = [];
+        const corners = [
+          [0, -12],
+          [2.5, 0],
+          [5, -12],
+          [7.5, 0],
+          [10, -12],
+        ];
+        for (let c = 0; c + 1 < corners.length; c++) {
+          for (let k = 0; k < 6; k++) {
+            const f = k / 6;
+            pts.push(
+              Math.round((x + corners[c][0] + f * (corners[c + 1][0] - corners[c][0])) * 100) / 100,
+              Math.round((base + corners[c][1] + f * (corners[c + 1][1] - corners[c][1])) * 100) /
+                100,
+              0.5,
+            );
+          }
+        }
+        pts.push(x + 10, Math.round((base - 12) * 100) / 100, 0.5);
+        t0 += 300;
+        strokes.push({ id: `w${strokes.length}`, color: "#000000", size: 2, tool: "pen", pts, t0 });
+        x += 13;
+      }
+      x += 13;
+    }
+    return strokes;
+  }
+
+  function tidySurface(strokes: Stroke[], locked = false) {
+    const p = page("p1", strokes);
+    const doc = documentOf(p);
+    const history = new History();
+    const calls = { invalidated: 0, changed: 0, overlay: 0, indexed: 0 };
+    const sel = { pageId: "p1", strokes: p.strokes, images: [], textBoxes: [] };
+    const surface = surfaceWith({
+      doc,
+      history,
+      groupDrag: null,
+      callbacks: { isLocked: () => locked },
+      liveSelection: () => sel,
+      boxForPage: () => boxOf(doc, 0),
+      groupBounds: () => ({ minX: 0, minY: 0, maxX: 500, maxY: 400 }),
+      renderer: { invalidateRegion: () => calls.invalidated++ },
+      strokeIndex: { refreshPages: () => calls.indexed++ },
+      selectionOutline: null,
+      renderDry: () => undefined,
+      syncSelectionOverlay: () => calls.overlay++,
+      changed: () => calls.changed++,
+    });
+    return { surface, doc, history, calls, page: p };
+  }
+
+  const bottomOf = (s: Stroke): number => Math.max(...s.pts.filter((_, i) => i % 3 === 1));
+
+  it("levels the selected line in one undo step, and keeps the same strokes selected", () => {
+    const strokes = climbingLine();
+    const before = strokes.map((s) => [...s.pts]);
+    const { surface, doc, history, calls, page: p } = tidySurface(strokes);
+    run(surface, "tidySelection");
+    const spread = (v: number[]): number => Math.max(...v) - Math.min(...v);
+    expect(
+      spread(before.map((pts) => Math.max(...pts.filter((_, i) => i % 3 === 1)))),
+    ).toBeGreaterThan(15);
+    expect(spread(p.strokes.map(bottomOf))).toBeLessThan(5);
+    // The page holds the same stroke objects, each with as many points as before.
+    expect(p.strokes).toHaveLength(before.length);
+    p.strokes.forEach((s, i) => {
+      expect(s).toBe(strokes[i]);
+      expect(s.pts).toHaveLength(before[i].length);
+    });
+    // The stroke index files the moved strokes again (the reviewer's finding, 24 November).
+    expect(calls).toEqual({ invalidated: 1, changed: 1, overlay: 1, indexed: 1 });
+    history.undo(doc);
+    p.strokes.forEach((s, i) => expect(s.pts).toEqual(before[i]));
+  });
+
+  it("does nothing on a locked notebook, and nothing when there is nothing to tidy", () => {
+    const strokes = climbingLine();
+    const locked = tidySurface(strokes, true);
+    run(locked.surface, "tidySelection");
+    expect(locked.calls.changed).toBe(0);
+    const one = tidySurface([line("only", 100, 140, 200)]);
+    notices.length = 0;
+    run(one.surface, "tidySelection");
+    expect(one.calls.changed).toBe(0);
+    expect(one.history.undo(one.doc)).toBeNull();
+    // Never silent: the user asked, so a notice says nothing was there to tidy.
+    expect(notices).toEqual(["Nothing to beautify: already neat, or not a line of writing."]);
+  });
+
+  it("levels a line climbing 16 degrees: steeper than an automatic tidy would", () => {
+    const strokes = climbingLine(Math.tan((16 * Math.PI) / 180));
+    const { surface, page: p } = tidySurface(strokes);
+    notices.length = 0;
+    run(surface, "tidySelection");
+    const spread = (v: number[]): number => Math.max(...v) - Math.min(...v);
+    expect(spread(p.strokes.map(bottomOf))).toBeLessThan(5);
+    expect(notices).toEqual([]);
+  });
+
+  describe("Beautify (Tidy and Neaten as one action, design rulings 2026-11-24)", () => {
+    /** The tidy surface with the writer's callbacks and what selectionFrameEl needs. */
+    function beautifySurface(neaten?: () => Promise<{ kind: string }>, can = true) {
+      const t = tidySurface(climbingLine());
+      const state = t.surface as unknown as Record<string, unknown>;
+      const callbacks = state.callbacks as Record<string, unknown>;
+      if (neaten) callbacks.onNeaten = neaten;
+      callbacks.canNeaten = () => can;
+      state.selection = { pageId: "p1", strokes: t.page.strokes, images: [], textBoxes: [] };
+      state.selectionFrameEl = { addClass: () => undefined, removeClass: () => undefined };
+      return t;
+    }
+    const spread = (s: Stroke[]): number =>
+      Math.max(...s.map(bottomOf)) - Math.min(...s.map(bottomOf));
+
+    it("tidies at once where no writer can be had", async () => {
+      const { surface, history, page: p } = beautifySurface(undefined, false);
+      await run<Promise<void>>(surface, "beautifySelection");
+      expect(spread(p.strokes)).toBeLessThan(5);
+      expect(history.canUndo()).toBe(true);
+    });
+
+    it("tidies when the writer has nothing to rewrite", async () => {
+      let asked = 0;
+      const { surface, page: p } = beautifySurface(() => {
+        asked++;
+        return Promise.resolve({ kind: "tidy" });
+      });
+      await run<Promise<void>>(surface, "beautifySelection");
+      expect(asked).toBe(1);
+      expect(spread(p.strokes)).toBeLessThan(5);
+    });
+
+    it("changes nothing when the work was stopped (an edit, the selection left)", async () => {
+      const {
+        surface,
+        history,
+        page: p,
+      } = beautifySurface(() => Promise.resolve({ kind: "stopped" }));
+      const before = spread(p.strokes);
+      await run<Promise<void>>(surface, "beautifySelection");
+      expect(spread(p.strokes)).toBe(before);
+      expect(history.canUndo()).toBe(false);
+    });
+  });
+
+  it("offers the brush on a held word of a 16 degree line, and none on a lone word", () => {
+    const strokes = climbingLine(Math.tan((16 * Math.PI) / 180));
+    const steep = tidySurface(strokes);
+    const action = run<SelectionAction | null>(
+      steep.surface,
+      "beautifyLineAction",
+      steep.page,
+      strokes[5],
+    );
+    expect(action?.id).toBe("beautify-line");
+    const word = strokes.slice(0, 4);
+    const lone = tidySurface(word);
+    expect(run(lone.surface, "beautifyLineAction", lone.page, word[1])).toBeNull();
   });
 });

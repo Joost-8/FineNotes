@@ -11,6 +11,7 @@
  * Pure: no DOM, no Obsidian.
  */
 
+import { mintedId } from "./dot-ids";
 import {
   type InkDocument,
   type ShapeDash,
@@ -89,6 +90,8 @@ export function tableFloorSize(table: Pick<TableElement, "cols" | "rows">): {
 
 /** A table id not yet used anywhere in `doc`: one above the highest `g<N>`. */
 export function nextTableId(doc: InkDocument): string {
+  const minted = mintedId(doc);
+  if (minted) return minted;
   let max = 0;
   for (const page of doc.pages) {
     for (const table of page.tables ?? []) {

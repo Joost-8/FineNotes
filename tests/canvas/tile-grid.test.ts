@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   ByteLru,
   TILE_SIZE,
+  panTileBytes,
   previewScale,
   quantiseLevel,
   rasterSize,
   tileKey,
   tilesCovering,
   tilesForBounds,
+  tilesTouching,
 } from "../../src/canvas/tile-grid";
 
 describe("tilesCovering", () => {
@@ -150,5 +152,73 @@ describe("ByteLru", () => {
     expect(lru.bytes).toBe(0);
     expect(gone).toEqual(["p1:0", "p1:1", "p2:0"]);
     expect(lru.delete("nope")).toBe(false);
+  });
+});
+
+describe("tiles a pan keeps (FineNotes#298)", () => {
+  it("counts the most tiles a rectangle can touch, wherever it lies", () => {
+    expect(tilesTouching(512, 512)).toBe(4);
+    expect(tilesTouching(1000, 300)).toBe(6);
+    // Every placement of a 1000 x 300 px rectangle touches no more than that.
+    for (let x = 0; x < 512; x += 37) {
+      for (let y = 0; y < 512; y += 41) {
+        expect(tilesCovering(1e5, 1e5, 1, x, y, x + 1000, y + 300).length).toBeLessThanOrEqual(6);
+      }
+    }
+    expect(tilesTouching(0, 300)).toBe(0);
+    expect(tilesTouching(Infinity, 300)).toBe(0);
+    expect(tilesTouching(1024, 1024, 1024)).toBe(4);
+  });
+
+  it("holds the prefetch ring round the dry layer and a screen more", () => {
+    const tile = TILE_SIZE * TILE_SIZE * 4;
+    // An Android tablet: 3200 x 2000 px, overscan 480 / 300 px, ring 512 past it.
+    const tablet = panTileBytes(3200, 2000, 992, 812);
+    expect(tablet).toBe(12 * 9 * tile + 3200 * 2000 * 4);
+    // 2.5 screens, the budget before, held fewer tiles than the dry layer alone touches.
+    expect(2.5 * 3200 * 2000 * 4).toBeLessThan(tilesTouching(4160, 2600) * tile);
+    expect(tablet).toBeGreaterThan(2.5 * 3200 * 2000 * 4);
+    expect(panTileBytes(0, 2000, 10, 10)).toBe(0);
+    // A negative reach is none.
+    expect(panTileBytes(512, 512, -5, -5)).toBe(4 * tile + 512 * 512 * 4);
+  });
+});
+
+describe("ByteLru.freeWhere", () => {
+  it("removes the oldest entries it may, and only until the bytes fit", () => {
+    const gone: string[] = [];
+    const lru = new ByteLru<string>(20, (_v, key) => gone.push(key));
+    for (const key of ["a", "keep", "b", "c", "d"]) lru.set(key, key, 4);
+    // Full. Room for 8 more: the two oldest it may take, never "keep".
+    expect(lru.freeWhere((value) => value !== "keep", 8)).toBe(true);
+    expect(gone).toEqual(["a", "b"]);
+    expect(lru.has("keep")).toBe(true);
+    expect(lru.has("c")).toBe(true);
+    expect(lru.bytes).toBe(12);
+  });
+
+  it("takes nothing when the bytes already fit", () => {
+    const gone: string[] = [];
+    const lru = new ByteLru<string>(20, (_v, key) => gone.push(key));
+    lru.set("a", "a", 4);
+    expect(lru.freeWhere(() => true, 16)).toBe(true);
+    expect(gone).toEqual([]);
+  });
+
+  it("says so when what it may take is not enough", () => {
+    const lru = new ByteLru<string>(12);
+    for (const key of ["a", "keep", "keep2"]) lru.set(key, key, 4);
+    expect(lru.freeWhere((value) => value === "a", 8)).toBe(false);
+    expect(lru.has("a")).toBe(false);
+    expect(lru.bytes).toBe(8);
+  });
+
+  it("counts a use: an entry read since is taken after the ones that were not", () => {
+    const gone: string[] = [];
+    const lru = new ByteLru<string>(12, (_v, key) => gone.push(key));
+    for (const key of ["a", "b", "c"]) lru.set(key, key, 4);
+    lru.get("a");
+    lru.freeWhere(() => true, 4);
+    expect(gone).toEqual(["b"]);
   });
 });

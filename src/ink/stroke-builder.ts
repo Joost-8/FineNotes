@@ -409,6 +409,17 @@ export class StrokeBuilder {
   }
 
   /**
+   * Whether a reading the pen has not given yet (its first pressure, or its
+   * first tilt, where those are kept) would rewrite the points kept so far:
+   * ink drawn from them now could change when it comes.
+   */
+  get awaitingReading(): boolean {
+    const { pressureEnabled, tilt } = this.options;
+    if (pressureEnabled && Number.isNaN(this.lastReading)) return true;
+    return tilt === true && Number.isNaN(this.tiltFilter.current);
+  }
+
+  /**
    * The median pressure the pen actually read over the stroke, or null if
    * it read none (or pressure is off): what the next stroke assumes until
    * its own first reading comes in.

@@ -875,6 +875,8 @@ export interface ToolbarCallbacks {
   onAi?: (anchor: HTMLElement) => void;
   /** Open the calculator; `anchor` is the button. */
   onCalculator?: (anchor: HTMLElement) => void;
+  /** Open (or close) the Translate window, empty to type into. */
+  onTranslate?: (anchor: HTMLElement) => void;
   /** Start or stop an audio recording, or open its controls; `anchor` is the button. */
   onRecord?: (anchor: HTMLElement) => void;
   /** Open this note's settings (where its pictures and recordings go); `anchor` is the gear. */
@@ -1025,6 +1027,12 @@ export interface ToolbarCallbacks {
 }
 
 export interface ToolbarOptions {
+  /** Restrict toolbar customization to the tools supported by an embedded surface. */
+  allowedItems?: ReadonlySet<BarItemId>;
+  /** Page area available to menus when the toolbar lives in a separate host. */
+  popoverBounds?: HTMLElement;
+  /** Where a press closes an open popover, when the page is outside the bar's host. */
+  dismissRoot?: HTMLElement;
   /** The pen width the width popover's reset returns to; default the middle preset. */
   defaultSize?: number;
   /**
@@ -1038,6 +1046,8 @@ export interface ToolbarOptions {
   barDock?: BarDock;
   /** "Dock tool options": the pill by the bar is a row the page starts past (`pill-row-model.ts`). */
   pillRow?: boolean;
+  /** Start with tool options folded even when they have a docked row. */
+  startOptionsTucked?: boolean;
   /** The bar's preset: in Essentials the end's buttons live in ⋯ (`isFoldedInPreset`). */
   preset?: BarPreset;
   /** Where every button is (`toolbar-layout.ts`); the default layout when absent. */
@@ -1115,6 +1125,7 @@ const FOLD_RANK = {
   pdf: 2,
   sticker: 2.4,
   sticky: 2.6,
+  translate: 2.8,
   record: 3,
   image: 4,
   ai: 5,
@@ -1429,7 +1440,7 @@ export class Toolbar {
       this.pillDock = offeredDock(this.barDock);
     }
     // Docked, the pen's pill covers nothing: it need not start tucked away.
-    this.optionsVisible = !this.startsTucked(state.tool);
+    this.optionsVisible = !options.startOptionsTucked && !this.startsTucked(state.tool);
     this.optionsEl.addClass(`is-dock-${this.pillDock}`);
     this.optionsEl.toggleClass("is-upright", isUpright(this.pillDock));
     bindPillDrag(this.optionsEl, {
@@ -1541,6 +1552,10 @@ export class Toolbar {
       run: ((anchor: HTMLElement) => void) | undefined,
       kept = true,
     ): HTMLButtonElement => {
+      if (this.options.allowedItems && !this.options.allowedItems.has(id)) {
+        button.remove();
+        return button;
+      }
       this.barItems.set(id, button);
       button.setAttribute("data-item", id);
       if (run) this.itemRuns.set(id, run);
@@ -1657,6 +1672,15 @@ export class Toolbar {
         (anchor) => this.tapSticky(anchor),
       );
     }
+    // Translate: the window to type text into (a selection's Translate opens it with that text).
+    if (cb.onTranslate)
+      action(
+        "translate",
+        FOLD_RANK.translate,
+        "languages",
+        t("toolbar.tool.translate"),
+        cb.onTranslate,
+      );
     // The note's recordings live in the page sidebar's Files tab, as in
     // GoodNotes; the mic only starts and stops one.
     this.recordButton = action(
@@ -7073,9 +7097,10 @@ export class Toolbar {
     // Above or below its button: as tall as the room on that side, and the
     // rows scroll past it (a bar with everything moved into More tools).
     const gap = 16;
+    const bounds = this.options.popoverBounds?.getBoundingClientRect() ?? hostBox;
     const roomVertical = popover.hasClass("opens-up")
-      ? anchorBox.top - hostBox.top - EDGE_INSET - gap
-      : hostBox.bottom - anchorBox.bottom - EDGE_INSET - gap;
+      ? anchorBox.top - bounds.top - EDGE_INSET - gap
+      : bounds.bottom - anchorBox.bottom - EDGE_INSET - gap;
     this.limitPopoverHeight(popover, roomVertical);
     // Slid sideways into the view, worked out from where it rests (centred
     // on its button, `offsetWidth`), never from its box: that box carries
@@ -7118,10 +7143,11 @@ export class Toolbar {
       if (event.key === "Escape") this.closePopover();
     };
     // Capture phase: the drawing surface handles its own input below us.
-    this.host.addEventListener("pointerdown", onDown, true);
+    const pressRoot = this.options.dismissRoot ?? this.host;
+    pressRoot.addEventListener("pointerdown", onDown, true);
     this.host.addEventListener("keydown", onKey);
     this.disposers.push(() => {
-      this.host.removeEventListener("pointerdown", onDown, true);
+      pressRoot.removeEventListener("pointerdown", onDown, true);
       this.host.removeEventListener("keydown", onKey);
     });
   }

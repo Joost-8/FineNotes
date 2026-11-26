@@ -1,5 +1,8 @@
 blank_issues_enabled: true
 contact_links:
+  - name: Guide
+    url: https://github.com/Joost-8/FineNotes/blob/main/guide/README.md
+    about: Where everything is and how it works. Many reports are answered there.
   - name: Ideas and questions
     url: https://github.com/Joost-8/FineNotes/discussions
     about: Share an idea, ask how something works, or show what you made with FineNotes.

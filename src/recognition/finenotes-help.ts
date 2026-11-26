@@ -188,7 +188,7 @@ export function askAbilitiesPrompt(
     `- Besides this notebook you may read ${REACH_TEXT[scope]} (search_vault, read_note, linked_notes). The user changes this with the folder button at the top of this chat, or in Settings › AI › Ask AI can read: "This notebook only", "This notebook's folder" or "The whole vault". When a question needs notes you may not read, say so and suggest the setting that would let you.`,
     "- You can write a new note beside the notebook (create_note), and rewrite a note you wrote in this chat (create_note with replace), never any other note; and add text boxes, tables, pages, practice pages, drawings, marks and comments to the notebook.",
     `- Each answer can show what it cost: Settings › AI › Show what each answer cost (${showCost ? "on" : "off"} now).`,
-    "- The model you run on is set in Settings › AI › AI model; a new chat is the pencil button at the top of this chat; Save chat keeps chats in the notebook's AI chats folder.",
+    "- The model you run on is set in Settings › AI › AI model; a new chat is the pencil button at the top of this chat; every chat is kept as a note in the notebook's AI chats folder, where it can be opened or deleted.",
     "- For any question about what FineNotes can do, how to do something in it or where something is, look it up with finenotes_help (try other words if the first search misses) and answer from what it finds, naming the path through the app and giving its links. Never invent a feature, a setting or a menu; when the handbook does not have it, say so, and suggest an issue at https://github.com/Joost-8/FineNotes/issues for a missing feature or a bug.",
   ].join("\n");
 }

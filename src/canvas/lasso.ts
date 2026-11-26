@@ -53,6 +53,39 @@ export function lassoModeOf(raw: unknown): LassoMode {
 }
 
 /**
+ * What a by-line lasso does where its pen comes down, most specific first:
+ *
+ * - `text`: on a PDF's printed text (and no ink but a highlight over it), it
+ *   selects that text as a PDF viewer does, from the word it landed on to
+ *   the word under the pen, following the lines;
+ * - `free-space`: on a board, or paper with no lines, it inserts space
+ *   (discussion #276);
+ * - `space`: in the margin beside a line, it inserts or removes lines;
+ * - `lines`: on a line, it selects ink word by word (FineNotes#20);
+ * - `rect`: anywhere else it drags out a rectangle.
+ *
+ * Ink always wins over text: a pen-down on handwriting over a PDF's words
+ * selects the handwriting, as a tap-and-hold there does.
+ */
+export type ByLineStart = "text" | "free-space" | "space" | "lines" | "rect";
+
+export function byLineStart(at: {
+  /** A press here would select PDF text. */
+  onText: boolean;
+  /** The page inserts space anywhere (a board, unlined paper). */
+  freeSpace: boolean;
+  /** The pen is in the margin beside a line. */
+  inMargin: boolean;
+  /** The pen is on a writing line. */
+  onLine: boolean;
+}): ByLineStart {
+  if (at.onText) return "text";
+  if (at.freeSpace) return "free-space";
+  if (at.inMargin) return "space";
+  return at.onLine ? "lines" : "rect";
+}
+
+/**
  * What the lasso picks up. GoodNotes' "What to include in the selection",
  * less the elements this plugin does not have.
  */

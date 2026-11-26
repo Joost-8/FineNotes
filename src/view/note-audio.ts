@@ -294,7 +294,7 @@ export class NoteAudio {
     if (surface && !this.host.isLocked()) {
       surface.applyCommand(
         new AddRecording({
-          id: nextRecordingId(surface.document.recordings),
+          id: nextRecordingId(surface.document.recordings, surface.document),
           path: saved.path,
           start: saved.start,
           duration: saved.duration,

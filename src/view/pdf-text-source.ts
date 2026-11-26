@@ -43,8 +43,16 @@ import { type PageGeometry, type PdfBackdrop, pdfFrameOf } from "../model/docume
 import { classifyPage } from "../recognition/ocr/figures";
 import { wordsOfLayout } from "../recognition/ocr/ocr-text";
 import { parseWordList } from "../recognition/hwr/corrections";
-import { isSparse, mergedItems, nativeBoxes } from "../recognition/ocr/ocr-words";
+import {
+  OCR_TUNING,
+  isSparse,
+  mergedItems,
+  nativeBoxes,
+  textSpread,
+} from "../recognition/ocr/ocr-words";
 import { type OperatorPageLike, opCodes, readFigures } from "./pdf-figures";
+import { repairLigatures } from "../canvas/pdf-ligatures";
+import { commonWords } from "../translate/languages";
 import { type TextWorker, workerTextDocument } from "./pdf-worker-text";
 import type { OcrOwner, OcrService } from "./ocr-service";
 
@@ -112,6 +120,7 @@ const EMPTY: PageText = {
 /** pdf.js's text items as {@link PdfTextItem}s, with their fonts' metrics. */
 export function readTextItems(content: TextContentLike): PdfTextItem[] {
   const items: PdfTextItem[] = [];
+  const fonts: (string | undefined)[] = [];
   for (const raw of content.items) {
     const { str, transform, width, height } = raw;
     if (typeof str !== "string" || !Array.isArray(transform)) continue;
@@ -132,7 +141,17 @@ export function readTextItems(content: TextContentLike): PdfTextItem[] {
     }
     if (style?.vertical === true) item.vertical = true;
     items.push(item);
+    fonts.push(typeof raw.fontName === "string" ? raw.fontName : undefined);
   }
+  // Ligatures some fonts map to private-use codes (U+E000...), read as letters.
+  const repaired = repairLigatures(
+    items.map((item) => item.str),
+    fonts,
+    commonWords(),
+  );
+  repaired.forEach((str, i) => {
+    items[i].str = str;
+  });
   return items;
 }
 
@@ -477,11 +496,8 @@ export class PdfTextCache implements OcrOwner {
     const ocr = this.ocr;
     if (!ocr?.enabled) return native;
     const figures = ocr.figures === true;
-    const sparse = isSparse(
-      layoutText(native, pdfToPage(viewport, source, source)),
-      source.width,
-      source.height,
-    );
+    const layout = layoutText(native, pdfToPage(viewport, source, source));
+    const sparse = isSparse(layout, source.width, source.height);
     // Pictures are not looked at (the setting is off): only sparse pages are read, as before.
     if (!sparse && !figures) {
       ocr.settled(backdrop.path, backdrop.page);
@@ -529,7 +545,7 @@ export class PdfTextCache implements OcrOwner {
     const scan = operators
       ? await readFigures({ getOperatorList: operators }, await this.operators(), viewport, source)
       : null;
-    const plan = classifyPage(sparse, scan, source);
+    const plan = classifyPage(sparse, scan, source, OCR_TUNING, textSpread(layout, source.height));
     if (plan.condition === "TEXT_ONLY") {
       ocr.settled(backdrop.path, backdrop.page);
       // Only a page whose pictures were looked at is known to need nothing.

@@ -201,22 +201,38 @@ export function learnedBadge(
   };
 }
 
+/** practice.ts's `DRAWN_SET`, kept here so this module does not load the line pool. */
+export const DRAWN_SHEET_SET = 200;
+
 /** "2 of 3 sheets · 49 lines": how far learning has come, in one line. */
 export function learnSummary(sheets: readonly PracticeSheet[], sets: number): string {
   const written = writtenSets(sheets, sets);
   const lines = sheets.reduce((sum, sheet) => sum + sheet.written, 0);
-  return t("ai.learn.summary", { written, sets, lines: tn("ai.learn.lines", lines) });
+  return t("ai.learn.summary", {
+    written,
+    sets: Math.max(sets, written),
+    lines: tn("ai.learn.lines", lines),
+  });
 }
 
-/** Whether a sheet is one of the `sets` text sets (not the symbol sheet, not a legacy notebook). */
-function isTextSheet(sheet: PracticeSheet, sets: number): boolean {
-  return sheet.set !== null && sheet.set >= 1 && sheet.set <= sets;
+/**
+ * Whether a sheet is a text sheet: one of the `sets` fixed sets from before,
+ * or a drawn sheet (not the symbol sheet, not a legacy notebook).
+ */
+export function isTextSheet(sheet: PracticeSheet, sets: number): boolean {
+  return (
+    sheet.set !== null && ((sheet.set >= 1 && sheet.set <= sets) || sheet.set === DRAWN_SHEET_SET)
+  );
 }
 
-/** How many of the `sets` text sets have a sheet with something copied on it. */
+/** The text sheets in order: they are numbered 1, 2, 3… in this order on screen. */
+export function textSheets(sheets: readonly PracticeSheet[], sets: number): PracticeSheet[] {
+  return sheets.filter((s) => isTextSheet(s, sets));
+}
+
+/** How many text sheets have something copied on them. */
 function writtenSets(sheets: readonly PracticeSheet[], sets: number): number {
-  return new Set(sheets.filter((s) => s.written > 0 && isTextSheet(s, sets)).map((s) => s.set))
-    .size;
+  return textSheets(sheets, sets).filter((s) => s.written > 0).length;
 }
 
 /** A practice sheet in the vault, as the settings list it. */
@@ -293,18 +309,18 @@ export function nextSheetAction(
   const unfinished = sheets.find(
     (s) => (s.set === null || isTextSheet(s, sets)) && s.written < s.prompts,
   );
+  const text = textSheets(sheets, sets);
   if (unfinished)
     return {
       kind: "continue",
       path: unfinished.path,
       label: isTextSheet(unfinished, sets)
-        ? t("ai.learn.continueSheet", { set: unfinished.set ?? 0 })
+        ? t("ai.learn.continueSheet", { set: text.indexOf(unfinished) + 1 })
         : t("ai.learn.continueTitle", { title: unfinished.title }),
     };
-  for (let set = 1; set <= sets; set++) {
-    if (!sheets.some((s) => s.set === set)) {
-      return { kind: "write", label: t("ai.learn.writeSheet", { set }) };
-    }
+  // Every new sheet is drawn, so the next is simply the one after the last.
+  if (text.length < sets) {
+    return { kind: "write", label: t("ai.learn.writeSheet", { set: text.length + 1 }) };
   }
   return { kind: "write", label: t("ai.learn.writeAnother") };
 }

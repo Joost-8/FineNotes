@@ -13,7 +13,7 @@ import { baseName, isFolderNotebook, parentPath } from "./folder-notebook";
 import { t, tn } from "../i18n/translate";
 import { freeName } from "./library-style";
 import { NOTEBOOK_FILE_SUFFIX } from "../constants";
-import { OWN_FOLDERS, inkFileSuffix, stripInkSuffix } from "./new-notebook";
+import { OWN_FOLDERS, OWN_FOLDER_PAGES, inkFileSuffix, stripInkSuffix } from "./new-notebook";
 
 /** Whether `path` lies below `folder`. */
 function under(path: string, folder: string): boolean {
@@ -253,7 +253,11 @@ export function duplicatePlan(
   const name = freeName(base, "", (n) => taken(join(above, n)));
   const folder = join(above, name);
   return {
-    folders: [folder, ...OWN_FOLDERS.map((sub) => `${folder}/${sub}`)],
+    // Its pages' folder is made at its first page written.
+    folders: [
+      folder,
+      ...OWN_FOLDERS.filter((sub) => sub !== OWN_FOLDER_PAGES).map((sub) => `${folder}/${sub}`),
+    ],
     note: `${folder}/${name}${suffix}`,
   };
 }

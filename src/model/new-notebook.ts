@@ -285,6 +285,12 @@ export const OWN_FOLDER_AUDIO = "Recordings";
 export const OWN_FOLDER_TRANSCRIPTS = "Transcripts";
 export const OWN_FOLDER_CHATS = "AI chats";
 export const OWN_FOLDER_EXPORTS = "Exports";
+/**
+ * Its pages, one file per page per device, in a folder named by the
+ * notebook's id (`model/device-pages`, FineNotes#274). Made at the first
+ * page written, not with the others.
+ */
+export const OWN_FOLDER_PAGES = "Pages";
 
 /** Every folder a notebook's own folder holds, in the order they are made. */
 export const OWN_FOLDERS: readonly string[] = [
@@ -293,6 +299,7 @@ export const OWN_FOLDERS: readonly string[] = [
   OWN_FOLDER_TRANSCRIPTS,
   OWN_FOLDER_CHATS,
   OWN_FOLDER_EXPORTS,
+  OWN_FOLDER_PAGES,
 ];
 
 /** Where a new notebook goes on disk. */

@@ -9,8 +9,8 @@
  * page it changed, and no file is ever changed on two devices.
  *
  * ```
- * Physics/Physics.notebook.md    frontmatter `finenotes-id: n7k2q9ab`, prose,
- *                                and the notebook as it was (`v2+device-pages:`)
+ * Physics/Physics.notebook.md    prose, and the notebook as it was, labelled
+ *                                with its id (`v2+device-pages=n7k2q9ab:`)
  * Physics/Pages/n7k2q9ab/
  *   p1.ab12cd34.md               page p1, as device ab12cd34 wrote it
  *   p1.ef56gh78.md               page p1, as device ef56gh78 wrote it
@@ -31,6 +31,7 @@
 
 import { type InkDocument } from "./document";
 import {
+  type DevicePagesSources,
   type DevicePagesUnion,
   type MetaPageEntry,
   type MetaRead,
@@ -40,20 +41,13 @@ import {
   PAGE_FIELDS,
   joinDevicePages,
 } from "./device-pages-union";
-import { needsNewerReader } from "./format-features";
+import { BLOCK_LABEL } from "../constants";
+import { isLabelProblem, needsNewerReader, readPayloadLabel } from "./format-features";
 import { isDeviceId, readVersionVector } from "./provenance";
-import {
-  payloadFeatures,
-  readLabelledJson,
-  readStoredDocument,
-  splitFrontmatter,
-} from "./serialize";
+import { payloadFeatures, readLabelledJson, readStoredDocument } from "./serialize";
 
 /** The folder beside the notebook file that holds the page folders, one per notebook id. */
 export const PAGES_FOLDER = "Pages";
-
-/** The frontmatter key holding a notebook's id. */
-export const NOTEBOOK_ID_KEY = "finenotes-id";
 
 /** The block a page file keeps its page in. */
 export const PAGE_BLOCK_LABEL = "finenotes-page";
@@ -80,22 +74,32 @@ export function isDevicePagesPayload(payload: string): boolean {
 // --- The notebook's id -----------------------------------------------------------
 
 /**
- * The `finenotes-id` in a note's leading frontmatter, or `null` when it has
- * none or the id could name anything but one folder. Quotes are allowed.
+ * The id of a notebook kept as page files, from its payload's label
+ * (`device-pages=<id>`), or `null` when the label names none.
  */
-export function notebookIdOf(body: string): string | null {
-  const { frontmatter } = splitFrontmatter(body);
-  if (!frontmatter) return null;
-  for (const line of frontmatter.split(/\r?\n/)) {
-    if (!line.startsWith(`${NOTEBOOK_ID_KEY}:`)) continue;
-    let value = line.slice(NOTEBOOK_ID_KEY.length + 1).trim();
-    const quote = value[0];
-    if ((quote === '"' || quote === "'") && value.endsWith(quote) && value.length >= 2) {
-      value = value.slice(1, -1);
-    }
-    return isNotebookId(value) ? value : null;
-  }
-  return null;
+export function notebookIdOf(payload: string): string | null {
+  const text = payload.trim();
+  const colon = text.indexOf(":");
+  if (colon < 0) return null;
+  const label = readPayloadLabel(text.slice(0, colon));
+  return isLabelProblem(label) ? null : (label.pagesId ?? null);
+}
+
+/** The block a notebook file keeps its payload in: where its label starts. */
+const BLOCK_START = `%%${BLOCK_LABEL}`;
+
+/**
+ * The id of a notebook kept as page files from its whole file text, reading
+ * only its block's label: cheap enough for Home to ask of every notebook.
+ */
+export function notebookIdOfText(text: string): string | null {
+  const at = text.indexOf(BLOCK_START);
+  if (at < 0) return null;
+  const start = text.indexOf("\n", at);
+  if (start < 0) return null;
+  const colon = text.indexOf(":", start);
+  if (colon < 0 || colon - start > 400) return null;
+  return notebookIdOf(text.slice(start + 1, colon + 1));
 }
 
 // --- Paths ---------------------------------------------------------------------
@@ -110,6 +114,27 @@ function folderOf(path: string): string {
 export function devicePagesFolderOf(notebookPath: string, notebookId: string): string {
   const folder = folderOf(notebookPath);
   return folder ? `${folder}/${PAGES_FOLDER}/${notebookId}` : `${PAGES_FOLDER}/${notebookId}`;
+}
+
+/**
+ * The page folder to move when the notebook kept as page files with `id`
+ * moved from `from` to `to` (paths of the notebook file): exactly its old
+ * folder to its new place, `null` when the place does not change (a rename
+ * in the same folder, or a notebook whose own folder moved with it, whose
+ * pages are already there) or `exists` says either side is not as expected
+ * (nothing at the old place, or something at the new one). Never a search:
+ * another notebook's folder is never taken.
+ */
+export function pagesFolderMove(
+  from: string,
+  to: string,
+  id: string,
+  exists: (path: string) => boolean,
+): { from: string; to: string } | null {
+  const old = devicePagesFolderOf(from, id);
+  const next = devicePagesFolderOf(to, id);
+  if (old === next || !exists(old) || exists(next)) return null;
+  return { from: old, to: next };
 }
 
 /** What a file in a page folder is, by its name. */
@@ -238,7 +263,11 @@ export function readPageFile(text: string, device: string): PageFileRead | Devic
   const tomb: Tombstone[] = [];
   for (const entry of Array.isArray(json.tomb) ? json.tomb : []) {
     if (!isRecord(entry) || typeof entry.id !== "string" || !entry.id) continue;
-    tomb.push(typeof entry.d === "string" ? { id: entry.id, d: entry.d } : { id: entry.id });
+    tomb.push({
+      id: entry.id,
+      ...(typeof entry.d === "string" ? { d: entry.d } : {}),
+      ...(typeof entry.l === "string" ? { l: entry.l } : {}),
+    });
   }
   return {
     device,
@@ -310,6 +339,9 @@ export interface DevicePagesLoad {
   readonly newer: string[];
   /** Whether anything above is not up to date: show the "still syncing" mark. */
   readonly syncing: boolean;
+  /** What was read and how it was joined, for the writer (`device-pages-writer`). */
+  readonly sources: DevicePagesSources;
+  readonly union: DevicePagesUnion;
 }
 
 /**
@@ -338,11 +370,8 @@ export function readDevicePagesNotebook(
     else if (kind.kind === "meta") metas.push(read as MetaRead);
     else pages.push(read as PageFileRead);
   }
-  const union: DevicePagesUnion = joinDevicePages({
-    legacy: isRecord(legacy) ? legacy : null,
-    metas,
-    pages,
-  });
+  const sources: DevicePagesSources = { legacy: isRecord(legacy) ? legacy : null, metas, pages };
+  const union = joinDevicePages(sources);
   const doc = readStoredDocument(union.stored, fallbackWidth);
   return {
     doc,
@@ -352,7 +381,14 @@ export function readDevicePagesNotebook(
     unreadable,
     newer,
     syncing:
-      union.stale.length + union.missing.length + union.unlisted.length + unreadable.length > 0,
+      union.stale.length +
+        union.missing.length +
+        union.unlisted.length +
+        unreadable.length +
+        newer.length >
+      0,
+    sources,
+    union,
   };
 }
 

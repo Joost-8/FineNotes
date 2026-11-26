@@ -61,6 +61,9 @@ import {
 import { PdfBackdropCache } from "./pdf-backdrop";
 import { NotebookPages, notebookStatOf } from "./library-pages";
 import { type FileStamp, devicePagesFolderOfFile } from "../model/device-pages";
+import { TextNotePages } from "./library-note";
+import { firstBlockOn } from "../model/note-pages";
+import { TEXT_NOTE_FILE_SUFFIX, isTextNoteName } from "../model/text-note-file";
 import type { Page } from "../model/document";
 import { type Tap, isDoubleTap, railFolders } from "../model/library-rail";
 import {
@@ -99,6 +102,7 @@ import {
   updateButtonLook,
 } from "../model/update-button";
 import { inkFileSuffix } from "../model/new-notebook";
+import { type ShowKind, showKindOf, shownBy } from "../model/note-listing";
 import { isStarred, starredFirst, toggleStar } from "../model/favorites";
 import { hiddenBy, hide, isHidden, shownItems, unhide } from "../model/library-hidden";
 import { LAST_PAGES_KEY, type LastPages, parseLastPages } from "../model/last-page";
@@ -118,6 +122,7 @@ import {
   hoistSingles,
   folderOf,
   notePreviewText,
+  onShelf,
   readProgress,
   placeholderEntry,
   searchEntries,
@@ -170,6 +175,8 @@ export interface LibraryHost {
   setSimpleParts(parts: SimplePart[]): void;
   /** The New notebook / New board dialogs, made in `folder` ("" the root). */
   newNotebook(folder: string): void;
+  /** A new text note, made in `folder` and opened. */
+  newNote(folder: string): void;
   newBoard(folder: string): void;
   /** The import dialog for Goodnotes, Notability and other apps, into `folder`. */
   importFromApp(folder: string): void;
@@ -237,8 +244,10 @@ const RECENT_COUNT = 6;
 const RAIL_MIN_WIDTH = 720;
 /** Whether the folder rail is put away on this device (simple look, wide Home). */
 const RAIL_HIDDEN_KEY = "finenotes-library-rail-hidden";
-/** Whether Home lists notebooks only on this device. */
+/** Whether Home lists notebooks only on this device: the switch before the Show filter. */
 const ONLY_NOTEBOOKS_KEY = "finenotes-library-only-notebooks";
+/** What Home shows on this device: everything, notebooks or text notes (`ShowKind`). */
+const SHOW_KEY = "finenotes-library-show";
 /** A cover drawn from the notebook's own cover page, CSS px wide. */
 const COVER_WIDTH = 240;
 
@@ -363,8 +372,11 @@ export class LibraryView extends ItemView {
   private railHidden = this.app.loadLocalStorage(RAIL_HIDDEN_KEY) === "1";
   /** The rail opened as a drawer over a narrow Home. */
   private drawerOpen = false;
-  /** Home lists notebooks only, no other files (the sort menu); kept on this device. */
-  private onlyNotebooks = this.app.loadLocalStorage(ONLY_NOTEBOOKS_KEY) === "1";
+  /** What Home lists (the view menu's Show): everything, notebooks or text notes; kept on this device. */
+  private showKind: ShowKind = showKindOf(
+    (this.app.loadLocalStorage(SHOW_KEY) as string | null) ??
+      (this.app.loadLocalStorage(ONLY_NOTEBOOKS_KEY) as string | null),
+  );
   /** The rail brought out beside Obsidian's own left sidebar (simple look), until Home closes. */
   private railWithSidebar = false;
   /** Hidden items shown, dimmed, until Home closes (the Sort menu, while any are hidden). */
@@ -382,6 +394,8 @@ export class LibraryView extends ItemView {
   private lastTap: Tap | null = null;
   /** Notebooks read whole, for their cover and page pictures. */
   private pagesOf: NotebookPages | null = null;
+  /** Text notes laid out on pages, for their covers and the preview's strip. */
+  private notePagesOf: TextNotePages | null = null;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -602,6 +616,11 @@ export class LibraryView extends ItemView {
     return this.pagesOf;
   }
 
+  private notePages(): TextNotePages {
+    this.notePagesOf ??= new TextNotePages(this.app, () => this.contentEl);
+    return this.notePagesOf;
+  }
+
   /** One key per vault for what Home keeps on this device. */
   private vaultKey(): string {
     return vaultKeyOf(this.app);
@@ -748,6 +767,8 @@ export class LibraryView extends ItemView {
     this.unloadPreviews();
     this.pagesOf?.dispose();
     this.pagesOf = null;
+    this.notePagesOf?.release();
+    this.notePagesOf = null;
     this.pdf?.destroy();
     this.pdf = null;
     if (this.workerHeld) releasePdfWorker();
@@ -1082,7 +1103,7 @@ export class LibraryView extends ItemView {
     this.railButton.toggleClass("is-active", mode !== "none");
     this.railButton.setAttribute("aria-pressed", String(mode !== "none"));
     // Folders are filed from every item, then filtered: "Notebooks only" hides files, never moves notebooks.
-    const keep = (e: LibraryEntry): boolean => !this.onlyNotebooks || e.kind === "notebook";
+    const keep = (e: LibraryEntry): boolean => shownBy(e, this.showKind);
     if (mode !== "none") this.paintRail(all, keep);
     else this.railEl.empty();
     if (this.previewPath !== null && !all.some((e) => e.path === this.previewPath))
@@ -1183,11 +1204,11 @@ export class LibraryView extends ItemView {
     // its notebooks and files together.
     const atTop = this.folder === "";
     if (atTop) {
-      const files = here.notebooks.filter((e) => e.kind !== "notebook");
+      const files = here.notebooks.filter((e) => !onShelf(e));
       if (files.length > 0)
         this.grid(sortEntries(files, this.sort, this.reverse), t("notebooks.home.files"));
     }
-    const rest = atTop ? all.filter((e) => e.kind === "notebook") : here.notebooks;
+    const rest = atTop ? all.filter(onShelf) : here.notebooks;
     if (rest.length > 0) {
       this.grid(
         sortEntries(rest, this.sort, this.reverse),
@@ -1260,7 +1281,7 @@ export class LibraryView extends ItemView {
       path,
       name: path.split("/").pop() ?? path,
       count: inside.length,
-      notebooks: inside.filter((e) => e.kind === "notebook").length,
+      notebooks: inside.filter(onShelf).length,
     };
   }
 
@@ -1464,7 +1485,21 @@ export class LibraryView extends ItemView {
     cover.createSpan({ cls: "goodobsidian-library-cover-title", text: entry.title });
     if (entry.kind === "pdf" && entry.pdf) this.paintPdfCover(cover, entry.pdf);
     else if (entry.kind === "image") this.paintImageCover(cover, entry.path);
+    else if (entry.textNote) this.paintTextNoteCover(cover, entry.path);
     else if (entry.kind === "note") this.paintNoteCover(cover, entry.path);
+  }
+
+  /**
+   * A text note's first page as its cover, as a notebook shows its first
+   * page: laid out on a page and drawn (library-note.ts), kept as a small
+   * picture on this device like a notebook's pages.
+   */
+  private paintTextNoteCover(cover: HTMLElement, path: string): void {
+    cover.addClass("is-textnote");
+    const file = this.app.vault.getFileByPath(path);
+    if (!file) return;
+    const sheet = cover.createDiv({ cls: "goodobsidian-library-textnote-page" });
+    this.pagePicture(sheet, file, 0, COVER_WIDTH, () => cover.addClass("is-ready"));
   }
 
   /**
@@ -2107,6 +2142,10 @@ export class LibraryView extends ItemView {
     setIcon(more, "more-horizontal");
     more.addEventListener("click", (event) => this.openCardMenu(event, entry));
 
+    if (entry.textNote) {
+      this.textNoteStrip(pane, info, entry);
+      return;
+    }
     if (entry.kind !== "notebook") return;
     const file = this.app.vault.getFileByPath(entry.path);
     if (!file) return;
@@ -2153,12 +2192,59 @@ export class LibraryView extends ItemView {
   }
 
   /**
+   * A text note's pages in its preview, cut as Home lays it out
+   * (note-pages.ts); a tap opens the note at the page's first paragraph.
+   * The page count joins the facts once the note is laid out.
+   */
+  private textNoteStrip(pane: HTMLElement, info: HTMLElement, entry: LibraryEntry): void {
+    const file = this.app.vault.getFileByPath(entry.path);
+    if (!file) return;
+    const strip = pane.createDiv({ cls: "goodobsidian-library-preview-pages" });
+    void this.notePages()
+      .count(file)
+      .then((total) => {
+        if (this.closed || !strip.isConnected || total === 0) return;
+        // Between the folder and the date, as a notebook's count is.
+        const facts = info.querySelectorAll(".goodobsidian-library-when");
+        const fact = createDiv({
+          cls: "goodobsidian-library-when",
+          text: tn("notebooks.home.pageCount", total),
+        });
+        const before = facts[1] ?? info.querySelector(".goodobsidian-library-preview-buttons");
+        if (before) info.insertBefore(fact, before);
+        for (let index = 0; index < Math.min(total, HOME_PREVIEW_PAGES); index++) {
+          const sheet = strip.createDiv({
+            cls: "goodobsidian-library-preview-page",
+            attr: {
+              role: "button",
+              tabindex: "0",
+              "aria-label": t("notebooks.home.pageOf", { page: index + 1, total }),
+            },
+          });
+          sheet.addEventListener("click", () => this.openItem(entry, index));
+          sheet.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") this.openItem(entry, index);
+          });
+          this.pagePicture(sheet, file, index, 110);
+        }
+      });
+  }
+
+  /**
    * Page `index` of `file` drawn into `sheet` at the width it is shown
    * (at least `minWidth` CSS px, at most 420), as a small picture kept on
    * this device: shown again, it is there at once and nothing is drawn.
    */
-  private pagePicture(sheet: HTMLElement, file: TFile, index: number, minWidth: number): void {
+  private pagePicture(
+    sheet: HTMLElement,
+    file: TFile,
+    index: number,
+    minWidth: number,
+    shown?: () => void,
+  ): void {
     const dpr = window.devicePixelRatio || 1;
+    // A text note's pages are Home's own cut of it, kept apart from a notebook's.
+    const note = isTextNoteName(file.name);
     const show = (url: string): void => {
       if (!sheet.isConnected) return;
       const img = createEl("img", {
@@ -2169,9 +2255,10 @@ export class LibraryView extends ItemView {
       sheet.empty();
       sheet.appendChild(img);
       sheet.addClass("is-ready");
+      shown?.();
     };
     const keyFor = (width: number): string =>
-      `page:${file.path}#${index}@${stampOf(this.stat(file))}:${Math.round(width * dpr)}`;
+      `${note ? "notepage" : "page"}:${file.path}#${index}@${stampOf(this.stat(file))}:${Math.round(width * dpr)}`;
     const vault = this.vaultKey();
     this.whenSeen(sheet, async () => {
       if (this.closed || !sheet.isConnected) return;
@@ -2184,7 +2271,9 @@ export class LibraryView extends ItemView {
         show(kept);
         return;
       }
-      const canvas = await this.pages().render(file, index, width);
+      const canvas = note
+        ? await this.notePages().render(file, index, width)
+        : await this.pages().render(file, index, width);
       if (!canvas || this.closed) return;
       const url = await saveCover(vault, key, canvas);
       canvas.width = canvas.height = 0;
@@ -2386,10 +2475,30 @@ export class LibraryView extends ItemView {
       pageIndex !== undefined && notebook
         ? { pageIndex, ...(search ? { search } : {}) }
         : undefined;
+    if (pageIndex !== undefined && pageIndex > 0 && entry.textNote) {
+      void this.openNoteAt(leaf, file, existing !== null, pageIndex);
+      return;
+    }
     if (existing) {
       void this.app.workspace.revealLeaf(existing);
       if (at) leaf.setEphemeralState(at);
     } else void leaf.openFile(file, at ? { eState: at } : undefined);
+  }
+
+  /** A text note opened (or shown) at the first paragraph of page `pageIndex` of Home's cut of it. */
+  private async openNoteAt(
+    leaf: WorkspaceLeaf,
+    file: TFile,
+    open: boolean,
+    pageIndex: number,
+  ): Promise<void> {
+    const layout = await this.notePages().layout(file);
+    const block = layout ? firstBlockOn(layout.pages, pageIndex) : null;
+    const at = block !== null ? { noteBlock: block } : undefined;
+    if (open) {
+      void this.app.workspace.revealLeaf(leaf);
+      if (at) leaf.setEphemeralState(at);
+    } else await leaf.openFile(file, at ? { eState: at } : undefined);
   }
 
   /** A menu with room for a finger: every row is tall (styles.css). */
@@ -2484,17 +2593,25 @@ export class LibraryView extends ItemView {
           }),
       );
     }
-    menu.addItem((item) =>
-      item
-        .setTitle(t("notebooks.home.onlyNotebooks"))
-        .setIcon("notebook")
-        .setChecked(this.onlyNotebooks)
-        .onClick(() => {
-          this.onlyNotebooks = !this.onlyNotebooks;
-          this.app.saveLocalStorage(ONLY_NOTEBOOKS_KEY, this.onlyNotebooks ? "1" : "0");
-          this.paintNow(true);
-        }),
-    );
+    menu.addSeparator();
+    // Show: one choice of three, where "Notebooks only" was a switch.
+    for (const [show, label, icon] of [
+      ["all", "notebooks.home.showAll", "layers"],
+      ["notebooks", "notebooks.home.onlyNotebooks", "notebook"],
+      ["notes", "notebooks.home.showNotes", "notepad-text"],
+    ] as const) {
+      menu.addItem((item) =>
+        item
+          .setTitle(t(label))
+          .setIcon(icon)
+          .setChecked(this.showKind === show)
+          .onClick(() => {
+            this.showKind = show;
+            this.app.saveLocalStorage(SHOW_KEY, show);
+            this.paintNow(true);
+          }),
+      );
+    }
     // Only while something is hidden: otherwise there is nothing to show.
     if (this.showHidden || this.host.hidden().length > 0)
       menu.addItem((item) =>
@@ -2698,6 +2815,12 @@ export class LibraryView extends ItemView {
     );
     menu.addItem((item) =>
       item
+        .setTitle(t("notebooks.note.new"))
+        .setIcon("notepad-text")
+        .onClick(() => this.host.newNote(this.folder)),
+    );
+    menu.addItem((item) =>
+      item
         .setTitle(t("notebooks.newNotebook.board"))
         .setIcon("infinity")
         .onClick(() => this.host.newBoard(this.folder)),
@@ -2808,7 +2931,12 @@ export class LibraryView extends ItemView {
         .setTitle(t("common.rename"))
         .setIcon("pencil")
         .onClick(() =>
-          this.rename(file, entry.title, inkFileSuffix(file.name) ?? `.${file.extension}`),
+          this.rename(
+            file,
+            entry.title,
+            inkFileSuffix(file.name) ??
+              (entry.textNote ? TEXT_NOTE_FILE_SUFFIX : `.${file.extension}`),
+          ),
         ),
     );
     // A copy and a PDF export are a notebook's; any other file has Obsidian's own.

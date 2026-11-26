@@ -19,6 +19,98 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Handwrite here** (PR #312, thanks @bendi087): in a Markdown note, the command puts a
+  handwriting block at the cursor and opens it for the Pencil in place; the blocks are pages of
+  one notebook per note and show in reading view and exported PDFs.
+- **Ask AI knows the PDFs in your tabs.** The AI button now works on a PDF's
+  tab: Ask opens over the slide, and "explain this slide" means the one in
+  view (or the one you read last before going back to the notes). It can
+  read the other pages of any tab, and looks at slides that are mostly
+  pictures. Anything it writes goes into the notes.
+- **Export: a PDF name of your own (#318).** The Export dialog has a name
+  field for the PDF. Type a name and the next export replaces the file the
+  last one wrote under it (the button says Replace), so a link to it, or a copy synced to a
+  drive, always shows the newest version; the notebook remembers the name for
+  next time. A file FineNotes did not write is never replaced. Left empty,
+  every export makes a new file, as before.
+
+- **Corrections tell Grape's misreads from your own mistakes.** On the word
+  card, **Should be “…”** (offered only for a word that is very likely
+  misspelled, never for a listed word, a number, a code or maths) says you
+  wrote the word wrong: the page's text
+  (what search finds) shows the word you meant, while Grape (and Help
+  improve Grape) keep the ink labelled with what you really wrote, never
+  the word you meant. **Type what it says…** now asks which it was:
+  **Grape misread it** teaches Grape the word you typed, **I wrote it
+  wrong** fixes the text the same way as Should be. Every
+  answer now changes what search finds on the page, not only what Grape
+  learns. Editing a lassoed title (Add to contents, Link to…) no longer
+  teaches Grape unless you chose **Correct**.
+- **Grape reads Dutch, German, French, Spanish, Portuguese and Italian.**
+  A page written in one of them is recognised by its words, and the first
+  time, FineNotes offers that language's pack (Grape in Nederlands,
+  Deutsch, …: 1 to 2 MB, once; listed in Settings › Models). With it the
+  page is read in that language, which cuts the words misread there to
+  about a third. On French, Spanish and
+  Italian pages, words the pack does not know are underlined, and the word
+  card suggests the language's own words everywhere. Without its pack, a
+  page in another language is read without Grape's English model and is not
+  underlined. Accented letters are still read without their accents.
+- **Beautify handwriting.** Lasso some lines and choose **Beautify** in the ⋯
+  menu, or hold a handwritten word and tap the brush beside **Correct** to
+  beautify its line. Your words are written again, neater, in your own hand,
+  where yours were, by Dostoyev (handwriting writer model, a
+  one-time download, run on your device); every line is set level (on the
+  paper's rules when it has them), wandering baselines are straightened,
+  margins aligned and shaky strokes smoothed. Writing in your hand needs your
+  practice sheets (at least 10 copied lines); without them Beautify only
+  tidies. Formulas and tables are left alone. One undo puts it all back. How
+  neat it writes is a slider at the end of the AI menu, from most like your
+  neat it writes is a slider in the Lasso tool's popover, from most like your
+  ink to neatest.
+- **Write it in your handwriting.** Once Beautify can write in your hand:
+  after you correct a word on the word card, the card offers to write the
+  word again in your hand in place of the old ink, on its line and at its
+  size (the rest of the line moves to fit); a word you really wrote that way
+  gets **Should be “…”** with the closest spelling, which writes it in your
+  hand too. A text box,
+  pasted or typed, turns into your handwriting with the lasso's **Turn into ›
+  Handwriting**: wrapped to the page's margins, on the rules of ruled paper,
+  each line written afresh so it never looks stamped, never over pictures,
+  boxes or ink already on the page; this works on an empty page too.
+  Calculation notes write a plain number answer (digits, `.` `,` `-` `%` `$`)
+  after your "=" in your hand, once Grape reads it back exactly; fractions
+  and powers stay in the drawn figures. All of it follows Beautify's
+  neatness slider.
+  ink to neatest. When Grape is unsure of a word, Beautify first opens the
+  word card on it (as **Correct** does): answer it and that word is written
+  too, and Grape learns from it; close the card and the word stays as you
+  wrote it.
+- **Beautify writes straight.** The words it writes in your hand are set flat
+  on the line, and their letters stand on it and lean the same way, with your
+  letter shapes kept: nothing is redrawn. The neatness slider now sets how far
+  the letters are straightened, so its "neatest" end is still your hand. Of
+  two tries that read equally well, Beautify keeps the more even one. It
+  writes with Dostoyev 2.1, the same model started from less noise, which
+  reads better and writes more evenly.
+  ink to neatest. For the word Grape is least sure of on each line, at most,
+  Beautify first opens the word card (as **Correct** does): answer it and that
+  word is written too, and Grape learns from it; close the card and the word
+  stays as you wrote it. A word whose new writing does not read back as itself
+  stays as you wrote it too, level with the line, and nothing is pushed past
+  the page's edge.
+- **Insert space on boards, and on paper without lines**
+  ([discussion #276](https://github.com/Joost-8/FineNotes/discussions/276)).
+  With the lasso on **By line**, press anywhere on a board and drag down: everything
+  below the pen moves down, across the whole board, by whole dots or squares
+  (drag right to push things right instead). Drag back up to close empty
+  space again; it never closes over anything drawn. Ink, text, pictures,
+  sticky notes, tables and comments all move together, straight lines and
+  arrows stretch so branches stay joined, and one undo puts it all back.
+  The same works on notebook pages with no lines (blank, dotted, squared,
+  planners), within the page: it never pushes anything off the page's
+  edge. The insert-space arrows sit in a soft rail now.
+
 - **Erase on hover with the S Pen**
   ([discussion #209](https://github.com/Joost-8/FineNotes/discussions/209)).
   Settings › Stylus side button › **Erase, also hovering**: hold the side
@@ -30,13 +122,17 @@ extracted from the matching section of this file by `release.yml`.
   the way to erase with the button. "Copy shape diagnostics" now includes
   the pen's last hover and button events, to send if it does not work on
   your tablet.
-- **Ready for notebooks that sync page by page** (#274). A coming FineNotes
-  will keep a notebook's pages in small files of their own, one per device,
-  so Obsidian Sync stores a few MB an hour of writing instead of hundreds,
-  and two devices writing at once both keep their ink. This version opens
-  such a notebook read-only, with every device's ink on its pages, and
-  writes nothing to it. Its pages embedded in a note show the same. Pages
-  still on their way show what has arrived.
+- **Notebooks sync page by page** (#274). A notebook now keeps its pages in
+  small files of their own, one per page per device, in a `Pages` folder
+  beside it. A save writes only the pages you changed, so Obsidian Sync
+  stores a few MB an hour of writing instead of hundreds, no file nears
+  Sync's 5 MB limit, and two devices writing in one notebook at once both
+  keep their ink. Every notebook moves over by itself at its first save
+  after updating; new notebooks start that way. While some of a notebook's
+  pages are still on their way it stays read-only and shows what has
+  arrived. A device still on an older FineNotes opens such a notebook
+  read-only until it updates; for it, **Export notebook as one file** (in
+  the command palette) makes a copy in the old layout.
 
 ### Fixed
 
@@ -48,12 +144,41 @@ extracted from the matching section of this file by `release.yml`.
   FineNotes ready for the pen touching down with the button held, so that
   holding the button and writing erases. "Copy shape diagnostics" now says
   whether your tablet reports the hovering pen (`penSeen`).
+- **Quick handwriting keeps its letters (#275).** A letter started soon
+  after the last one could lose its first strokes or come out as a line,
+  most of all on handwriting practice sheets and with the page sidebar
+  open: every lift of the pen set off work (re-reading the other practice
+  sheets, repainting thumbnails) that landed inside the next letter. That
+  work now waits until the pen rests.
+- **Finishing a practice sheet asks once whether you would share it** to
+  help improve Grape, as meant since Help improve Grape arrived: the
+  question never came, because the sheet's count was reset after every
+  stroke.
+- **Select all in the page sidebar works across the whole button.** The
+  title next to it was drawn over its right half and took those taps.
+- **Pinching a selected picture no longer raises an error** in the
+  background; the picture turned as before.
+- **A selected snippet opens its slide from its action bar.** Right after a
+  snippet is dropped it is selected, and its chip sat under the frame, out
+  of reach. While selected, the chip now steps aside and the bar offers the
+  slide; the top-right handle resizes as before.
 - **Small handwriting keeps its letters on older iPads** (#275). On iPadOS
   before 26.2 the Pencil arrives rounded to whole pixels, and the smoothing
   that steadies it could flatten letters written small, as on a Learn your
   handwriting sheet ("Five" came out "Fi~"). Smoothing now moves each point
   no further than the rounding did, so straight lines stay steady and letters
   keep their shape.
+- **Turning several pages quickly stays smooth on pages with writing**
+  ([#201](https://github.com/Joost-8/FineNotes/issues/201)). The next page
+  was only prepared once a turn had come fully to rest, half a second after
+  the swipe, so a second swipe soon after met a page whose ink was still
+  being drawn. It is now prepared while the turn settles, and a page's ink
+  is prepared a little each frame instead of all in one. In a long notebook
+  the next page was often not prepared at all once a dozen pages had been
+  read; it is now, and the pages just read stay ready for turning back.
+- **The Input debug overlay reads a 120 Hz screen as 120.** An iPad Pro
+  whose frames often started a millisecond late was shown as a 143 Hz
+  screen, and the overlay counted late frames as missed.
 
 ### Fixed
 
@@ -74,6 +199,26 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Text notes.** A second kind of note beside notebooks, in the manner
+  of Apple Notes: you type into it, and handwriting and pictures sit in
+  sections of their own between the paragraphs. New › New note on Home, the
+  file list's right-click menu, or the command "New text note".
+  - Tap anywhere and type. The first line is the title; the Aa button has
+    Title, Heading, Subheading, Body and Monostyled, bold, italic, underline
+    and strikethrough, bulleted, numbered and check lists, and quotes.
+    Typing `- `, `1. `, `[] `, `> ` or `# ` at the start of a line makes the
+    list or heading, as in Markdown.
+  - The pen button, or simply the pen touching the space under the note,
+    starts a handwriting section. It grows as you write toward its foot,
+    its foot drags to size it, and Done trims it to what it holds. Fingers
+    scroll while the pen writes.
+  - A picture (the picture button, a paste or a drop) takes a line of its
+    own. Tap a picture or a handwriting section to select it: drag it to
+    move it between paragraphs, drag a picture's corner to size it.
+  - The file is ordinary Markdown, `Title.note.md`, named after the note's
+    title: it reads in any Markdown editor, and Obsidian's search, links and
+    sync treat it as a note. Handwriting is kept in a comment Obsidian's
+    reading view hides.
 - **Thank you, sponsors.** When a release comes with new GitHub sponsors,
   Home's what's-new card thanks them by name, then everyone who sponsored
   before them. The heart opens the sponsor page. The README shows every

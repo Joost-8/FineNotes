@@ -8,6 +8,7 @@
  * Obsidian's Tasks plugin to show. Ticking either one ticks the other.
  */
 
+import { mintedId } from "./dot-ids";
 import type { Command } from "./commands";
 import { type Bounds, type InkDocument, type InkTask, type Page, strokeBounds } from "./document";
 import { t } from "../i18n/translate";
@@ -23,6 +24,8 @@ export function normalizeTaskText(raw: unknown): string {
 
 /** The next unused `ck<N>` task id in the notebook. */
 export function nextTaskId(doc: InkDocument): string {
+  const minted = mintedId(doc);
+  if (minted) return minted;
   let max = 0;
   for (const page of doc.pages) {
     for (const task of page.tasks ?? []) {
