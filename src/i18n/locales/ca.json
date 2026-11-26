@@ -1350,6 +1350,8 @@
   "notebooks.export.cancelHint": "Tanca sense exportar.",
   "notebooks.export.go": "Exporta",
   "notebooks.export.goHint": "Fa els fitxers i els desa a la caixa forta.",
+  "notebooks.export.replace": "Substitueix",
+  "notebooks.export.nameLabel": "Nom del fitxer; buit: un fitxer nou cada cop",
   "notebooks.export.tapPages": "Toca les pàgines que cal exportar.",
   "notebooks.export.rendering": "S'està generant la pàgina {page} de {total}…",
   "notebooks.export.saving": "S'està desant…",

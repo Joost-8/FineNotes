@@ -174,7 +174,17 @@ describe("the bar on a PDF's tab", () => {
   it("hides what adds anything but ink, and page actions", () => {
     for (const id of ["text", "shape", "image", "pdf", "sticky", "addPage", "share"] as const)
       expect(hiddenOnPdfTab(id)).toBe(true);
-    for (const id of ["pen", "eraser", "select", "undo", "redo", "more", "thumbnails"] as const)
+    // AI stays: Ask reads the slide in view.
+    for (const id of [
+      "pen",
+      "eraser",
+      "select",
+      "undo",
+      "redo",
+      "more",
+      "thumbnails",
+      "ai",
+    ] as const)
       expect(hiddenOnPdfTab(id)).toBe(false);
     expect(hiddenOnPdfTab("pen:highlighter")).toBe(false);
   });

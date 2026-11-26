@@ -1314,6 +1314,8 @@
   "notebooks.export.cancelHint": "Aizvērt bez eksportēšanas.",
   "notebooks.export.go": "Eksportēt",
   "notebooks.export.goHint": "Izveidot failus un saglabāt tos glabātuvē.",
+  "notebooks.export.replace": "Aizstāt",
+  "notebooks.export.nameLabel": "Faila nosaukums; tukšs: katru reizi jauns fails",
   "notebooks.export.tapPages": "Pieskaries eksportējamajām lappusēm.",
   "notebooks.export.rendering": "Renderē {page}. lappusi no {total}…",
   "notebooks.export.saving": "Saglabā…",

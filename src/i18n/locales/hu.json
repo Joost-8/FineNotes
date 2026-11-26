@@ -1350,6 +1350,8 @@
   "notebooks.export.cancelHint": "Bezárás exportálás nélkül.",
   "notebooks.export.go": "Exportálás",
   "notebooks.export.goHint": "A fájlok elkészítése és mentése a széfbe.",
+  "notebooks.export.replace": "Csere",
+  "notebooks.export.nameLabel": "Fájlnév; üresen: minden alkalommal új fájl",
   "notebooks.export.tapPages": "Koppints az exportálandó oldalakra.",
   "notebooks.export.rendering": "A(z) {page}. oldal megjelenítése ({total} közül)…",
   "notebooks.export.saving": "Mentés…",

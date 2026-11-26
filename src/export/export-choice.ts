@@ -53,7 +53,13 @@ export function mimeTypeOf(format: ExportFormat): string {
  * page), or a new folder holding one picture per page.
  */
 export type ExportTarget =
-  { kind: "file"; name: string } | { kind: "folder"; folder: string; names: string[] };
+  | {
+      kind: "file";
+      name: string;
+      /** A file of that name is there and is replaced (a PDF name the user typed, FineNotes#318). */
+      replaces?: boolean;
+    }
+  | { kind: "folder"; folder: string; names: string[] };
 
 /**
  * Name what exporting `pages` of the notebook `title` as `format` writes,

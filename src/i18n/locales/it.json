@@ -1350,6 +1350,8 @@
   "notebooks.export.cancelHint": "Chiudi senza esportare.",
   "notebooks.export.go": "Esporta",
   "notebooks.export.goHint": "Crea i file e salvali nel vault.",
+  "notebooks.export.replace": "Sostituisci",
+  "notebooks.export.nameLabel": "Nome del file; vuoto: un nuovo file ogni volta",
   "notebooks.export.tapPages": "Tocca le pagine da esportare.",
   "notebooks.export.rendering": "Elaborazione della pagina {page} di {total}…",
   "notebooks.export.saving": "Salvataggio…",

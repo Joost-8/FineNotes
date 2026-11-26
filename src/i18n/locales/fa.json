@@ -1350,6 +1350,8 @@
   "notebooks.export.cancelHint": "بستن بدون خروجی گرفتن.",
   "notebooks.export.go": "خروجی",
   "notebooks.export.goHint": "ساختن فایل‌ها و ذخیره‌شان در مخزن.",
+  "notebooks.export.replace": "جایگزینی",
+  "notebooks.export.nameLabel": "نام پرونده؛ خالی: هر بار یک پرونده جدید",
   "notebooks.export.tapPages": "صفحه‌های خروجی را لمس کنید.",
   "notebooks.export.rendering": "در حال ساخت صفحهٔ {page} از {total}…",
   "notebooks.export.saving": "در حال ذخیره…",

@@ -1282,6 +1282,8 @@
   "notebooks.export.cancelHint": "关闭而不导出。",
   "notebooks.export.go": "导出",
   "notebooks.export.goHint": "生成文件并保存到库中。",
+  "notebooks.export.replace": "替换",
+  "notebooks.export.nameLabel": "文件名；留空：每次生成新文件",
   "notebooks.export.tapPages": "点按要导出的页面。",
   "notebooks.export.rendering": "正在渲染第 {page}/{total} 页…",
   "notebooks.export.saving": "正在保存…",

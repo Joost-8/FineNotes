@@ -183,3 +183,42 @@ describe("tiles a pan keeps (FineNotes#298)", () => {
     expect(panTileBytes(512, 512, -5, -5)).toBe(4 * tile + 512 * 512 * 4);
   });
 });
+
+describe("ByteLru.freeWhere", () => {
+  it("removes the oldest entries it may, and only until the bytes fit", () => {
+    const gone: string[] = [];
+    const lru = new ByteLru<string>(20, (_v, key) => gone.push(key));
+    for (const key of ["a", "keep", "b", "c", "d"]) lru.set(key, key, 4);
+    // Full. Room for 8 more: the two oldest it may take, never "keep".
+    expect(lru.freeWhere((value) => value !== "keep", 8)).toBe(true);
+    expect(gone).toEqual(["a", "b"]);
+    expect(lru.has("keep")).toBe(true);
+    expect(lru.has("c")).toBe(true);
+    expect(lru.bytes).toBe(12);
+  });
+
+  it("takes nothing when the bytes already fit", () => {
+    const gone: string[] = [];
+    const lru = new ByteLru<string>(20, (_v, key) => gone.push(key));
+    lru.set("a", "a", 4);
+    expect(lru.freeWhere(() => true, 16)).toBe(true);
+    expect(gone).toEqual([]);
+  });
+
+  it("says so when what it may take is not enough", () => {
+    const lru = new ByteLru<string>(12);
+    for (const key of ["a", "keep", "keep2"]) lru.set(key, key, 4);
+    expect(lru.freeWhere((value) => value === "a", 8)).toBe(false);
+    expect(lru.has("a")).toBe(false);
+    expect(lru.bytes).toBe(8);
+  });
+
+  it("counts a use: an entry read since is taken after the ones that were not", () => {
+    const gone: string[] = [];
+    const lru = new ByteLru<string>(12, (_v, key) => gone.push(key));
+    for (const key of ["a", "b", "c"]) lru.set(key, key, 4);
+    lru.get("a");
+    lru.freeWhere(() => true, 4);
+    expect(gone).toEqual(["b"]);
+  });
+});

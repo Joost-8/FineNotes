@@ -127,7 +127,7 @@ import {
   practiceSheets,
   readCorrections,
 } from "./handwriting-learning";
-import { sheetButton } from "../recognition/hwr/learn-window-model";
+import { sheetButton, sheetJustFilled } from "../recognition/hwr/learn-window-model";
 import { practiceLines, promptCount } from "../recognition/practice";
 import { CalcNotes } from "./calc-notes";
 import { ColumnNotes } from "./column-notes";
@@ -138,7 +138,7 @@ import {
   buildAskSystemPrompt,
   buildAskToolsPrompt,
 } from "../recognition/ai-chat";
-import { type AskToolCall, searchResultText } from "../recognition/ask-tools";
+import { type AskToolCall, readsOnly, searchResultText } from "../recognition/ask-tools";
 import {
   VAULT_OFF_TEXT,
   askVaultScopeOf,
@@ -172,6 +172,14 @@ import {
 import { InkSurface, type SearchFocus } from "./ink-surface";
 import { PdfBackdropCache } from "./pdf-backdrop";
 import { PdfTextCache } from "./pdf-text-source";
+import { type PdfTabReadHost, askPdfTabs, readPdfTab, slideText } from "./ask-pdf-tab-read";
+import {
+  type AskPdfReading,
+  pdfTabsPrompt,
+  questionKey,
+  readingNote,
+  withReadingNotes,
+} from "../recognition/ask-pdf-tabs";
 import { type PdfWorker, acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
 import { vaultPathFromDrop } from "../model/file-drop";
 import { droppedText, outsideDropEffect, takesDrag } from "./drop-text";
@@ -230,6 +238,7 @@ import {
 } from "../model/snippet";
 import { RenameModal } from "./rename-modal";
 import { WriteHold } from "./write-hold";
+import { QuietWork } from "./quiet-work";
 import { PEN_OPTIONS_RETURN_MS, returnsAfterLift, tucksOnWrite } from "./tool-return";
 import { VaultBackdropRenderer } from "./backdrop-renderer";
 import { VaultImageCache } from "./image-cache";
@@ -541,6 +550,7 @@ import {
   exportTarget,
   mimeTypeOf,
 } from "../export/export-choice";
+import { exportNamesOf, ownPdfName, pdfName, rememberPdfName } from "../export/export-name";
 import { inkFileSuffix, stripInkSuffix, uniqueFileName } from "../model/new-notebook";
 import { TEMPLATE_EXTENSION, buildTemplatePackage } from "../import/template-package";
 import { SaveTemplateModal, type TemplateDetails } from "./template-ui";
@@ -929,6 +939,8 @@ export class InkView extends TextFileView {
   private missedReported = false;
   /** Saves and PDF rasterising wait while the pen writes (write-hold.ts). */
   private readonly writeHold = new WriteHold();
+  /** Bookkeeping a lift sets off, done once the pen rests (#275). */
+  private readonly quietWork = new QuietWork();
   private quietTimer = 0;
   /** "Until the pen lifts": brings back the pen's options once the pen has rested. */
   private optionsReturnTimer = 0;
@@ -1014,6 +1026,10 @@ export class InkView extends TextFileView {
   private readonly tabSessions = new Map<string, SurfaceSession>();
   /** The tab shown: {@link NOTES_TAB}, or a `BesidePdf` id. */
   private activeTab = NOTES_TAB;
+  /** The PDF tab and page last read before going back to the notes, until a question takes it. */
+  private lastTabRead: AskPdfReading | null = null;
+  /** The reading note each question was first sent with ("" for none). */
+  private readonly askReadingNotes = new Map<string, string>();
   /** The tool the notes had in hand when a PDF's tab took over; it comes back with them. */
   private notesTool: ActiveTool | null = null;
   private tabViewTimer = 0;
@@ -1740,6 +1756,8 @@ export class InkView extends TextFileView {
     this.chatPanel?.close();
     this.askWindow?.close();
     this.askSession = null;
+    this.askReadingNotes.clear();
+    this.lastTabRead = null;
     if (await this.audio?.finishForUnload()) {
       this.encoder.touchAll();
       await this.saveNow(false, true);
@@ -1883,6 +1901,7 @@ export class InkView extends TextFileView {
    */
   private penQuiet(): void {
     this.quietTimer = 0;
+    this.quietWork.flush();
     this.pdfCache?.setHeld(false);
     this.pdfText?.setHeld(false);
     if (!this.writeHold.savePending) return;
@@ -1996,6 +2015,7 @@ export class InkView extends TextFileView {
     this.wordPopover = null;
     window.clearTimeout(this.quietTimer);
     this.quietTimer = 0;
+    this.quietWork.clear();
     window.clearTimeout(this.devicePagesTimer);
     this.devicePagesTimer = 0;
     window.clearTimeout(this.optionsReturnTimer);
@@ -2662,6 +2682,12 @@ export class InkView extends TextFileView {
 
   /** Open the AI menu on `anchor`; a second tap on the same button closes it. */
   private openAiMenu(anchor: HTMLElement): void {
+    // On a PDF's tab the AI is Ask, about the slide in view, on that tab.
+    // Without an AI to ask, the menu below says why and offers the setup.
+    if (this.onPdfTab && textAvailability(this.plugin.aiSetup()).enabled) {
+      this.openAsk(true);
+      return;
+    }
     // The AI reads and writes the notes.
     this.showTab(NOTES_TAB);
     const open = this.aiMenu;
@@ -2675,7 +2701,9 @@ export class InkView extends TextFileView {
     const items = buildAiMenu({
       setup: this.plugin.aiSetup(),
       pageTranscribable: !!current && hasTranscribableContent(current),
-      notebookAskable: doc.pages.some(hasAskableContent),
+      // PDFs in tabs are something to ask about too, on a blank notebook.
+      notebookAskable:
+        doc.pages.some(hasAskableContent) || (this.takesPdfTabs && stripTabs(doc).length > 0),
       multiPage: doc.pages.length > 1,
       recordings: doc.recordings?.length ?? 0,
       device: this.deviceReading(),
@@ -3126,9 +3154,10 @@ export class InkView extends TextFileView {
   }
 
   /** Ask, in the layout last chosen: a window, or the sidebar beside the page. */
-  private openAsk(): void {
+  private openAsk(onTab = false): void {
     if (this.isDamaged()) return;
-    this.showTab(NOTES_TAB);
+    // From a PDF's tab Ask opens over it; its edits go to the notes (runAskToolAsAi).
+    if (!onTab) this.showTab(NOTES_TAB);
     if (this.settings.askLayout === "sidebar" && this.chatPanel) {
       this.setChatPanel(true);
       return;
@@ -3187,7 +3216,7 @@ export class InkView extends TextFileView {
           void this.plugin.saveSettings();
         },
       },
-      currentPage: () => (this.surface?.currentPage ?? 0) + 1,
+      currentPage: () => this.notesPage() + 1,
       pageHasContent: (n) => {
         const page = this.doc.pages[n - 1];
         return !!page && hasAskableContent(page);
@@ -3204,9 +3233,13 @@ export class InkView extends TextFileView {
           );
         }
       },
-      insert: (text) => this.insertAnswer(text),
+      insert: (text) => {
+        // An answer goes into the notes, also from a PDF's tab.
+        this.showTab(NOTES_TAB);
+        return this.insertAnswer(text);
+      },
       changes: {
-        state: (id) => (this.surface ? this.askChanges.state(this.surface.document, id) : null),
+        state: (id) => (this.surface ? this.askChanges.state(this.notesDocument(), id) : null),
         toggle: (id) => this.toggleAskChange(id),
         onChange: (listener) => {
           this.askChangeListeners.add(listener);
@@ -3214,6 +3247,7 @@ export class InkView extends TextFileView {
         },
       },
       insertDrawing: async (svg) => {
+        this.showTab(NOTES_TAB);
         const bytes = new TextEncoder().encode(svg);
         const placed = await this.insertImageBytes(
           bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
@@ -3238,7 +3272,7 @@ export class InkView extends TextFileView {
    * when the setting says not to attach it).
    */
   private askConversation(): AskSession {
-    const current = (this.surface?.currentPage ?? 0) + 1;
+    const current = this.notesPage() + 1;
     let session = this.askSession;
     if (!session) {
       session = new AskSession(
@@ -3283,7 +3317,7 @@ export class InkView extends TextFileView {
    * (`askAiWithTools`), whichever vendor answers; a self-hosted endpoint
    * that cannot do tools answers from what was sent.
    */
-  private askWithTools(
+  private async askWithTools(
     turns: readonly ChatTurn[],
     onStatus: (status: string) => void,
   ): Promise<AskAnswer> {
@@ -3295,7 +3329,9 @@ export class InkView extends TextFileView {
       this.settings.askShowCost,
       this.file?.path ?? "",
     );
-    const prompt = `${system}\n${buildAskToolsPrompt()}\n${abilities}`;
+    const tabs = pdfTabsPrompt(askPdfTabs(this.pdfTabReader()));
+    const prompt = `${system}\n${buildAskToolsPrompt()}\n${abilities}${tabs ? `\n${tabs}` : ""}`;
+    const sent = await this.withPdfReading(turns);
     const turn = { answer: ++this.askAnswers, commands: [] as Command[] };
     this.askTurn = turn;
     // Everything the answer changed is one step of the notebook's undo.
@@ -3303,14 +3339,14 @@ export class InkView extends TextFileView {
       if (this.askTurn === turn) this.askTurn = null;
       this.surface?.groupSteps(turn.commands, t("view.ask.stepLabel"));
     };
-    const withTools = askAiWithTools(config, prompt, turns, {
+    const withTools = askAiWithTools(config, prompt, sent, {
       totalPages: () => this.doc.pages.length,
       run: (call) => this.runAskToolAsAi(call, turn.answer),
       onStatus,
     }).finally(finish);
     if (config.vendor !== "custom") return withTools;
     // A self-hosted server may not do tools: then it answers from what was sent.
-    return withTools.catch(() => askAi(config, system, turns));
+    return withTools.catch(() => askAi(config, system, sent));
   }
 
   /** `search_vault` and `read_note`: the other notes the settings let Ask AI read, as text. */
@@ -3416,6 +3452,13 @@ export class InkView extends TextFileView {
    * (`asAi`) as a numbered change the chat, or the AI, can take back later.
    */
   private async runAskToolAsAi(call: AskToolCall, answer: number): Promise<AskToolOutcome> {
+    // Asked on a PDF's tab: what changes the notebook changes the notes, in view.
+    if (this.onPdfTab && !readsOnly(call)) {
+      // Never under the Pencil: a stroke on the slide is finished first (the
+      // swap ends the open stroke).
+      while (this.penIsDown) await new Promise<void>((done) => window.setTimeout(done, 150));
+      if (this.onPdfTab) this.showTab(NOTES_TAB);
+    }
     const context: NonNullable<typeof this.askCall> = {
       before: null,
       set: null,
@@ -3468,6 +3511,8 @@ export class InkView extends TextFileView {
       new Notice(t("view.ask.changeLocked"));
       return;
     }
+    // The AI's changes are in the notes: taken back there, in view.
+    this.showTab(NOTES_TAB);
     const doc = surface.document;
     const redo = this.askChanges.state(doc, id) === "undone";
     const result = this.askChanges.revert(
@@ -3495,12 +3540,70 @@ export class InkView extends TextFileView {
     this.requestSave();
   }
 
+  /**
+   * The turns as sent: a new question carries the PDF page the user is
+   * reading (a tab shown beside the Ask sidebar) or read last before coming
+   * back to the notes, once; earlier questions keep the note they were sent
+   * with, so the conversation the model sees never changes.
+   */
+  private async withPdfReading(turns: readonly ChatTurn[]): Promise<ChatTurn[]> {
+    // The session rebuilds its turns for each request: a question is known
+    // by its place among the questions and its text.
+    // and by its chat, so a new chat never takes an older chat's slide.
+    const questions = turns.filter((turn) => turn.role === "user");
+    const chat = this.askSession?.chatId ?? 0;
+    const keyOf = (turn: ChatTurn): string => questionKey(chat, questions.indexOf(turn), turn.text);
+    const question = questions[questions.length - 1];
+    if (question && !this.askReadingNotes.has(keyOf(question))) {
+      const shown = this.pdfTabInView();
+      const reading = shown ?? this.lastTabRead;
+      this.lastTabRead = null;
+      // The slide's own text goes with the question: Ask knows it without a tool call.
+      const text = reading ? await slideText(this.pdfTabReader(), reading) : "";
+      this.askReadingNotes.set(
+        keyOf(question),
+        reading ? readingNote(reading, shown !== null, text) : "",
+      );
+    }
+    return withReadingNotes(turns, (turn) => this.askReadingNotes.get(keyOf(turn)));
+  }
+
+  /** The notes' page in view, 0-based: where they were left while a PDF's tab is shown. */
+  private notesPage(): number {
+    if (!this.onPdfTab) return this.surface?.currentPage ?? 0;
+    return this.notesSession?.view?.pageIndex ?? 0;
+  }
+
+  /** The notes' document, also while a PDF's tab is shown. */
+  private notesDocument(): InkDocument {
+    return this.onPdfTab ? this.doc : (this.surface?.document ?? this.doc);
+  }
+
+  /** The PDF tab shown and its page in view; `null` on the notes. */
+  private pdfTabInView(): AskPdfReading | null {
+    const beside = this.onPdfTab ? findBeside(this.doc, this.activeTab) : null;
+    return beside
+      ? { label: tabLabel(beside), path: beside.path, page: (this.surface?.currentPage ?? 0) + 1 }
+      : null;
+  }
+
+  /** What Ask's `read_pdf_tab` reads the PDF tabs through. */
+  private pdfTabReader(): PdfTabReadHost {
+    return {
+      tabs: () => (this.takesPdfTabs ? stripTabs(this.doc) : []),
+      exists: (path) => this.pdfExists(path),
+      document: (beside) => this.tabDocument(beside),
+      text: () => this.pdfText,
+      render: (page) => this.renderForAi(page),
+    };
+  }
+
   /** `read_outline`: the contents, and each PDF behind the pages with its own outline. */
   private async readOutlineForAi(): Promise<AskToolOutcome> {
     const surface = this.surface;
     if (!surface) return { text: "The notebook is not open.", isError: true };
-    if (this.onPdfTab) return { text: PDF_TAB_OUTLINE_TEXT, isError: true };
-    const doc = surface.document;
+    // The notes' outline, also while a PDF's tab is shown.
+    const doc = this.onPdfTab ? this.doc : surface.document;
     const behind = pdfsBehind(
       doc.pages.map((page) => page.backdrop),
       doc.pages.map((_, i) => i + 1),
@@ -3550,6 +3653,8 @@ export class InkView extends TextFileView {
       case "read_note":
       case "linked_notes":
         return this.runVaultTool(call);
+      case "read_pdf_tab":
+        return readPdfTab(this.pdfTabReader(), call);
       case "create_note":
         return this.createAskNote(call.title, call.text, call.replace);
       case "finenotes_help":
@@ -5122,7 +5227,7 @@ export class InkView extends TextFileView {
       switchLayout: () => {
         this.setChatPanel(false);
         this.setAskLayout("window");
-        this.openAsk();
+        this.openAsk(this.onPdfTab);
       },
     });
 
@@ -5163,9 +5268,24 @@ export class InkView extends TextFileView {
         onEditGraph: (pageId, graph) => this.editGraph(pageId, graph),
         onEquation: (pageId, at, equation) => this.openEquation(pageId, at, equation),
         onChange: (pages) => {
-          if (this.surface) this.sidebar?.setDocument(this.surface.document);
-          // Undoing or redoing "Convert to notebook" flips `single`.
-          this.syncSingle();
+          // The panel's thumbnails follow once the pen rests: painted between
+          // two quick letters, they cost the second one its first samples (#275).
+          const writing = this.writeHold.writing(performance.now());
+          // Held for the pen: once it has rested, the panel paints at once,
+          // not after another debounce that would land in the next letter.
+          this.quietWork.run("sidebar", writing, () => {
+            if (this.surface) this.sidebar?.setDocument(this.surface.document, writing);
+          });
+          // A line copied or erased on a practice sheet: its Learn button
+          // counts it, once the pen rests.
+          if (this.isPractice) {
+            // Before #275 each edit reset `practiceFull` in `syncSingle`, so
+            // the sheet-full sharing invite never fired; now it does.
+            this.quietWork.run("learn", writing, () => this.syncLearnButton());
+          }
+          // Undoing or redoing "Convert to notebook" flips `single`. Only
+          // then: it re-reads every practice sheet, and lays out the panel (#275).
+          if (this.chromeKey() !== this.syncedChrome) this.syncSingle();
           // …and undo can take a recording off the note, or bring one back.
           this.audio?.syncChrome();
           this.scheduleAutoTranscription(pages ?? []);
@@ -5305,8 +5425,6 @@ export class InkView extends TextFileView {
         onSuggestedLink: (index, strokeIds, target) => this.linkInk(index, strokeIds, null, target),
         onHistoryChange: (canUndo, canRedo) => {
           this.toolbar?.setHistoryState(canUndo, canRedo);
-          // A line copied or erased on a practice sheet: its Learn button counts it.
-          this.syncLearnButton();
         },
         onAddPageRequested: (afterIndex) => this.addPage(afterIndex, true),
         // Pulled past the last page: a blank page on the last page's paper,
@@ -5719,7 +5837,8 @@ export class InkView extends TextFileView {
     }
     const refusal = this.askConversation().attachInstead(file);
     if (refusal) new Notice(refusal);
-    this.openAsk();
+    // A selection on a PDF's tab is asked about there.
+    this.openAsk(this.onPdfTab);
   }
 
   /**
@@ -6388,6 +6507,9 @@ export class InkView extends TextFileView {
       const dir = exports === undefined ? note.parent : this.app.vault.getFolderByPath(exports);
       return new Set((dir?.children ?? []).map((child) => child.name));
     };
+    // The PDF this notebook's export last wrote under its typed name: the only file it replaces (#318).
+    const own = (): string | undefined =>
+      ownPdfName(exportNamesOf(this.settings.exportNames)[note.path], folder);
     const preview = this.previewSources();
     // Plain paper or with the template, with the tapes or without, as the
     // dialog's switches were last left.
@@ -6446,8 +6568,19 @@ export class InkView extends TextFileView {
             },
           }
         : {}),
-      targetFor: (pages, format) => exportTarget(note.basename, pages, total, format, taken()),
-      export: async (pages, format, onProgress, cancelled) => {
+      targetFor: (pages, format, typed) => {
+        const target = exportTarget(note.basename, pages, total, format, taken());
+        return format === "pdf" && target.kind === "file"
+          ? { kind: "file", ...pdfName(typed ?? "", target.name, taken(), own()) }
+          : target;
+      },
+      pdfName: exportNamesOf(this.settings.exportNames)[note.path]?.name ?? "",
+      setPdfName: (typed, file) => {
+        const names = exportNamesOf(this.settings.exportNames);
+        this.settings.exportNames = rememberPdfName(names, note.path, typed, file);
+        void this.plugin.saveSettings();
+      },
+      export: async (pages, format, onProgress, cancelled, typed) => {
         const inFolder = (name: string, dir = folder): string =>
           normalizePath(dir ? `${dir}/${name}` : name);
         const ensureFolder = async (path: string | undefined): Promise<void> => {
@@ -6466,15 +6599,19 @@ export class InkView extends TextFileView {
             { title: stripInkSuffix(note.basename), onProgress, cancelled },
           );
           // Named at save time, not when the dialog opened: another export may
-          // have taken the name since.
-          const name = uniqueFileName(exportBaseName(note.basename, pages, total), ".pdf", taken());
+          // have taken the name since. A typed name replaces its file (#318),
+          // in place, so a link to it or a synced copy stays the same file.
+          const free = uniqueFileName(exportBaseName(note.basename, pages, total), ".pdf", taken());
+          const { name, replaces } = pdfName(typed ?? "", free, taken(), own());
           const path = inFolder(name);
           await ensureFolder(exports);
           const buffer = bytes.buffer.slice(
             bytes.byteOffset,
             bytes.byteOffset + bytes.byteLength,
           ) as ArrayBuffer;
-          await this.app.vault.createBinary(path, buffer);
+          const existing = replaces ? this.app.vault.getFileByPath(path) : null;
+          if (existing) await this.app.vault.modifyBinary(existing, buffer);
+          else await this.app.vault.createBinary(path, buffer);
           return { paths: [path], where: path, files: [new File([buffer], name, { type })] };
         }
         // Pictures: one file, or a new folder of them. Named at save time too.
@@ -6554,7 +6691,15 @@ export class InkView extends TextFileView {
    * replaced or changed, because one leaf can load a single page and then a
    * notebook, and "Convert to notebook" (or its undo) flips it in place.
    */
+  /** What {@link syncSingle} depends on, as last synced; an edit re-syncs only when it changed. */
+  private syncedChrome = "";
+
+  private chromeKey(): string {
+    return `${this.isSinglePage}|${this.isBoard}|${this.isPractice}|${this.onPdfTab}|${this.guard.locked}`;
+  }
+
   private syncSingle(): void {
+    this.syncedChrome = this.chromeKey();
     const single = this.isSinglePage;
     const practice = this.isPractice;
     this.toolbar?.setAddPageVisible(!single && !practice);
@@ -6618,7 +6763,7 @@ export class InkView extends TextFileView {
     // The last line just went down: the moment to ask about sharing. A line
     // counts from its first stroke, so wait until the pen has rested, and
     // ask only if the sheet is still full then (not erased again).
-    if (full && this.practiceFull === false) {
+    if (sheetJustFilled(this.practiceFull, full)) {
       window.clearTimeout(this.sheetInviteTimer);
       this.sheetInviteTimer = window.setTimeout(() => {
         if (this.practiceFull) this.plugin.sharing?.inviteAfterSheet();
@@ -6729,6 +6874,8 @@ export class InkView extends TextFileView {
   showTab(id: string): void {
     const surface = this.surface;
     if (!surface || id === this.activeTab) return;
+    // Ask, opened next from the notes, knows which slide "this slide" is.
+    if (this.onPdfTab) this.lastTabRead = this.pdfTabInView();
     if (id === NOTES_TAB) {
       const notes = this.notesSession;
       if (!notes) return;

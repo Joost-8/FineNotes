@@ -1350,6 +1350,8 @@
   "notebooks.export.cancelHint": "Schließen, ohne zu exportieren.",
   "notebooks.export.go": "Exportieren",
   "notebooks.export.goHint": "Die Dateien erstellen und im Tresor speichern.",
+  "notebooks.export.replace": "Ersetzen",
+  "notebooks.export.nameLabel": "Dateiname; leer: jedes Mal eine neue Datei",
   "notebooks.export.tapPages": "Tippe die zu exportierenden Seiten an.",
   "notebooks.export.rendering": "Seite {page} von {total} wird gerendert …",
   "notebooks.export.saving": "Wird gespeichert …",

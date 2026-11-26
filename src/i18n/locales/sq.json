@@ -1350,6 +1350,8 @@
   "notebooks.export.cancelHint": "Mbyll pa eksportuar.",
   "notebooks.export.go": "Eksporto",
   "notebooks.export.goHint": "Bëj skedarët dhe ruaji në depo.",
+  "notebooks.export.replace": "Zëvendëso",
+  "notebooks.export.nameLabel": "Emri i skedarit; bosh: një skedar i ri çdo herë",
   "notebooks.export.tapPages": "Prek faqet për eksport.",
   "notebooks.export.rendering": "Po vizatohet faqja {page} nga {total}…",
   "notebooks.export.saving": "Po ruhet…",

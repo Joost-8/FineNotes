@@ -833,6 +833,14 @@ export class Renderer {
   /** Where a page's preview should look, if not at the whole page ({@link setPreviewWindow}). */
   private previewWindow: ((box: PageBox) => Bounds | null) | null = null;
   private readonly paths = new WeakMap<Stroke, PathEntry>();
+  /**
+   * How far {@link tracePage} has traced each page's ink (`next`), and for
+   * which strokes: how many, and the first and last of them.
+   */
+  private readonly traced = new WeakMap<
+    Page,
+    { count: number; usePressure: boolean; next: number; first?: Stroke; tail?: Stroke }
+  >();
   private shadow: ShadowSprite | null = null;
   /** What the dry layer shows, or null when it must be painted whole. */
   private dryShown: DryShown | null = null;
@@ -2032,33 +2040,48 @@ export class Renderer {
    * `whole`: pages to have ready in full, nearest first: the pages a row
    * turns to. A turn shows a whole page within a few frames, and tiles made
    * during it were most of its slow frames (FineNotes#201). For these alone
-   * room is made, from the tiles of pages neither here nor near.
+   * room is made, from the tiles of pages neither here nor near: those used
+   * longest ago, and no more of them than these pages need.
+   *
+   * `moving`: the view is still moving (the last px of a turn), so no frame
+   * may run long: a page's ink is traced a stroke at a time before its first
+   * tile ({@link tracePage}). At rest that tile traces the whole page in one
+   * frame, as it always did. Nothing shows a long frame there, and a few ms
+   * a frame is a third of the speed: with the CPU slowed 8x, tracing within
+   * the budget at rest used up the rest between two quick turns and left 38
+   * to 63 tiles to the turns, where the one long frame left 15 to 17.
    */
   prefetch(
     doc: InkDocument,
     usePressure: boolean,
     budgetMs: number,
     whole: readonly number[] = [],
+    moving = false,
   ): boolean {
     if (this.level === 0 || this.layout.boxes.length === 0) return false;
     const level = this.level;
     const k = this.deviceScale;
     const s = k / level;
     const deadline = now() + budgetMs;
-    const { top, bottom } = this.visibleBand();
     // A ring round the view and its overscan, which a paint draws too.
     const dpr = this.screen.dpr;
     const ringX = PREFETCH_MARGIN + this.overscan.x * dpr;
     const ringY = PREFETCH_MARGIN + this.overscan.y * dpr;
     const screen = this.screenDevice;
-    const marginLayout = Math.max(ringX, ringY) / k;
-    const around = this.boxesInBand(
-      doc.pages.length,
-      top - marginLayout,
-      bottom + marginLayout,
-      marginLayout,
-    );
+    const around = this.boxesAround(doc.pages.length);
 
+    // While the view moves, first the ink's paths, a stroke at a time: the
+    // first tile or preview of a page traces every stroke on it in one
+    // frame, whatever the budget.
+    if (moving) {
+      for (const box of around) {
+        if (!this.tracePage(doc.pages[box.index], usePressure, deadline)) return true;
+      }
+      for (const index of whole) {
+        const page = this.layout.boxes[index] ? doc.pages[index] : undefined;
+        if (page && !this.tracePage(page, usePressure, deadline)) return true;
+      }
+    }
     for (const box of around) {
       const page = doc.pages[box.index];
       const preview = this.previews.peek(page.id);
@@ -2068,7 +2091,12 @@ export class Renderer {
         else this.buildPreview(page, box, usePressure);
       }
     }
+    // Out of room, the ring stops and the pages to turn to still get theirs:
+    // a long notebook keeps the cache within a tile of full, and ending here
+    // left those pages to be made mid-turn (FineNotes#201).
+    let ringFull = false;
     for (const box of around) {
+      if (ringFull) break;
       const page = doc.pages[box.index];
       const r = this.pageDeviceRect(box);
       const ring = tilesCovering(
@@ -2084,7 +2112,10 @@ export class Renderer {
         // A stale tile is left for the screen paint, which knows what the
         // eraser shows meanwhile; this one paints the document as it is.
         if (this.tiles.has(tileKey(page.id, level, tr.col, tr.row))) continue;
-        if (!this.tiles.fits(tr.w * tr.h * 4)) return false;
+        if (!this.tiles.fits(tr.w * tr.h * 4)) {
+          ringFull = true;
+          break;
+        }
         if (now() > deadline) return true;
         this.rasterTile(page, box, tr, level, { usePressure });
       }
@@ -2102,16 +2133,93 @@ export class Renderer {
           const near = new Set(around.map((b) => b.id));
           for (const i of whole) near.add(this.layout.boxes[i]?.id ?? "");
           // Only this document's far pages make room: another document's
-          // tiles (the notes, while a PDF's tab is read) are kept warm.
+          // tiles (the notes, while a PDF's tab is read) are kept warm. And
+          // only as much room as these pages still need, from the tiles used
+          // longest ago: the pages just read stay, for turning back to.
           const ours = new Set(doc.pages.map((p) => p.id));
-          this.tiles.deleteWhere((tile) => ours.has(tile.pageId) && !near.has(tile.pageId));
+          this.tiles.freeWhere(
+            (tile) => ours.has(tile.pageId) && !near.has(tile.pageId),
+            this.missingBytes(doc, whole, level),
+          );
         }
         if (!this.tiles.fits(tr.w * tr.h * 4)) return false;
         if (now() > deadline) return true;
         this.rasterTile(page, box, tr, level, { usePressure });
       }
     }
-    return false;
+    // The room made for those pages may hold the ring's tiles too: once more.
+    return ringFull && madeRoom;
+  }
+
+  /** The pages {@link prefetch} looks at round the view: those in it and within its ring. */
+  private boxesAround(pageCount: number): PageBox[] {
+    const { top, bottom } = this.visibleBand();
+    const dpr = this.screen.dpr;
+    const ring = PREFETCH_MARGIN + Math.max(this.overscan.x, this.overscan.y) * dpr;
+    const margin = ring / this.deviceScale;
+    return this.boxesInBand(pageCount, top - margin, bottom + margin, margin);
+  }
+
+  /**
+   * The pages a {@link prefetch} with these `whole` pages would make tiles
+   * or previews of, by index: for a caller that must know first what is on
+   * them (a PDF's pages are not made while the view moves).
+   */
+  prefetchPages(pageCount: number, whole: readonly number[] = []): number[] {
+    if (this.level === 0 || this.layout.boxes.length === 0) return [];
+    const pages = new Set(this.boxesAround(pageCount).map((box) => box.index));
+    for (const index of whole) if (this.layout.boxes[index]) pages.add(index);
+    return [...pages];
+  }
+
+  /** The bytes of the tiles the pages `whole` lack at `level`. */
+  private missingBytes(doc: InkDocument, whole: readonly number[], level: number): number {
+    let bytes = 0;
+    for (const index of whole) {
+      const box = this.layout.boxes[index];
+      const page = doc.pages[index];
+      if (!box || !page) continue;
+      const raster = rasterSize(box.width, box.height, level);
+      for (const tr of tilesCovering(box.width, box.height, level, 0, 0, raster.w, raster.h)) {
+        if (!this.tiles.has(tileKey(page.id, level, tr.col, tr.row))) bytes += tr.w * tr.h * 4;
+      }
+    }
+    return bytes;
+  }
+
+  /**
+   * Trace a page's ink ahead of painting it, until `deadline`: whether all
+   * of it is traced. Painting any part of a page asks every stroke on it for
+   * its path (the path holds the bounds that say whether it is in the part),
+   * so a page's first tile cost as much as tracing all its ink: 22-58 ms for
+   * 300 strokes with the CPU slowed 4x, against 0.4-7 ms for the tiles after
+   * it (FineNotes#201). Only an optimisation: painting traces what this
+   * missed.
+   */
+  private tracePage(page: Page, usePressure: boolean, deadline: number): boolean {
+    const strokes = page.strokes;
+    const count = strokes.length;
+    const last = this.traced.get(page);
+    // Carries on where the last frame's budget ended. Writing gives the page
+    // a new array with a stroke more at its end: the strokes before it are
+    // the ones already traced, and a page of 2,000 is not walked again after
+    // every stroke.
+    const kept =
+      last !== undefined &&
+      last.usePressure === usePressure &&
+      count >= last.count &&
+      strokes[0] === last.first &&
+      strokes[last.count - 1] === last.tail;
+    let next = kept ? last.next : 0;
+    while (next < count && now() <= deadline) this.pathEntry(strokes[next++], usePressure);
+    this.traced.set(page, {
+      count,
+      usePressure,
+      next,
+      first: strokes[0],
+      tail: strokes[count - 1],
+    });
+    return next >= count;
   }
 
   /** Paint one tile of a page: paper, backdrop, edge, then the ink that overlaps it. */

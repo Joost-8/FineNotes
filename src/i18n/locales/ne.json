@@ -1350,6 +1350,8 @@
   "notebooks.export.cancelHint": "निर्यात नगरी बन्द गर्नुहोस्।",
   "notebooks.export.go": "निर्यात गर्नुहोस्",
   "notebooks.export.goHint": "फाइलहरू बनाएर भल्टमा सुरक्षित गर्नुहोस्।",
+  "notebooks.export.replace": "बदल्नुहोस्",
+  "notebooks.export.nameLabel": "फाइलको नाम; खाली: हरेक पटक नयाँ फाइल",
   "notebooks.export.tapPages": "निर्यात गर्ने पृष्ठमा ट्याप गर्नुहोस्।",
   "notebooks.export.rendering": "{total} मध्ये पृष्ठ {page} रेन्डर गर्दै…",
   "notebooks.export.saving": "सुरक्षित गर्दै…",

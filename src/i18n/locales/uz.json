@@ -1350,6 +1350,8 @@
   "notebooks.export.cancelHint": "Eksport qilmasdan yopish.",
   "notebooks.export.go": "Eksport qilish",
   "notebooks.export.goHint": "Fayllarni yaratib, omborga saqlash.",
+  "notebooks.export.replace": "Almashtirish",
+  "notebooks.export.nameLabel": "Fayl nomi; bo‘sh: har safar yangi fayl",
   "notebooks.export.tapPages": "Eksport qilinadigan sahifalarga bosing.",
   "notebooks.export.rendering": "{total} tadan {page}-sahifa tayyorlanmoqda…",
   "notebooks.export.saving": "Saqlanmoqda…",
