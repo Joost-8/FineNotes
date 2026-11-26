@@ -9,6 +9,7 @@
 import type { ChatImage } from "../recognition/ai-chat";
 import type { AskToolOutcome } from "../recognition/ai-client";
 import {
+  type AskPdfReading,
   type AskPdfTab,
   type ReadPdfTabCall,
   findPdfTab,
@@ -88,6 +89,23 @@ export async function readPdfTab(
   }
   const text = pdfTabText(tab, texts, pictured);
   return images.length > 0 ? { text, images } : { text };
+}
+
+/**
+ * The printed text of the page the user is reading, for the question to
+ * carry; "" when it cannot be read (missing PDF, no text, an error).
+ */
+export async function slideText(host: PdfTabReadHost, reading: AskPdfReading): Promise<string> {
+  const beside = host.tabs().find((b) => b.path === reading.path);
+  const cache = host.text();
+  if (!beside || !cache || !host.exists(beside.path)) return "";
+  const page = host.document(beside).pages[reading.page - 1];
+  if (!page || page.backdrop.kind !== "pdf") return "";
+  try {
+    return layoutPlainText(await cache.layout(page.backdrop, page.geometry));
+  } catch {
+    return "";
+  }
 }
 
 /** A tab's page count, from the sizes kept with it. */

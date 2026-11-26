@@ -19,10 +19,11 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
-- **Ask AI reads the PDFs in your tabs.** Lecture slides and papers kept in
-  tabs beside a notebook's notes are now part of what Ask AI can look at: it
-  reads their text, and looks at slides that are mostly pictures. Open Ask
-  while reading a slide and "explain this slide" means that one.
+- **Ask AI knows the PDFs in your tabs.** The AI button now works on a PDF's
+  tab: Ask opens over the slide, and "explain this slide" means the one in
+  view (or the one you read last before going back to the notes). It can
+  read the other pages of any tab, and looks at slides that are mostly
+  pictures. Anything it writes goes into the notes.
 - **Insert space on boards, and on paper without lines**
   ([discussion #276](https://github.com/Joost-8/FineNotes/discussions/276)).
   With the lasso on **By line**, press anywhere on a board and drag down: everything

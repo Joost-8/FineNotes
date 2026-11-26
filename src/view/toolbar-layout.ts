@@ -863,7 +863,7 @@ const PDF_TAB_HIDES: ReadonlySet<BarItemId> = new Set<BarItemId>([
   "fill",
   "record",
   "calculator",
-  "ai",
+  // Not "ai": on a PDF's tab it opens Ask about the slide in view.
   "addPage",
   "share",
 ]);

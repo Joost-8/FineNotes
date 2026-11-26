@@ -456,6 +456,28 @@ export type AskToolCall =
   | { tool: "add_comment"; page: number; x: number; y: number; text: string }
   | ReadPdfTabCall;
 
+/**
+ * Whether a call only reads (or writes a note of its own beside the
+ * notebook): it can run while a PDF's tab is shown. Every other call works
+ * on the notes, so the view goes to them first.
+ */
+export function readsOnly(call: AskToolCall): boolean {
+  switch (call.tool) {
+    case "read_pages":
+    case "search_notebook":
+    case "search_vault":
+    case "read_note":
+    case "linked_notes":
+    case "finenotes_help":
+    case "read_outline":
+    case "read_pdf_tab":
+    case "create_note":
+      return true;
+    default:
+      return false;
+  }
+}
+
 /** A `tool_use` block from a reply. */
 export interface ToolUse {
   id: string;

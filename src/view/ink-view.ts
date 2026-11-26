@@ -136,7 +136,7 @@ import {
   buildAskSystemPrompt,
   buildAskToolsPrompt,
 } from "../recognition/ai-chat";
-import { type AskToolCall, searchResultText } from "../recognition/ask-tools";
+import { type AskToolCall, readsOnly, searchResultText } from "../recognition/ask-tools";
 import {
   VAULT_OFF_TEXT,
   askVaultScopeOf,
@@ -170,7 +170,7 @@ import {
 import { InkSurface, type SearchFocus } from "./ink-surface";
 import { PdfBackdropCache } from "./pdf-backdrop";
 import { PdfTextCache } from "./pdf-text-source";
-import { type PdfTabReadHost, askPdfTabs, readPdfTab } from "./ask-pdf-tab-read";
+import { type PdfTabReadHost, askPdfTabs, readPdfTab, slideText } from "./ask-pdf-tab-read";
 import {
   type AskPdfReading,
   pdfTabsPrompt,
@@ -2651,6 +2651,11 @@ export class InkView extends TextFileView {
 
   /** Open the AI menu on `anchor`; a second tap on the same button closes it. */
   private openAiMenu(anchor: HTMLElement): void {
+    // On a PDF's tab the AI is Ask, about the slide in view, on that tab.
+    if (this.onPdfTab) {
+      this.openAsk(true);
+      return;
+    }
     // The AI reads and writes the notes.
     this.showTab(NOTES_TAB);
     const open = this.aiMenu;
@@ -3116,9 +3121,10 @@ export class InkView extends TextFileView {
   }
 
   /** Ask, in the layout last chosen: a window, or the sidebar beside the page. */
-  private openAsk(): void {
+  private openAsk(onTab = false): void {
     if (this.isDamaged()) return;
-    this.showTab(NOTES_TAB);
+    // From a PDF's tab Ask opens over it; its edits go to the notes (runAskToolAsAi).
+    if (!onTab) this.showTab(NOTES_TAB);
     if (this.settings.askLayout === "sidebar" && this.chatPanel) {
       this.setChatPanel(true);
       return;
@@ -3273,7 +3279,7 @@ export class InkView extends TextFileView {
    * (`askAiWithTools`), whichever vendor answers; a self-hosted endpoint
    * that cannot do tools answers from what was sent.
    */
-  private askWithTools(
+  private async askWithTools(
     turns: readonly ChatTurn[],
     onStatus: (status: string) => void,
   ): Promise<AskAnswer> {
@@ -3287,7 +3293,7 @@ export class InkView extends TextFileView {
     );
     const tabs = pdfTabsPrompt(askPdfTabs(this.pdfTabReader()));
     const prompt = `${system}\n${buildAskToolsPrompt()}\n${abilities}${tabs ? `\n${tabs}` : ""}`;
-    const sent = this.withPdfReading(turns);
+    const sent = await this.withPdfReading(turns);
     const turn = { answer: ++this.askAnswers, commands: [] as Command[] };
     this.askTurn = turn;
     // Everything the answer changed is one step of the notebook's undo.
@@ -3408,6 +3414,8 @@ export class InkView extends TextFileView {
    * (`asAi`) as a numbered change the chat, or the AI, can take back later.
    */
   private async runAskToolAsAi(call: AskToolCall, answer: number): Promise<AskToolOutcome> {
+    // Asked on a PDF's tab: what changes the notebook changes the notes, in view.
+    if (this.onPdfTab && !readsOnly(call)) this.showTab(NOTES_TAB);
     const context: NonNullable<typeof this.askCall> = {
       before: null,
       set: null,
@@ -3493,7 +3501,7 @@ export class InkView extends TextFileView {
    * back to the notes, once; earlier questions keep the note they were sent
    * with, so the conversation the model sees never changes.
    */
-  private withPdfReading(turns: readonly ChatTurn[]): ChatTurn[] {
+  private async withPdfReading(turns: readonly ChatTurn[]): Promise<ChatTurn[]> {
     // The session rebuilds its turns for each request: a question is known
     // by its place among the questions and its text.
     const questions = turns.filter((turn) => turn.role === "user");
@@ -3503,9 +3511,11 @@ export class InkView extends TextFileView {
       const shown = this.pdfTabInView();
       const reading = shown ?? this.lastTabRead;
       this.lastTabRead = null;
+      // The slide's own text goes with the question: Ask knows it without a tool call.
+      const text = reading ? await slideText(this.pdfTabReader(), reading) : "";
       this.askReadingNotes.set(
         keyOf(question),
-        reading ? readingNote(reading, shown !== null) : "",
+        reading ? readingNote(reading, shown !== null, text) : "",
       );
     }
     return withReadingNotes(turns, (turn) => this.askReadingNotes.get(keyOf(turn)));
@@ -3514,7 +3524,9 @@ export class InkView extends TextFileView {
   /** The PDF tab shown and its page in view; `null` on the notes. */
   private pdfTabInView(): AskPdfReading | null {
     const beside = this.onPdfTab ? findBeside(this.doc, this.activeTab) : null;
-    return beside ? { label: tabLabel(beside), page: (this.surface?.currentPage ?? 0) + 1 } : null;
+    return beside
+      ? { label: tabLabel(beside), path: beside.path, page: (this.surface?.currentPage ?? 0) + 1 }
+      : null;
   }
 
   /** What Ask's `read_pdf_tab` reads the PDF tabs through. */
@@ -3532,8 +3544,8 @@ export class InkView extends TextFileView {
   private async readOutlineForAi(): Promise<AskToolOutcome> {
     const surface = this.surface;
     if (!surface) return { text: "The notebook is not open.", isError: true };
-    if (this.onPdfTab) return { text: PDF_TAB_OUTLINE_TEXT, isError: true };
-    const doc = surface.document;
+    // The notes' outline, also while a PDF's tab is shown.
+    const doc = this.onPdfTab ? this.doc : surface.document;
     const behind = pdfsBehind(
       doc.pages.map((page) => page.backdrop),
       doc.pages.map((_, i) => i + 1),
@@ -5075,7 +5087,7 @@ export class InkView extends TextFileView {
       switchLayout: () => {
         this.setChatPanel(false);
         this.setAskLayout("window");
-        this.openAsk();
+        this.openAsk(this.onPdfTab);
       },
     });
 
@@ -5657,7 +5669,8 @@ export class InkView extends TextFileView {
     }
     const refusal = this.askConversation().attachInstead(file);
     if (refusal) new Notice(refusal);
-    this.openAsk();
+    // A selection on a PDF's tab is asked about there.
+    this.openAsk(this.onPdfTab);
   }
 
   /**

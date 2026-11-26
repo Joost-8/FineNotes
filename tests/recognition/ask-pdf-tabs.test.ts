@@ -10,12 +10,27 @@ import {
   pdfTabRange,
   pdfTabText,
   pdfTabsPrompt,
+  READING_TEXT_CHARS,
   readingNote,
   unknownTabText,
   withReadingNotes,
 } from "../../src/recognition/ask-pdf-tabs";
 import type { ChatTurn } from "../../src/recognition/ai-chat";
-import { ASK_TOOLS, parseToolCall, toolStatus } from "../../src/recognition/ask-tools";
+import { ASK_TOOLS, parseToolCall, readsOnly, toolStatus } from "../../src/recognition/ask-tools";
+
+describe("readsOnly: what Ask may do while a PDF's tab is shown", () => {
+  it("reads anything, the tabs included, without leaving the tab", () => {
+    expect(readsOnly({ tool: "read_pdf_tab", tab: "x", from: 1 })).toBe(true);
+    expect(readsOnly({ tool: "read_pages", pages: [1] })).toBe(true);
+    expect(readsOnly({ tool: "read_outline" })).toBe(true);
+  });
+
+  it("goes to the notes for anything that changes them", () => {
+    expect(readsOnly({ tool: "add_text_box", page: 1, text: "x" })).toBe(false);
+    expect(readsOnly({ tool: "go_to_page", page: 2 })).toBe(false);
+    expect(readsOnly({ tool: "set_outline", entries: [], replace: false })).toBe(false);
+  });
+});
 
 const tabs: AskPdfTab[] = [
   { label: "Lecture 4", path: "Biology/Lecture 4 - Mitochondria.pdf", pages: 30 },
@@ -172,11 +187,23 @@ describe("pdfTabsPrompt", () => {
 });
 
 describe("reading notes", () => {
+  const slide = { label: "Lecture 5", path: "Biology/Lecture 5.pdf", page: 7 };
+
   it("says which page the user is reading, or read last", () => {
-    expect(readingNote({ label: "Lecture 5", page: 7 }, true)).toContain(
-      "is reading page 7 of the PDF tab “Lecture 5”",
+    expect(readingNote(slide, true)).toContain("is reading page 7 of the PDF tab “Lecture 5”");
+    expect(readingNote(slide, false)).toContain("last read page 7");
+  });
+
+  it("carries the slide's own text, cut to a few thousand characters", () => {
+    expect(readingNote(slide, true, "Light reactions\nCalvin cycle")).toContain(
+      '"""\nLight reactions\nCalvin cycle\n"""',
     );
-    expect(readingNote({ label: "Lecture 5", page: 7 }, false)).toContain("last read page 7");
+    const long = readingNote(slide, true, "x".repeat(READING_TEXT_CHARS * 3));
+    expect(long.length).toBeLessThan(READING_TEXT_CHARS + 400);
+  });
+
+  it("points at read_pdf_tab for a slide with no printed text", () => {
+    expect(readingNote(slide, true, "  ")).toContain("look at it with read_pdf_tab");
   });
 
   it("goes before the question it was sent with, and leaves the turns as they are", () => {

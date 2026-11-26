@@ -27,9 +27,14 @@ export interface AskPdfTab {
 /** The tab the user had in front of them when they opened Ask. */
 export interface AskPdfReading {
   label: string;
+  /** The PDF's path in the vault. */
+  path: string;
   /** 1-based page of the PDF. */
   page: number;
 }
+
+/** Most characters of the slide's own text a question carries. */
+export const READING_TEXT_CHARS = 3000;
 
 /** Most pages one `read_pdf_tab` call reads as text. */
 export const PDF_TAB_MAX_TEXT_PAGES = 12;
@@ -200,11 +205,18 @@ export function pdfTabsPrompt(tabs: readonly AskPdfTab[]): string {
  * the notes. Sent with that question only, and with it on every later
  * request, so the conversation the model sees never changes.
  */
-export function readingNote(reading: AskPdfReading, shown: boolean): string {
+export function readingNote(reading: AskPdfReading, shown: boolean, text = ""): string {
   const where = `page ${reading.page} of the PDF tab “${reading.label}”`;
-  return shown
-    ? `[The user is reading ${where}: “this slide”, “this page” or “here” most likely means it.]`
-    : `[The user last read ${where} before coming back to the notes; “this slide” most likely means it.]`;
+  const head = shown
+    ? `[The user is reading ${where}: “this slide”, “this page” or “here” most likely means it.`
+    : `[The user last read ${where} before coming back to the notes; “this slide” most likely means it.`;
+  const printed = text.trim();
+  if (!printed) {
+    return `${head} It has little printed text: look at it with read_pdf_tab if the question needs it.]`;
+  }
+  const cut =
+    printed.length > READING_TEXT_CHARS ? `${printed.slice(0, READING_TEXT_CHARS)}…` : printed;
+  return `${head} Its printed text:\n"""\n${cut}\n"""]`;
 }
 
 /**
