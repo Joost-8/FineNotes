@@ -175,10 +175,13 @@ export const ASK_BELOW = 0.9;
  */
 export function pickQuestions(
   candidates: readonly Question[],
-  perLine = 1,
+  /** At most this many on a line; a function gives each line its own (`questionBudget` of its words). */
+  perLine: number | ((line: number) => number) = 1,
   /** At most this many in all (`questionBudget`): the least sure are kept. */
   limit = Infinity,
 ): Question[] {
+  const onLine = (line: number): number =>
+    Math.max(0, typeof perLine === "number" ? perLine : perLine(line));
   const byLine = new Map<number, Question[]>();
   for (const q of candidates) {
     if (q.sure >= ASK_BELOW) continue;
@@ -189,7 +192,7 @@ export function pickQuestions(
     .flatMap((line) =>
       (byLine.get(line) ?? [])
         .sort((a, b) => a.sure - b.sure || a.word - b.word)
-        .slice(0, Math.max(0, perLine)),
+        .slice(0, onLine(line)),
     );
   if (picked.length <= limit) return picked;
   const kept = new Set(
@@ -200,19 +203,21 @@ export function pickQuestions(
   return picked.filter((q) => kept.has(q));
 }
 
-/** One card for about this many words being beautified. */
-export const WORDS_PER_CARD = 8;
 /** Never more cards than this for one Beautify, however much is selected. */
-export const MOST_CARDS = 5;
+export const MOST_CARDS = 8;
 
 /**
- * How many cards one Beautify may show, by how many words it is asked to
- * beautify (Joost, 26 November: "a limit adjusted to the number of words, as
- * to not overwhelm"): one for up to 8 words, one more per 8, five at most.
- * Ten two-word lines got ten cards under one per line; they get three.
+ * How many cards a line, or one whole Beautify, may show, by its words
+ * (Joost, 26 November: "a limit adjusted to the number of words, as to not
+ * overwhelm", then "two per 8, but the scale does not have to be linear"):
+ * two for 8 words, growing with the square root after that (3 at 16, 4 at
+ * 32, 5 at 50), one for up to 4 words, eight at most. The cards go to the
+ * least sure words first, where Grape is wrong most: on donated handwriting
+ * 37 % of the words under 0.5 were misread, 24 % of those from 0.5 to 0.9,
+ * 7 % above (`research/handwriting-rig/gen/neaten_tally.mjs`).
  */
 export function questionBudget(words: number): number {
-  return Math.min(MOST_CARDS, Math.max(1, Math.ceil(words / WORDS_PER_CARD)));
+  return Math.min(MOST_CARDS, Math.max(1, Math.round(2 * Math.sqrt(words / 8))));
 }
 
 /** A line's words as Beautify sees them before asking: their text, ink, whether sure, and how sure. */

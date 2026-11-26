@@ -347,9 +347,29 @@ describe("unsureCandidates: a lone word takes no card", () => {
 });
 
 describe("questionBudget: cards by the words being beautified", () => {
-  it("is one for up to 8 words, one more per 8, five at most", () => {
-    expect([0, 1, 8, 9, 16, 17, 40, 41, 400].map(questionBudget)).toEqual([
-      1, 1, 1, 2, 2, 3, 5, 5, 5,
+  it("is two for 8 words, grows with the square root, one for few words, eight at most", () => {
+    expect([0, 1, 4, 5, 8, 16, 32, 50, 72, 128, 400].map(questionBudget)).toEqual([
+      1, 1, 1, 2, 2, 3, 4, 5, 6, 8, 8,
+    ]);
+  });
+
+  it("gives each line its own share: two on a line of 8 words, one on a line of 3", () => {
+    const candidates = [
+      { line: 0, word: 1, sure: 0.2 },
+      { line: 0, word: 4, sure: 0.1 },
+      { line: 0, word: 6, sure: 0.3 },
+      { line: 1, word: 0, sure: 0.4 },
+      { line: 1, word: 2, sure: 0.5 },
+    ];
+    const words = [8, 3];
+    const asked = pickQuestions(
+      candidates,
+      (line) => questionBudget(words[line]),
+      questionBudget(11),
+    );
+    expect(asked).toEqual([
+      { line: 0, word: 4, sure: 0.1 },
+      { line: 0, word: 1, sure: 0.2 },
     ]);
   });
 
