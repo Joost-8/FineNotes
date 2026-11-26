@@ -64,6 +64,8 @@ function view(readPage: (strokes: unknown) => Promise<unknown>, guard: ReadingGu
     plugin: {
       readingGuard: guard,
       handwriting: { model: vi.fn(async () => ({})), readPage: vi.fn(readPage) },
+      // The answers search shows in place of the reading (keepReading): none here.
+      wordCheck: { shownOn: () => new Map<string, string>() },
     },
     writeTranscripts: vi.fn(),
     offerHandwrittenLinks: vi.fn(async () => {}),

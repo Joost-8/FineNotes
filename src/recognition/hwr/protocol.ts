@@ -8,6 +8,7 @@
 import type { InkStroke } from "./features";
 import type { LexiconSuggestion } from "./lexicon";
 import type { PageInk } from "./lines";
+import type { PageLanguage } from "./page-language";
 import type { LineReading, PageReading } from "./recognizer";
 import type { LabelledLine } from "./tune";
 import type { Rows, TaggedLine } from "../writer/rows";
@@ -35,6 +36,12 @@ export type HwrRequest =
     }
   /** The word list to suggest from (`handwriting/words.txt`). */
   | { type: "lexicon"; words: string[] }
+  /**
+   * A language pack (language-pack.ts; the bytes are transferred): a page
+   * found to be in its language is read with its model and list, and its
+   * words are suggested from that list.
+   */
+  | { type: "pack"; bytes: ArrayBuffer }
   /** List words for words of a kept page (`PageReading.id`). */
   | { type: "suggest"; reading: number; items: SuggestItem[] }
   /**
@@ -132,6 +139,7 @@ export type HwrResult =
   /** `sure`: per character of `text`, how sure the reader is of it. */
   | { type: "rows"; text: string; sure: number[] }
   | { type: "lexicon"; size: number }
+  | { type: "pack"; language: PageLanguage; words: number }
   /**
    * One per item (null: no near list word, or no list); `results` is null
    * itself when the page is no longer kept, so the caller may read it again.

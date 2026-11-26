@@ -123,6 +123,13 @@ export class HwrWorkerClient {
     return result.size;
   }
 
+  /** Give the worker a language pack. `bytes` is transferred: do not reuse it. */
+  async loadPack(bytes: ArrayBuffer): Promise<{ language: string; words: number }> {
+    const result = await this.send({ type: "pack", bytes }, LOAD_TIMEOUT_MS, [bytes]);
+    if (result.type !== "pack") throw new Error("unexpected reply");
+    return { language: result.language, words: result.words };
+  }
+
   /**
    * List words for words of a page read with `keep` (its `PageReading.id`);
    * null when the worker no longer keeps that page.

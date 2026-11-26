@@ -433,7 +433,9 @@ import { type ReadingContext, inkForReading, readingText } from "./handwriting";
 import { pageWords } from "../recognition/hwr/page-words";
 import { type HandwrittenLink, findHandwrittenLinks } from "../recognition/handwritten-links";
 import type { PageReading } from "../recognition/hwr/recognizer";
+import type { PageLanguage } from "../recognition/hwr/page-language";
 import { type ReadWord, readWords, strokeKey } from "../recognition/hwr/corrections";
+import { answeredTexts } from "../recognition/hwr/answered-reading";
 import {
   type ReadLine,
   lineHits,
@@ -741,6 +743,8 @@ interface PageWords {
   readLines: ReadLine[];
   /** The worker's id for it, while it keeps its log-probabilities. */
   id?: number;
+  /** The page's language (page-language.ts): the English word list is for "en" only. */
+  language: PageLanguage;
 }
 
 /** What lassoed ink says, for a dialog's field. */
@@ -4327,7 +4331,9 @@ export class InkView extends TextFileView {
     const words = readWords(reading.lines);
     const checked: CheckedPage = { hash, words };
     this.checkedWords.set(page.id, checked);
-    const flagged = await this.plugin.wordCheck.flags(file.path, page.id, words);
+    // A page in another language is checked against its own pack, if any (word-check.ts flags).
+    const language = reading.language ?? "en";
+    const flagged = await this.plugin.wordCheck.flags(file.path, page.id, words, language);
     if (this.surface === surface)
       surface.setWordFlags(
         page.id,
@@ -4371,14 +4377,27 @@ export class InkView extends TextFileView {
       lines: reading.lines.map((line) => line.text),
       readLines: reading.lines.map((line) => ({ text: line.text, words: line.words })),
       id: reading.id,
+      language: reading.language ?? "en",
     };
     this.pageReadings.set(page.id, entry);
-    // Kept on this device, so Home's search finds the page (search-store.ts).
-    const path = this.file?.path;
-    if (path) {
-      saveReading(vaultKeyOf(this.app), path, page.id, { hash, text: entry.lines.join("\n") });
-    }
+    this.searchAnswered(page.id);
     return entry;
+  }
+
+  /**
+   * What search finds on a page: its kept reading with the writer's answers
+   * in it (answered-reading.ts), for in-note search and, kept on this
+   * device, Home's (search-store.ts). Again after each answer, so a
+   * correction is found at once.
+   */
+  private searchAnswered(pageId: string): void {
+    const entry = this.pageReadings.get(pageId);
+    const path = this.file?.path;
+    if (!entry || !path) return;
+    const lines = entry.lines.map((text, i) => ({ text, words: entry.readLines[i]?.words ?? [] }));
+    const shown = answeredTexts(lines, this.plugin.wordCheck.shownOn(path, pageId));
+    entry.readLines = lines.map((line, i) => ({ text: shown[i], words: line.words }));
+    saveReading(vaultKeyOf(this.app), path, pageId, { hash: entry.hash, text: shown.join("\n") });
   }
 
   /** A finger tapped (or a mouse right-clicked) an underlined word: ask what it says. */
@@ -4422,11 +4441,19 @@ export class InkView extends TextFileView {
     };
     this.wordPopover?.close();
     this.wordPopover = this.plugin.wordCheck.ask(
-      { note: file.path, pageId: page.id, word, strokes, suggestion },
+      {
+        note: file.path,
+        pageId: page.id,
+        word,
+        strokes,
+        suggestion,
+        language: this.pageReadings.get(page.id)?.language ?? "en",
+      },
       at,
       () => {
         after.done?.();
-        // Answered: underline the page's words again, without this one.
+        // Answered: search finds the answer, and the page is underlined again without it.
+        this.searchAnswered(page.id);
         const checked = this.checkedWords.get(page.id);
         if (!checked || this.surface !== surface) return;
         void this.plugin.wordCheck.flags(file.path, page.id, checked.words).then((flagged) =>
@@ -4633,6 +4660,7 @@ export class InkView extends TextFileView {
     const cached = checked?.hash === entry.hash ? checked.suggestions?.get(key) : undefined;
     if (cached !== undefined) return cached;
     const lexicon = this.plugin.wordCheck.lexicon();
+    // A page in another language: the worker answers from its pack's list, or with nothing.
     if (!lexicon || !word.at) return null;
     if (entry.id === undefined) return undefined;
     const { line, start, end } = word.at;
@@ -7781,9 +7809,9 @@ export class InkView extends TextFileView {
     const lexicon = this.plugin.wordCheck.lexicon();
     if (!file || !lexicon) return [];
     try {
-      const flagged = (await this.plugin.wordCheck.flags(file.path, page.id, words)).filter(
-        (w) => w.at,
-      );
+      const flagged = (
+        await this.plugin.wordCheck.flags(file.path, page.id, words, entry.language)
+      ).filter((w) => w.at);
       if (flagged.length === 0) return [];
       // The underlines' own suggestions, when this reading was checked already.
       const checked = this.checkedWords.get(page.id);
@@ -7851,8 +7879,10 @@ export class InkView extends TextFileView {
     correcting = false,
   ): void {
     const file = this.file;
-    if (!file || words.length === 0) return;
-    const phrase = correcting ? editedPhrase(words, final) : null;
+    // A title edited without Correct may fix a misread or the writer's own spelling, and
+    // nothing tells which (RESEARCH-LOG 2026-11-25): only Correct teaches Grape.
+    if (!file || words.length === 0 || !correcting) return;
+    const phrase = editedPhrase(words, final);
     // Words joined or split: the whole selection is one labelled line.
     const edits = phrase
       ? [{ word: { text: phrase.read, strokeIds: phrase.strokeIds }, text: phrase.text }]
@@ -7860,11 +7890,9 @@ export class InkView extends TextFileView {
     for (const { word, text } of edits) {
       const ids = new Set(word.strokeIds);
       const strokes = page.strokes.filter((stroke) => ids.has(stroke.id));
-      void this.plugin.wordCheck.record(
-        { note: file.path, pageId: page.id, word, strokes },
-        "misread",
-        text,
-      );
+      void this.plugin.wordCheck
+        .record({ note: file.path, pageId: page.id, word, strokes }, "misread", text)
+        .then(() => this.searchAnswered(page.id));
     }
   }
 

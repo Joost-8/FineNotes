@@ -19,6 +19,27 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Corrections tell Grape's misreads from your own mistakes.** On the word
+  card, **Should be “…”** (offered only for a word that is very likely
+  misspelled, never for a listed word, a number, a code or maths) says you
+  wrote the word wrong: the page's text
+  (what search finds) shows the word you meant, while Grape (and Help
+  improve Grape) keep the ink labelled with what you really wrote, never
+  the word you meant. **Type what it says…** now asks which it was:
+  **Grape misread it** teaches Grape the word you typed, **I wrote it
+  wrong** fixes the text the same way as Should be. Every
+  answer now changes what search finds on the page, not only what Grape
+  learns. Editing a lassoed title (Add to contents, Link to…) no longer
+  teaches Grape unless you chose **Correct**.
+- **Grape reads Dutch, German, French, Spanish, Portuguese and Italian.**
+  A page written in one of them is recognised by its words and, when that
+  language's pack is on the device (Grape in Nederlands, Deutsch, …: 1 to
+  2 MB, in the plugin's `handwriting/languages` folder), read with it, which
+  cuts the words misread there to about a third. On French, Spanish and
+  Italian pages, words the pack does not know are underlined, and the word
+  card suggests the language's own words everywhere. Without its pack, a
+  page in another language is read without Grape's English model and is not
+  underlined. Accented letters are still read without their accents.
 - **Beautify handwriting.** Lasso some lines and choose **Beautify** in the ⋯
   menu, or hold a handwritten word and tap the brush beside **Correct** to
   beautify its line. Your words are written again, neater, in your own hand,
@@ -35,7 +56,8 @@ extracted from the matching section of this file by `release.yml`.
   after you correct a word on the word card, the card offers to write the
   word again in your hand in place of the old ink, on its line and at its
   size (the rest of the line moves to fit); a word you really wrote that way
-  gets "Write “…” in my handwriting" with the closest spelling. A text box,
+  gets **Should be “…”** with the closest spelling, which writes it in your
+  hand too. A text box,
   pasted or typed, turns into your handwriting with the lasso's **Turn into ›
   Handwriting**: wrapped to the page's margins, on the rules of ruled paper,
   each line written afresh so it never looks stamped, never over pictures,
