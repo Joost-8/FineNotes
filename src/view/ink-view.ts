@@ -539,7 +539,7 @@ import {
   exportTarget,
   mimeTypeOf,
 } from "../export/export-choice";
-import { exportNamesOf, pdfName, rememberPdfName } from "../export/export-name";
+import { exportNamesOf, ownPdfName, pdfName, rememberPdfName } from "../export/export-name";
 import { inkFileSuffix, stripInkSuffix, uniqueFileName } from "../model/new-notebook";
 import { TEMPLATE_EXTENSION, buildTemplatePackage } from "../import/template-package";
 import { SaveTemplateModal, type TemplateDetails } from "./template-ui";
@@ -6353,6 +6353,9 @@ export class InkView extends TextFileView {
       const dir = exports === undefined ? note.parent : this.app.vault.getFolderByPath(exports);
       return new Set((dir?.children ?? []).map((child) => child.name));
     };
+    // The PDF this notebook's export last wrote under its typed name: the only file it replaces (#318).
+    const own = (): string | undefined =>
+      ownPdfName(exportNamesOf(this.settings.exportNames)[note.path], folder);
     const preview = this.previewSources();
     // Plain paper or with the template, with the tapes or without, as the
     // dialog's switches were last left.
@@ -6414,16 +6417,13 @@ export class InkView extends TextFileView {
       targetFor: (pages, format, typed) => {
         const target = exportTarget(note.basename, pages, total, format, taken());
         return format === "pdf" && target.kind === "file"
-          ? { kind: "file", ...pdfName(typed ?? "", target.name, taken()) }
+          ? { kind: "file", ...pdfName(typed ?? "", target.name, taken(), own()) }
           : target;
       },
-      pdfName: exportNamesOf(this.settings.exportNames)[note.path] ?? "",
-      setPdfName: (typed) => {
-        this.settings.exportNames = rememberPdfName(
-          exportNamesOf(this.settings.exportNames),
-          note.path,
-          typed,
-        );
+      pdfName: exportNamesOf(this.settings.exportNames)[note.path]?.name ?? "",
+      setPdfName: (typed, file) => {
+        const names = exportNamesOf(this.settings.exportNames);
+        this.settings.exportNames = rememberPdfName(names, note.path, typed, file);
         void this.plugin.saveSettings();
       },
       export: async (pages, format, onProgress, cancelled, typed) => {
@@ -6448,7 +6448,7 @@ export class InkView extends TextFileView {
           // have taken the name since. A typed name replaces its file (#318),
           // in place, so a link to it or a synced copy stays the same file.
           const free = uniqueFileName(exportBaseName(note.basename, pages, total), ".pdf", taken());
-          const { name, replaces } = pdfName(typed ?? "", free, taken());
+          const { name, replaces } = pdfName(typed ?? "", free, taken(), own());
           const path = inFolder(name);
           await ensureFolder(exports);
           const buffer = bytes.buffer.slice(
