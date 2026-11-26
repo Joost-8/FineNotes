@@ -120,6 +120,11 @@ export interface CalcNotesHost {
     text: string,
     kind: CorrectionKind,
   ): Promise<void>;
+  /**
+   * A plain number written in the writer's own hand after the "="
+   * (`write-in-hand.ts`), page px; null for the glyphs to write it.
+   */
+  handAnswer?(text: string, at: AnswerPlace): Promise<number[][] | null>;
 }
 
 /** The calculation note open now: what was read, worked out, and what the card did with it. */
@@ -659,9 +664,14 @@ export class CalcNotes {
     const surface = this.host.surface();
     if (!glyphs || !page || !surface || !stillLast(page, eq, after)) return;
     const pen = eq.strokes[1];
-    const raw = fraction
-      ? writeFraction(fraction.n, fraction.d, glyphs, place)
-      : writeWithPowers(shown, glyphs, place);
+    // A plain number in the writer's own hand when it can; never a fraction or a power.
+    const own = fraction ? null : ((await this.host.handAnswer?.(shown, place)) ?? null);
+    if (own && !stillLast(page, eq, after)) return;
+    const raw =
+      own ??
+      (fraction
+        ? writeFraction(fraction.n, fraction.d, glyphs, place)
+        : writeWithPowers(shown, glyphs, place));
     const lineLeft = Math.min(...note.strokes.map((s) => strokeBounds(s)?.minX ?? Infinity));
     const written = fitAnswer(
       raw,

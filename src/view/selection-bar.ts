@@ -946,6 +946,7 @@ const ICON_FALLBACKS: Readonly<Record<string, readonly string[]>> = {
   "copy-plus": ["copy"],
   "wand-sparkles": ["wand-2", "wand"],
   "brush-cleaning": ["paintbrush"],
+  signature: ["pen-line", "pencil"],
   "square-check-big": ["check-square"],
 };
 

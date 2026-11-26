@@ -19,6 +19,7 @@ export default defineConfig({
         "src/recognition/writer/sure-words.ts",
         "src/recognition/writer/pool.ts",
         "src/recognition/writer/layout.ts",
+        "src/recognition/writer/known-layout.ts",
         "src/recognition/writer/apply.ts",
         "src/recognition/writer/manifest.ts",
         "src/recognition/writer/kinds.ts",

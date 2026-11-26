@@ -34,8 +34,14 @@ import type { WriterClient } from "../recognition/writer/client";
 import { isOutOfMemory } from "../recognition/writer/protocol";
 import { type LineToPlace, placeLines } from "../recognition/writer/layout";
 import { proseLike } from "../recognition/writer/pool";
-import { neatenLine, readBackRewrite } from "../recognition/writer/repair";
-import { type TaggedLine, levelledStrokes, median } from "../recognition/writer/rows";
+import { errorRate, neatenLine, readBackRewrite } from "../recognition/writer/repair";
+import { readsAs } from "../recognition/writer/known-layout";
+import {
+  type TaggedLine,
+  type WrittenStroke,
+  levelledStrokes,
+  median,
+} from "../recognition/writer/rows";
 import { inkXHeight, leastXHeight, writtenXHeight } from "../recognition/writer/x-height";
 import { DEFAULT_TRIES } from "../recognition/writer/flow-meta";
 import { type WriterKind, WRITER_KINDS, kindFor } from "../recognition/writer/kinds";
@@ -67,6 +73,8 @@ import { ModelNotDownloadedError, type HandwritingReader } from "./handwriting";
 import type { ModelRegistry } from "./model-downloads";
 import { type LearningHost, readAllPracticeLines, writePracticePage } from "./handwriting-learning";
 
+/** How many times an exact line (an answer) is written before the glyphs are left to write it. */
+const EXACT_ATTEMPTS = 3;
 /** Practice lines looked at beyond the ones shown, in case some cannot be tied to their letters. */
 const SPARE_LINES = 4;
 /** How often the menu may ask for the model's files to be looked for again. */
@@ -140,6 +148,8 @@ export class NeatenService {
   private lookedAt = 0;
   /** Prose-like practice lines at the last Beautify (null: none yet this session). */
   private practiceLines: number | null = null;
+  /** When `ready` last counted the practice lines (0: never). */
+  private countedAt = 0;
   /** Lets the OCR carry on; held while the writer's worker lives. */
   private ocrHold: (() => void) | null = null;
   /** `readyWriter` is starting the worker a second time: its release keeps the OCR paused. */
@@ -546,6 +556,136 @@ export class NeatenService {
       });
     }
     return this.writer;
+  }
+
+  /**
+   * Whether known text can be written in the writer's hand now: Beautify's
+   * own rule (`writesInHand`), with the practice lines counted, not assumed.
+   * The count is Beautify's (`practiceLines`); it is taken again at most
+   * every {@link RECHECK_MS}. `readyNow` gives the last answer at once, for
+   * menus built without waiting.
+   */
+  async ready(): Promise<boolean> {
+    const now = Date.now();
+    if (now - this.countedAt >= RECHECK_MS) {
+      this.countedAt = now;
+      try {
+        const store = this.host.models.register(WRITER_MODEL);
+        await store.check(true);
+        if (store.state.kind === "ready") {
+          const model = await this.loadModel();
+          if (!("problem" in model)) {
+            const writable = (ch: string): boolean => model.manifest.chars.indexOf(ch) > 0;
+            this.practiceLines = (await this.poolOf(writable)).length;
+          }
+        }
+      } catch (error) {
+        console.warn("FineNotes: could not count the practice lines", error);
+      }
+    }
+    return this.readyNow(false);
+  }
+
+  /** The last answer of {@link ready}: false while the lines were never counted; a count again behind when it is old. */
+  readyNow(look = true): boolean {
+    if (look && Date.now() - this.countedAt >= RECHECK_MS) void this.ready();
+    return this.practiceLines !== null && this.writesInHand();
+  }
+
+  /** Whether the model writes character `ch` (null until the model was read). */
+  writes(ch: string): boolean {
+    return (this.model?.manifest.chars.indexOf(ch) ?? -1) > 0;
+  }
+
+  /**
+   * Known text (a corrected word, typed text, an answer) written in the
+   * writer's hand, as Beautify writes a line: the same model, practice
+   * lines, the same guidance (the neatness slider), tries and repair. Each text is one line, with its
+   * own noise (`seed` and its place). Returns each line's strokes in model
+   * units, words stood level (`rows.levelledStrokes`), and the practice
+   * lines' ink (a hand to size by on an empty page). Null when the writer is
+   * not ready, a text has a letter the model lacks, or `stop` said so.
+   * The writer starts as Beautify's does (`readyWriter`): the OCR paused while
+   * it lives, one retry when memory runs out (then it throws: `isOutOfMemory`).
+   */
+  async writeKnown(
+    texts: readonly string[],
+    /**
+     * `attempts`: how many times a line Grape misreads is written again (the best reading kept).
+     * `exact`: a line counts only when Grape reads it back as the text (an answer); else null.
+     */
+    options: { stop?: () => boolean; seed?: number; exact?: boolean; attempts?: number } = {},
+  ): Promise<{ lines: WrittenStroke[][]; sample: InkStroke[] } | null> {
+    if (texts.length === 0) return null;
+    // One writing at a time, Beautify's included: wait for one in progress.
+    while (this.running) {
+      if (options.stop?.()) return null;
+      await new Promise((resolve) => window.setTimeout(resolve, 100));
+    }
+    this.running = true;
+    const stop = options.stop ?? (() => false);
+    try {
+      if (!(await this.ready())) return null;
+      const model = await this.loadModel();
+      if ("problem" in model) return null;
+      const { manifest, kind } = model;
+      const writable = (ch: string): boolean => manifest.chars.indexOf(ch) > 0;
+      if (!texts.every((text) => text.trim() !== "" && Array.from(text).every(writable)))
+        return null;
+      const pool = await this.poolOf(writable);
+      if (pool.length < MIN_PRACTICE_LINES) return null;
+      const refs: unknown[] = [];
+      for (const [n, text] of texts.entries()) {
+        const shown = await this.shownFor(text, pool, manifest, kind);
+        if (!shown) return null;
+        // Each line its own choices of what is shown (the pieces kind), as its own noise.
+        const ref = kind.reference(text, shown, manifest, (options.seed ?? 0) + n + 1);
+        if (ref === null) return null;
+        refs.push(ref);
+        if (stop()) return null;
+      }
+      const guidance = manifest.sampling
+        ? guidanceAt(this.host.neatness(), manifest.sampling.guidance)
+        : undefined;
+      const tries = manifest.sampling?.tries ?? DEFAULT_TRIES;
+      // The writer as Beautify starts it: the OCR paused while it lives, one retry when memory runs out.
+      const writer = await this.readyWriter(model);
+      const lines: WrittenStroke[][] = [];
+      for (const [n, text] of texts.entries()) {
+        let kept: Awaited<ReturnType<typeof neatenLine>> = null;
+        let best: Awaited<ReturnType<typeof neatenLine>> = null;
+        // Written again from other noise until Grape reads it back as the text (a word it
+        // misreads may be misshapen: "friena", "bridye" on the iPad, 2026-11-25); otherwise
+        // the best reading is kept, or for `exact` (an answer) nothing.
+        for (
+          let attempt = 0;
+          attempt < (options.exact ? EXACT_ATTEMPTS : (options.attempts ?? 1));
+          attempt++
+        ) {
+          const done = await neatenLine(
+            text,
+            refs[n],
+            n,
+            (t, r, seed, id, low) => writer.write(t, r, seed, id, low, guidance),
+            (written) => this.host.handwriting.readRows(written),
+            { seed: (options.seed ?? 0) + attempt * 7919, tries, repair: true, stop },
+          );
+          if (!done || stop()) return null;
+          if (readsAs(text, done.read)) {
+            kept = done;
+            break;
+          }
+          if (!best || errorRate(text, done.read) < errorRate(text, best.read)) best = done;
+        }
+        if (!options.exact) kept ??= best;
+        if (!kept) return null;
+        lines.push(levelledStrokes(kept.written, kept.written.char, text));
+      }
+      return { lines, sample: pool.flatMap((line) => line.strokes) };
+    } finally {
+      // The worker stays for the next writing; its idle release lets it go and the OCR resume.
+      this.running = false;
+    }
   }
 
   /** Let the writer's worker go (the plugin unloads). */

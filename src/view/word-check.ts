@@ -68,6 +68,16 @@ export interface CheckedWord {
   suggestion?: LexiconSuggestion | null;
 }
 
+/** Writing a checked word in the writer's own hand (`write-in-hand.ts`), when the writer can. */
+export interface WriteWordInHand {
+  /** After an answer: offer to write `text` in place of the word's ink. */
+  offer(text: string): void;
+  /** Write `text` in place of the word's ink now. */
+  write(text: string): void;
+  /** Whether the model can write `text` (every letter one it has). */
+  writes(text: string): boolean;
+}
+
 export class WordCheck {
   private words: Set<string> | null = null;
   /** Counts the times the word list was read, so the reader knows when to send it again. */
@@ -230,12 +240,32 @@ export class WordCheck {
     done: () => void,
     closed: () => void = () => {},
     asked = false,
+    hand?: WriteWordInHand,
   ): WordPopover {
     const read = word.word.text;
     const found = word.suggestion;
     const misread = !!found && found.words.length > 0 && found.margin < SUGGEST_MARGIN;
+    // A word answered as misread is offered in the writer's hand, as the answer says it.
     const reply = (kind: CorrectionKind, text: string) =>
-      void this.answer(word, kind, text).then(done);
+      void this.answer(word, kind, text).then(() => {
+        done();
+        if (hand && kind === "misread") hand.offer(text);
+      });
+    // The ink really says the reading, and a list word is close: that word, in the writer's hand.
+    const closest = !misread && found?.words[0] ? replaceCore(read, found.words[0]) : null;
+    const spelled: WordPopoverRow[] =
+      hand && closest && closest !== read && hand.writes(closest)
+        ? [
+            {
+              icon: "signature",
+              label: t("ai.word.writeAs", { word: closest }),
+              run: () => {
+                void this.answer(word, "mistake", read).then(done);
+                hand.write(closest);
+              },
+            },
+          ]
+        : [];
     const correct: WordPopoverRow = {
       icon: "pencil",
       label: t("ai.word.type"),
@@ -244,7 +274,11 @@ export class WordCheck {
     const wrote: WordPopoverRow = {
       icon: "check",
       label: t("ai.word.itSays", { word: read }),
-      sub: !misread && found?.words[0] ? t("ai.word.closest", { word: found.words[0] }) : undefined,
+      // The closest word is named once: by its own row when it can be written.
+      sub:
+        !misread && found?.words[0] && spelled.length === 0
+          ? t("ai.word.closest", { word: found.words[0] })
+          : undefined,
       run: () => reply("mistake", read),
     };
     // Stored as "ignore", the kind's name since the first corrections files.
@@ -263,7 +297,7 @@ export class WordCheck {
         rows:
           misread || asked
             ? [correct, wrote, ...(asked && this.unflagged(read) ? [] : [add])]
-            : [wrote, add, correct],
+            : [wrote, ...spelled, add, correct],
       },
       closed,
     );

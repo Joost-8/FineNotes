@@ -458,6 +458,7 @@ import {
 import type { SpellingFix } from "./spelling-row";
 import type { WordPopover } from "./word-popover";
 import { type WordCardHost, askUnsureWords } from "./beautify-ask";
+import { wordInHand } from "./write-in-hand";
 import { type TranslateAi, TranslateWindow, type TranslateTarget } from "./translate-window";
 import { nextDeviceStep } from "../recognition/device-reading";
 import type { LinkableNote } from "../search/link-choices";
@@ -1086,6 +1087,7 @@ export class InkView extends TextFileView {
           "calc",
         );
       },
+      handAnswer: (text, at) => plugin.writeInHand.answerInk(text, at),
     });
     this.columnNotes = new ColumnNotes({
       app: this.app,
@@ -4436,6 +4438,21 @@ export class InkView extends TextFileView {
       },
       closed,
       asked,
+      // Beautify's own cards (inHand: false) write the word themselves: no second offer here.
+      after.inHand === false
+        ? undefined
+        : wordInHand(
+            this.plugin.writeInHand,
+            surface,
+            page.id,
+            word.strokeIds,
+            at,
+            (card) => {
+              this.wordPopover = card;
+            },
+            // Read-only or damaged: the card answers, but nothing is rewritten (no notice from here).
+            () => this.isDamaged() || isReadOnly(this.doc) || isReadOnly(surface.document),
+          ),
     );
     return true;
   }
@@ -5213,6 +5230,14 @@ export class InkView extends TextFileView {
             ask: (words) => askUnsureWords(this.wordCards(request.pageId), words, request.stop),
           }),
         canNeaten: () => this.plugin.neaten.available(),
+        onWriteInHand: (pageId, boxId) =>
+          this.surface
+            ? this.plugin.writeInHand.turnTextBox(this.surface, pageId, boxId, () =>
+                this.isProtected(),
+              )
+            : Promise.resolve(),
+        canWriteInHand: (box) =>
+          this.settings.handwritingOnDevice !== false && this.plugin.writeInHand.canTurn(box),
         canCorrectWords: () => this.settings.handwritingOnDevice !== false,
         onReadingPoint: (index, y) => {
           this.sidebar?.setReadingPoint(index, y);

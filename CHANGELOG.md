@@ -29,6 +29,21 @@ extracted from the matching section of this file by `release.yml`.
   practice sheets (at least 10 copied lines); without them Beautify only
   tidies. Formulas and tables are left alone. One undo puts it all back. How
   neat it writes is a slider at the end of the AI menu, from most like your
+  neat it writes is a slider in the Lasso tool's popover, from most like your
+  ink to neatest.
+- **Write it in your handwriting.** Once Beautify can write in your hand:
+  after you correct a word on the word card, the card offers to write the
+  word again in your hand in place of the old ink, on its line and at its
+  size (the rest of the line moves to fit); a word you really wrote that way
+  gets "Write “…” in my handwriting" with the closest spelling. A text box,
+  pasted or typed, turns into your handwriting with the lasso's **Turn into ›
+  Handwriting**: wrapped to the page's margins, on the rules of ruled paper,
+  each line written afresh so it never looks stamped, never over pictures,
+  boxes or ink already on the page; this works on an empty page too.
+  Calculation notes write a plain number answer (digits, `.` `,` `-` `%` `$`)
+  after your "=" in your hand, once Grape reads it back exactly; fractions
+  and powers stay in the drawn figures. All of it follows Beautify's
+  neatness slider.
   ink to neatest. When Grape is unsure of a word, Beautify first opens the
   word card on it (as **Correct** does): answer it and that word is written
   too, and Grape learns from it; close the card and the word stays as you
