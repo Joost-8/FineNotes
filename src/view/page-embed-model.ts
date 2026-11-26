@@ -362,7 +362,7 @@ export class SharedNotebooks<T> {
   forget(path: string): boolean {
     let forgot = this.entries.delete(path);
     for (const key of [...this.entries.keys()]) {
-      if (key.startsWith(`${path}#page=`)) forgot = this.entries.delete(key) || forgot;
+      if (key.startsWith(`${path}#`)) forgot = this.entries.delete(key) || forgot;
     }
     return forgot;
   }

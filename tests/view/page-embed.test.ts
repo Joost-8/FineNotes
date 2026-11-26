@@ -144,7 +144,14 @@ const markdownEmbed = {
   },
 };
 
-function setUp(app: Record<string, unknown> = {}, paper: PaperTheme = LIGHT_PAPER) {
+function setUp(
+  app: Record<string, unknown> = {},
+  paper: PaperTheme = LIGHT_PAPER,
+  host: {
+    openInlineEditor?: (req: { onClosed: () => void }) => void;
+    closeInlineEditor?: (slotEl?: unknown) => void;
+  } = {},
+) {
   const reg = registry();
   const original = vi.fn(() => markdownEmbed as never);
   reg.registerExtension("md", original);
@@ -175,6 +182,7 @@ function setUp(app: Record<string, unknown> = {}, paper: PaperTheme = LIGHT_PAPE
     usePressure: () => true,
     highlighterAlpha: () => 0.35,
     paper: () => paper,
+    ...(host as object),
   });
   return { reg, original, embeds, notebook, opened, app: fullApp };
 }
@@ -379,34 +387,152 @@ describe("Notebook embeds' pages", () => {
     expect(opened).toEqual(["Physics.notebook#page=2"]);
   });
 
-  it("leaves pen and keyboard events to a mounted inline editor", async () => {
+  /** An embed of `subpath` in Live Preview, read and on screen; its page's listeners. */
+  async function livePage(
+    subpath: string,
+    host: Parameters<typeof setUp>[2] = {},
+    app: Record<string, unknown> = {},
+  ) {
     const report = observers();
-    notebookPages = [page("hw-test")];
-    const { reg, embeds, notebook, opened, app } = setUp();
-    embeds.onload();
-    const c = { ...ctx("Physics.notebook#id=hw-test"), app: app as never };
+    const set = setUp(app, LIGHT_PAPER, host);
+    set.embeds.onload();
+    const c = { ...ctx(`Physics.notebook${subpath}`), app: set.app as never };
     (c.containerEl as Fake).closest = (selector: string) =>
       selector === ".markdown-source-view.mod-cm6" ? {} : null;
-    void reg.embedByExtension.md!(c, notebook as never, "#id=hw-test")?.loadFile();
+    const embed = set.reg.embedByExtension.md!(c, set.notebook as never, subpath);
+    void embed?.loadFile();
     const slot = pagesOf(c.containerEl)[0];
     report(slot, true);
-    await vi.waitFor(() => expect(painted.map((p) => p.id)).toEqual(["hw-test"]));
-
-    const startInline = vi.spyOn(embeds, "startInline");
+    await vi.waitFor(() => expect(painted.length).toBeGreaterThan(0));
     const dispatch = (type: string, event: object) =>
       (slot.listeners as Map<string, (e: unknown) => void>).get(type)?.(event);
-    const event = { pointerType: "pen", preventDefault: vi.fn(), stopPropagation: vi.fn() };
-    dispatch("pointerdown", event);
-    expect(startInline).toHaveBeenCalledOnce();
-    expect(event.preventDefault).toHaveBeenCalledOnce();
+    return { ...set, slot, embed, dispatch };
+  }
 
-    (slot.classes as Set<string>).add("is-inline-editing");
-    dispatch("pointerdown", event);
-    dispatch("click", event);
-    dispatch("keydown", { key: "Enter" });
-    expect(startInline).toHaveBeenCalledOnce();
-    expect(event.preventDefault).toHaveBeenCalledOnce();
-    expect(opened).toEqual([]);
+  const event = (extra: object = {}) => ({
+    preventDefault: vi.fn(),
+    stopPropagation: vi.fn(),
+    ...extra,
+  });
+
+  it("opens a page embed at its own page, and a region at its region (#312)", async () => {
+    notebookPages = [page("a"), page("b"), page("c")];
+    const pageEmbed = await livePage("#page=3");
+    pageEmbed.dispatch("click", event());
+    expect(pageEmbed.opened).toEqual(["Physics.notebook#page=3"]);
+
+    painted.length = 0;
+    notebookPages = [
+      page("a"),
+      {
+        ...page("b"),
+        regions: [{ id: "rg1", name: "Krebs cycle", x: 50, y: 60, w: 400, h: 200 }],
+      } as never,
+    ];
+    const region = await livePage("#Krebs cycle");
+    region.dispatch("click", event());
+    expect(region.opened).toEqual(["Physics.notebook#Krebs cycle"]);
+  });
+
+  it("opens a block's page by its id, wherever the page has moved", async () => {
+    notebookPages = [page("a"), page("hw-1")];
+    const views: unknown[] = [];
+    const workspace = {
+      on: () => ({}),
+      openLinkText: () => Promise.resolve(),
+      getLeaf: () => ({
+        setViewState: (state: unknown, eState: unknown) => {
+          views.push({ state, eState });
+          return Promise.resolve();
+        },
+      }),
+    };
+    const block = await livePage("#id=hw-1", {}, { workspace });
+    // Not in Live Preview's editor: a click opens it.
+    block.dispatch("keydown", event({ key: "Enter" }));
+    expect(views).toEqual([
+      {
+        state: expect.objectContaining({ state: { file: "Physics.notebook.md" } }),
+        eState: expect.objectContaining({ pageId: "hw-1", pageIndex: 1 }),
+      },
+    ]);
+  });
+
+  it("writes in a block with the Pencil, and opens any other page as before", async () => {
+    notebookPages = [page("a"), page("b"), page("c")];
+    const openInlineEditor = vi.fn();
+    const pageEmbed = await livePage("#page=3", { openInlineEditor });
+    pageEmbed.dispatch("pointerdown", event({ pointerType: "pen" }));
+    pageEmbed.dispatch("click", event());
+    expect(openInlineEditor).not.toHaveBeenCalled();
+    expect(pageEmbed.opened).toEqual(["Physics.notebook#page=3"]);
+
+    painted.length = 0;
+    notebookPages = [page("hw-test")];
+    const block = await livePage("#id=hw-test", { openInlineEditor });
+    const pen = event({ pointerType: "pen" });
+    block.dispatch("pointerdown", pen);
+    expect(openInlineEditor).toHaveBeenCalledOnce();
+    expect(pen.preventDefault).toHaveBeenCalledOnce();
+    // The pen's own click lands while the editor still reads the notebook:
+    // it neither opens the notebook nor starts a second editor.
+    const click = event();
+    block.dispatch("click", click);
+    block.dispatch("pointerdown", event({ pointerType: "pen" }));
+    block.dispatch("keydown", event({ key: "Enter" }));
+    expect(openInlineEditor).toHaveBeenCalledOnce();
+    expect(click.preventDefault).toHaveBeenCalledOnce();
+    expect(block.opened).toEqual([]);
+
+    // Closed: a click starts writing again.
+    (openInlineEditor.mock.calls[0]![0] as { onClosed: () => void }).onClosed();
+    block.dispatch("click", event());
+    expect(openInlineEditor).toHaveBeenCalledTimes(2);
+  });
+
+  it("closes the editor over a block when the block is taken down, and any editor on unload", async () => {
+    notebookPages = [page("hw-test")];
+    const closeInlineEditor = vi.fn();
+    const block = await livePage("#id=hw-test", { openInlineEditor: vi.fn(), closeInlineEditor });
+    // No editor open over it: nothing to close.
+    (block.embed as unknown as { onunload(): void }).onunload();
+    expect(closeInlineEditor).not.toHaveBeenCalled();
+
+    painted.length = 0;
+    const open = await livePage("#id=hw-test", { openInlineEditor: vi.fn(), closeInlineEditor });
+    open.dispatch("pointerdown", event({ pointerType: "pen" }));
+    // Live Preview drops the widget (a long scroll, the cursor on its line, the tab closed).
+    (open.embed as unknown as { onunload(): void }).onunload();
+    expect(closeInlineEditor).toHaveBeenCalledWith(open.slot);
+    // The plugin turned off: whatever is open closes.
+    open.embeds.onunload();
+    expect(closeInlineEditor).toHaveBeenLastCalledWith();
+  });
+
+  it("does not repaint a block while it is being written in", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      notebookPages = [page("hw-test")];
+      const listeners = new Map<string, (file: unknown) => void>();
+      const vault = {
+        on: (name: string, fn: (file: unknown) => void) => {
+          listeners.set(name, fn);
+          return {};
+        },
+        getFileByPath: (path: string) => (path === "Physics.notebook.md" ? notebookFile : null),
+        cachedRead: () => Promise.resolve("notebook"),
+      };
+      const notebookFile = new TFile("Physics.notebook.md");
+      const block = await livePage("#id=hw-test", { openInlineEditor: vi.fn() }, { vault });
+      block.dispatch("pointerdown", event({ pointerType: "pen" }));
+      const before = painted.length;
+      notebookFile.stat.mtime += 1;
+      listeners.get("modify")?.(notebookFile);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(painted.length).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("takes pages out when the notebook has fewer", async () => {

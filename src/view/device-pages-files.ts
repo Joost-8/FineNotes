@@ -138,7 +138,8 @@ export async function readDevicePagesFolder(
   payload: string,
   folderPath: string,
   fallbackWidth?: number,
-  onlyPage?: number,
+  /** One page alone: by its index, or by its id. */
+  onlyPage?: number | string,
 ): Promise<InkDocument | null> {
   const folder = app.vault.getAbstractFileByPath(folderPath);
   let files = folder instanceof TFolder ? deviceFilesIn(folder) : [];
@@ -146,7 +147,10 @@ export async function readDevicePagesFolder(
     if (onlyPage !== undefined) {
       const metas = files.filter((file) => readDeviceFileName(file.name)?.kind === "meta");
       const order = readDevicePagesNotebook(payload, await textsOf(app, metas), fallbackWidth);
-      const id = order.doc.pages[onlyPage]?.id;
+      const id =
+        typeof onlyPage === "string"
+          ? order.doc.pages.find((page) => page.id === onlyPage)?.id
+          : order.doc.pages[onlyPage]?.id;
       const devices = new Set(files.map((file) => readDeviceFileName(file.name)?.device));
       const names = new Set(
         id === undefined
