@@ -3288,7 +3288,10 @@ input.goodobsidian-color-list.is-invalid {
    container: under 680 px the list is the first screen and a section opens
    over it, with no script measuring anything. */
 .modal.mod-settings .vertical-tab-content.goodobsidian-settings:not(.setting-page) {
-  padding-inline: var(--size-4-6);
+  --gob-settings-pad-top: var(--size-4-8);
+  --gob-settings-pad-inline: var(--size-4-6);
+  padding-top: var(--gob-settings-pad-top);
+  padding-inline: var(--gob-settings-pad-inline);
 }
 
 .goodobsidian-settings > .setting-group {
@@ -3955,9 +3958,13 @@ button.goodobsidian-nav-back.clickable-icon {
 
   .goodobsidian-settings.is-section-open > .setting-group.goodobsidian-nav-group {
     position: sticky;
+    top: calc(-1 * var(--gob-settings-pad-top, 0px));
     z-index: 2;
-    margin-bottom: var(--size-4-3);
-    background-color: inherit;
+    margin: calc(-1 * var(--gob-settings-pad-top, 0px))
+      calc(-1 * var(--gob-settings-pad-inline, 0px)) var(--size-4-3);
+    padding: var(--size-4-2) var(--gob-settings-pad-inline, 0px);
+    border-bottom: 1px solid var(--background-modifier-border);
+    background-color: var(--modal-background, var(--background-primary));
   }
 
   .goodobsidian-settings.is-section-open button.goodobsidian-nav-back.clickable-icon {
