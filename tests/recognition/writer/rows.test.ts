@@ -276,4 +276,25 @@ describe("levelledStrokes", () => {
   it("is empty for a line with no ink", () => {
     expect(levelledStrokes(rowsOf([row(1, 0, true)]), [0], "a")).toEqual([]);
   });
+
+  it("does not lift a word for an f that goes under the line", () => {
+    // "of an": o, a and n stand on 0; the f of a joined hand goes half a unit under.
+    const r = rowsOf([
+      row(0.2, 0, false), // o
+      row(0.2, 0, true),
+      row(0, -0.5, false), // f, down to -0.5
+      row(0.3, 0.5, true), // back up, to the next word
+      row(0.2, 0, false), // a
+      row(0.2, 0, true),
+      row(0.2, 0, false), // n
+    ]);
+    const out = levelledStrokes(r, [0, 1, 1, 2, 3, 4, 4], "of an");
+    expect(out.map((s) => s.word)).toEqual([0, 0, 1, 1]);
+    // The o stays level with the a: the f's bottom did not count as the word's foot.
+    expect(minY(out[0].pts)).toBeCloseTo(minY(out[2].pts));
+    // A word of only an f still stands by it.
+    const lone = rowsOf([row(0.2, 0, false), row(0.2, 0.3, true), row(0, -0.3, false)]);
+    const two = levelledStrokes(lone, [0, 1, 2], "a f");
+    expect(minY(two[0].pts)).toBeCloseTo(minY(two[1].pts));
+  });
 });

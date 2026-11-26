@@ -2,9 +2,10 @@
  * Beautify's neatness slider, at the end of the AI menu, below everything
  * else there (Joost, 2026-11-25). A pen at the left end ("most like my
  * ink") and Beautify's brush at the right ("neatest"), the tool bar's own
- * slider between, five stops (`recognition/writer/neatness.ts`); one line
- * under it says what Beautify does and what the two ends mean, at his
- * explicit word ("with explanation").
+ * slider between, five stops: how far the written line's letters are
+ * straightened (`recognition/writer/neatness.ts`); one line under it says
+ * what Beautify does and what the two ends mean, at his explicit word
+ * ("with explanation").
  */
 
 import { setIcon } from "obsidian";

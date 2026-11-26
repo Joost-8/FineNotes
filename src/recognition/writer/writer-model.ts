@@ -16,8 +16,12 @@
  * Joost-8/Dostoyev (Apache 2.0; Joost's decision, 2026-11-24). Version 2.0
  * is C2 long (kind "pieces", research gen/neaten_v1.py `c2`), Beautify's
  * writer from 24 November, is release v2.0 there (published 2026-11-25 on
- * Joost's word); every file there was checked against the size and hash
- * below, and range requests answer 206.
+ * Joost's word). Version 2.1 (`c21`) is 2.0's three graphs, byte for byte,
+ * under 2.1's names, with the starting noise at 0.5 in its manifest (less
+ * noise reads better and writes more evenly at the same likeness; research
+ * log, 25 November); release v2.1, published the same day on Joost's word.
+ * Every file there was checked against the size and hash below, and range
+ * requests answer 206.
  *
  * PURE: data only.
  */
@@ -27,7 +31,7 @@ import { t } from "../../i18n/translate";
 import { OCR_MODEL, OCR_WASM_FILE } from "../ocr/ocr-model";
 import { WRITER_FORMAT } from "./manifest";
 
-const RELEASE = "https://github.com/Joost-8/Dostoyev/releases/download/v2.0";
+const RELEASE = "https://github.com/Joost-8/Dostoyev/releases/download/v2.1";
 
 /**
  * Whether the files are published at `RELEASE`: Beautify then offers the
@@ -51,28 +55,28 @@ export const WRITER_MODEL: ModelAsset = {
   get purpose() {
     return t("ai.neaten.modelPurpose");
   },
-  version: "2.0",
+  version: "2.1",
   format: WRITER_FORMAT,
   folder: "handwriting/writer",
   files: [
     // The manifest first: it is the main file, by which other versions are recognised.
     file(
-      "dostoyev-2.0.json",
+      "dostoyev-2.1.json",
       5_224,
-      "e39e7b61f30b9d9d1910f31c5556b977f8d9732667b63a35cf854e915c24a07a",
+      "1c11d2a31ea090073a64ae17ea8a9fb6d6c2a6610e86638f60bbc5a5345076e2",
     ),
     file(
-      "dostoyev-2.0-velocity.int8.onnx",
+      "dostoyev-2.1-velocity.int8.onnx",
       10_181_538,
       "51934ada4ec7f1f3298fb6f90c2ce9790427b8f42afcbb1cc675d636a2e0cb21",
     ),
     file(
-      "dostoyev-2.0-encode.int8.onnx",
+      "dostoyev-2.1-encode.int8.onnx",
       1_615_965,
       "e4c5dd77a75c2a1898f004dc914fd51840d13b98c70187e96f67357d1eeac9b7",
     ),
     file(
-      "dostoyev-2.0-durations.int8.onnx",
+      "dostoyev-2.1-durations.int8.onnx",
       1_636_485,
       "d153ba8ffed365f60b3bb60fd60e5c5e8143401495291656681471a0e6a543ff",
     ),

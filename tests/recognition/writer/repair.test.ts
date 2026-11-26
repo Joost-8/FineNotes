@@ -315,6 +315,29 @@ describe("neatenLine", () => {
     expect(out?.seed).toBe(0);
   });
 
+  it("keeps the more even of tries the reader reads equally well, the earlier on a tie there too", async () => {
+    const f = fakes(() => "hello world");
+    const out = await neatenLine(TEXT, ref, 0, f.write, f.read, {
+      seed: 0,
+      tries: 3,
+      repair: false,
+      uneven: (w) => [0.9, 0.6, 0.6][w.n - 1],
+    });
+    expect(out?.seed).toBe(1);
+  });
+
+  it("never lets evenness outvote the reader", async () => {
+    const f = fakes((_c, n) => ["hello world", "hello wrld"][n]);
+    const out = await neatenLine(TEXT, ref, 0, f.write, f.read, {
+      seed: 0,
+      tries: 2,
+      repair: false,
+      uneven: (w) => [0.9, 0.1][w.n - 1],
+    });
+    expect(out?.seed).toBe(0);
+    expect(out?.read).toBe("hello world");
+  });
+
   it("skips the repair rounds when repair is off, even for a rejected word", async () => {
     const f = fakes(() => "hello wrld");
     const out = await neatenLine(TEXT, ref, 0, f.write, f.read, {

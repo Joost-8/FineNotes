@@ -227,7 +227,10 @@ export interface NeatenedLine {
 /**
  * The best of `tries` tries of one line, then its repair. `seed` is the
  * line's own seed (tries are `seed * tries + s`, as in the research);
- * `stop` is asked between tries and ends the work early (null).
+ * `stop` is asked between tries and ends the work early (null). Between
+ * tries the reader reads equally well, `uneven` (lower is better; Beautify
+ * gives `evenness.roughness`) keeps the more even one; without it, or on a
+ * tie there too, the earlier try stays.
  */
 export async function neatenLine<R = Reference>(
   text: string,
@@ -235,16 +238,27 @@ export async function neatenLine<R = Reference>(
   id: number,
   write: WriteTry<R>,
   read: ReadBack,
-  options: { seed: number; tries: number; repair: boolean; stop?: () => boolean },
+  options: {
+    seed: number;
+    tries: number;
+    repair: boolean;
+    stop?: () => boolean;
+    uneven?: (written: Written) => number;
+  },
 ): Promise<NeatenedLine | null> {
   let best: NeatenedLine | null = null;
+  let bestUneven = 0;
   for (let s = 0; s < options.tries; s++) {
     if (options.stop?.()) return null;
     const seed = options.seed * options.tries + s;
     const written = await write(text, ref, seed, id, new Set());
     const got = await read(written);
-    if (!best || errorRate(text, got) < errorRate(text, best.read)) {
+    const wrong = errorRate(text, got);
+    const uneven = options.uneven?.(written) ?? 0;
+    const was = best ? errorRate(text, best.read) : Infinity;
+    if (wrong < was || (wrong === was && uneven < bestUneven)) {
       best = { written, read: got, seed, repairs: { tried: 0, kept: 0 } };
+      bestUneven = uneven;
     }
   }
   if (!best || !options.repair) return best;

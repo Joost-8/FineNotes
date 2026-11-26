@@ -28,6 +28,8 @@ export default defineConfig({
         "src/recognition/writer/neatness.ts",
         "src/recognition/writer/protocol.ts",
         "src/recognition/writer/x-height.ts",
+        "src/recognition/writer/evenness.ts",
+        "src/recognition/writer/straighten.ts",
         "src/view/beautify-ask.ts",
         "src/model/sponsors.ts",
         "src/model/note-merge.ts",

@@ -29,6 +29,17 @@ extracted from the matching section of this file by `release.yml`.
   practice sheets (at least 10 copied lines); without them Beautify only
   tidies. Formulas and tables are left alone. One undo puts it all back. How
   neat it writes is a slider at the end of the AI menu, from most like your
+  ink to neatest. When Grape is unsure of a word, Beautify first opens the
+  word card on it (as **Correct** does): answer it and that word is written
+  too, and Grape learns from it; close the card and the word stays as you
+  wrote it.
+- **Beautify writes straight.** The words it writes in your hand are set flat
+  on the line, and their letters stand on it and lean the same way, with your
+  letter shapes kept: nothing is redrawn. The neatness slider now sets how far
+  the letters are straightened, so its "neatest" end is still your hand. Of
+  two tries that read equally well, Beautify keeps the more even one. It
+  writes with Dostoyev 2.1, the same model started from less noise, which
+  reads better and writes more evenly.
   ink to neatest. For the word Grape is least sure of on each line, at most,
   Beautify first opens the word card (as **Correct** does): answer it and that
   word is written too, and Grape learns from it; close the card and the word
