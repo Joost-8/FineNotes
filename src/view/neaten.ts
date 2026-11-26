@@ -38,7 +38,7 @@ import type { InkStroke } from "../recognition/hwr/features";
 import { type NeatenEdit, neatenEdit } from "../recognition/writer/apply";
 import type { WriterClient } from "../recognition/writer/client";
 import { isOutOfMemory } from "../recognition/writer/protocol";
-import { type LineToPlace, placeLines } from "../recognition/writer/layout";
+import { clearanceFor, type LineToPlace, placeLines } from "../recognition/writer/layout";
 import { proseLike } from "../recognition/writer/pool";
 import { errorRate, neatenLine, readBackRewrite } from "../recognition/writer/repair";
 import { readsAs } from "../recognition/writer/known-layout";
@@ -55,6 +55,7 @@ import {
   writtenFoot,
   writtenXHeight,
 } from "../recognition/writer/x-height";
+import { ownInkRewrite } from "../recognition/writer/own-ink";
 import { heldWordAt, placeWord, wordEdit } from "../recognition/writer/held-word";
 import { DEFAULT_TRIES } from "../recognition/writer/flow-meta";
 import { type WriterKind, WRITER_KINDS, kindFor } from "../recognition/writer/kinds";
@@ -74,6 +75,7 @@ import {
   joinPunctuation,
   pickQuestions,
   sureOfAnswered,
+  questionBudget,
   sureWords,
   unsureCandidates,
   writeUnasked,
@@ -168,6 +170,8 @@ interface NeatenJob {
   sure: number[];
   /** Set once asked: the words the writer answered on a card. */
   answered?: boolean[];
+  /** Words the writer answered on an earlier run (`applyAnswers`). */
+  known: boolean[];
   xHeight: number | null;
   /** Grape's letters on the line, as indices into `strokes`. */
   chars: NonNullable<LineReading["chars"]>;
@@ -371,9 +375,15 @@ export class NeatenService {
       return this.workWord(request, request.word, jobs, jobsWith, { model, pool, profile });
     }
     // Of the words Grape is not sure of, the least sure few are asked about with the word card,
-    // about one per line (Joost, 25 November: ten cards for two lines was far too many). An
+    // as many as the words allow, on each line and in all (`questionBudget`; Joost, 25 November:
+    // ten cards for two lines was far too many; 26 November: two per 8 words, not linear). An
     // answered word is written as answered; a skipped one stays the writer's ink.
-    const questions = pickQuestions(unsureCandidates(jobs));
+    const wordCount = jobs.reduce((n, job) => n + job.read.length, 0);
+    const questions = pickQuestions(
+      unsureCandidates(jobs),
+      (line) => questionBudget(jobs[line]?.read.length ?? 0),
+      questionBudget(wordCount),
+    );
     const asked = new Set(questions.map((q) => jobs[q.line].words[q.word][0]));
     if (questions.length > 0 && request.ask) {
       request.asking?.();
@@ -382,10 +392,13 @@ export class NeatenService {
       // Answered words take the writer's text from the saved answers.
       if (confirmed.length > 0) jobs = await jobsWith();
     }
-    // Every other word is written as read; the read-back below keeps one that does not read
-    // back as itself in the writer's ink.
+    // A word not asked about is written when Grape's sureness of it is at least
+    // WRITE_UNASKED_FROM and it is more than one letter; else it keeps the writer's ink
+    // (`own-ink.ts`; "Beautify this word", `workWord`, is the writer asking for that word).
+    // The read-back below also keeps a written word that does not read back as itself.
     jobs = jobs
       .map((job) => ({ ...job, ...writeUnasked(job, asked) }))
+      .map((job) => ({ ...job, rewrite: ownInkRewrite(job) }))
       .filter((job) => job.rewrite.some(Boolean));
     if (jobs.length === 0) return { kind: "tidy" };
     if (request.stop()) return { kind: "stopped" };
@@ -455,7 +468,17 @@ export class NeatenService {
         },
       });
     }
-    const placed = placeLines(placing, profile, request.pageWidth);
+    // The level line stands clear of the page's other pen ink, that of lines placed with it too.
+    const pen = request.strokes.filter((s) => s.tool === "pen" && !s.shape);
+    const placed = placeLines(
+      placing.map((p) => {
+        const own = new Set(p.strokes.map((s) => s.id));
+        const foreign = pen.filter((s) => !own.has(s.id));
+        return { ...p, clear: clearanceFor(p.strokes, foreign, profile.xHeight) };
+      }),
+      profile,
+      request.pageWidth,
+    );
     const edit = neatenEdit(request.strokes, placed, profile, request.rules, request.selected);
     if (edit.added.length === 0) return { kind: "tidy" };
     // Each line's new strokes take the pen of the line's first stroke.
@@ -501,7 +524,13 @@ export class NeatenService {
       ),
       everAnswered,
     );
-    const joined = joinPunctuation({ words: answered.words, ink, rewrite, sure });
+    const joined = joinPunctuation({
+      words: answered.words,
+      ink,
+      rewrite,
+      sure,
+      known: answered.words.map((_, i) => answered.known.has(i)),
+    });
     return {
       text: joined.words.join(" "),
       strokes,
@@ -509,6 +538,7 @@ export class NeatenService {
       read: joined.words,
       rewrite: joined.rewrite,
       sure: joined.sure ?? [],
+      known: joined.known ?? [],
       // The writer's x-height on this line, from the strokes Grape read as x-height letters.
       xHeight: inkXHeight(strokes, reading.chars),
       chars: reading.chars,
@@ -540,7 +570,9 @@ export class NeatenService {
     let job = jobs[at.line];
     // Asked about only when Grape is not sure of it, and never about another word.
     const word = at.word;
-    const question = pickQuestions(unsureCandidates([job]).filter((q) => q.word === word))[0];
+    const question = pickQuestions(
+      unsureCandidates([job], { lone: true }).filter((q) => q.word === word),
+    )[0];
     if (question && request.ask) {
       request.asking?.();
       const answered = await request.ask([job.words[at.word]]);

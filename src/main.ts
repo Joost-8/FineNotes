@@ -76,7 +76,7 @@ import {
   VIEW_TYPE_LIBRARY,
 } from "./constants";
 import { DEFAULT_SETTINGS, GoodObsidianSettingTab, type GoodObsidianSettings } from "./settings";
-import { laserDefaultColorOf } from "./settings-data";
+import { laserDefaultColorOf, laserSustainOf } from "./settings-data";
 import {
   type PageAppearance,
   type PenPreferences,
@@ -1398,6 +1398,7 @@ export default class GoodObsidianPlugin extends Plugin {
     loadSnapSettings(this.settings, saved ?? {});
     this.settings.laserDefaultColor = laserDefaultColorOf(this.settings.laserDefaultColor);
     Object.assign(this.settings, cleanHandwriteSettings(this.settings));
+    this.settings.laserSustain = laserSustainOf(this.settings.laserSustain);
     // A record of its own: the key store mutates it, and the default's must
     // stay empty.
     const keys = saved?.apiKeys;
@@ -2783,6 +2784,13 @@ export default class GoodObsidianPlugin extends Plugin {
     if (this.fingerDrawing === on) return;
     this.fingerDrawing = on;
     for (const view of this.openNotebooks()) view.setFingerDrawing(on);
+  }
+
+  /** Toggle laser Hold mode across every open notebook at once. */
+  setLaserSustain(on: boolean): void {
+    this.settings.laserSustain = on;
+    void this.saveSettings();
+    for (const view of this.openNotebooks()) view.syncLaserSustain();
   }
 
   /** Beautify's neatness slider at the AI menu's end, while Beautify can write in the hand; null when it only tidies. */

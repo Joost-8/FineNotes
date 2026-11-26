@@ -17,6 +17,7 @@ export default defineConfig({
         "src/recognition/writer/repair.ts",
         "src/recognition/writer/sampler.ts",
         "src/recognition/writer/sure-words.ts",
+        "src/recognition/writer/own-ink.ts",
         "src/recognition/writer/pool.ts",
         "src/recognition/writer/layout.ts",
         "src/recognition/writer/known-layout.ts",

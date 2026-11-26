@@ -21,6 +21,7 @@ import {
   endpointWarning,
   greyWhileErasingOf,
   laserDefaultColorOf,
+  laserSustainOf,
   pagesAreDark,
   handwritingReaderOf,
   highlighterAlphaOf,
@@ -66,6 +67,7 @@ const FRESH_INSTALL = {
   customColors: [],
   defaultColor: "#1a1a1a",
   laserDefaultColor: "#ff3b30",
+  laserSustain: true,
   defaultSize: 3,
   eraserMode: "standard",
   eraserSize: 24,
@@ -253,6 +255,7 @@ const USED_VAULT = {
   customColors: ["#ff8800", "#0ca"],
   defaultColor: "#2255aa",
   laserDefaultColor: "#00aaff",
+  laserSustain: false,
   defaultSize: 5,
   eraserMode: "stroke",
   eraserSize: 40,
@@ -546,6 +549,12 @@ describe("dark pages", () => {
       expect(loadAndSave({ laserDefaultColor: "#123456" })).toMatchObject({
         laserDefaultColor: "#123456",
       });
+    });
+
+    it("normalizes laser sustain to true when missing or invalid", () => {
+      expect(laserSustainOf(undefined)).toBe(true);
+      expect(laserSustainOf("yes")).toBe(true);
+      expect(laserSustainOf(false)).toBe(false);
     });
   });
 

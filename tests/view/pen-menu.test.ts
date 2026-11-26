@@ -232,15 +232,19 @@ describe("the laser pointer's pill", () => {
   const globals = globalThis as unknown as Record<string, unknown>;
 
   /** The pill's elements, built with a document standing in for Obsidian's. */
-  function laserPill(laserColor = "#ff3b30") {
+  function laserPill(laserColor = "#ff3b30", laserSustain = true) {
     const optionsEl = new Element("div");
     const changes: string[] = [];
+    const sustainChanges: boolean[] = [];
     const opened: Array<{ kind: string; current: string }> = [];
     const bar = Object.assign(Object.create(Toolbar.prototype) as object, {
       optionsEl,
       state: { tool: "laser", color: "#1a1a1a", size: 3, recentColors: [] },
-      callbacks: { onLaserColorChange: (color: string) => changes.push(color) },
-      options: { laserColor: () => laserColor },
+      callbacks: {
+        onLaserColorChange: (color: string) => changes.push(color),
+        onLaserSustainChange: (on: boolean) => sustainChanges.push(on),
+      },
+      options: { laserColor: () => laserColor, laserSustain: () => laserSustain },
       pillDock: { dock: "bottom" },
       widthButtons: new Map(),
       colorSwatches: new Map(),
@@ -262,7 +266,7 @@ describe("the laser pointer's pill", () => {
     } finally {
       delete globals.activeDocument;
     }
-    return { optionsEl, changes, opened };
+    return { optionsEl, changes, sustainChanges, opened };
   }
 
   function all(el: FakeEl): FakeEl[] {
@@ -304,6 +308,36 @@ describe("the laser pointer's pill", () => {
     )) {
       expect(icon.style.color).toBeUndefined();
     }
+  });
+
+  it("toggles Hold/Sustain in place (preserving button focus) and updates active text", () => {
+    const on = laserPill("#ff3b30", true);
+    const onNodes = all(on.optionsEl);
+    const onToggle = onNodes.find(
+      (n) => n.attrs["aria-label"] === "Hold laser trail before fading",
+    );
+    expect(onToggle?.classes.has("is-active")).toBe(true);
+    expect(onToggle?.attrs["aria-pressed"]).toBe("true");
+    expect(
+      onNodes.some(
+        (n) => !n.classes.has("is-ghost") && n.text.includes("holds a moment, then fades"),
+      ),
+    ).toBe(true);
+    onToggle?.dispatch("click");
+    expect(on.sustainChanges).toEqual([false]);
+    expect(onToggle?.classes.has("is-active")).toBe(false);
+    expect(onToggle?.attrs["aria-pressed"]).toBe("false");
+
+    const off = laserPill("#ff3b30", false);
+    const offNodes = all(off.optionsEl);
+    const offToggle = offNodes.find(
+      (n) => n.attrs["aria-label"] === "Hold laser trail before fading",
+    );
+    expect(offToggle?.classes.has("is-active")).toBe(false);
+    expect(offToggle?.attrs["aria-pressed"]).toBe("false");
+    expect(
+      offNodes.some((n) => !n.classes.has("is-ghost") && n.text.includes("fades behind the pen")),
+    ).toBe(true);
   });
 
   it("is not one of the pen types in the pen's row", () => {

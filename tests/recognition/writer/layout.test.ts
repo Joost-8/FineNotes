@@ -193,8 +193,8 @@ describe("placeLines", () => {
     const keptFeet = Math.max(
       ...kept.flatMap((s) => ys(s.pts).map((y) => y + (placed.kept.get(s.id)?.dy ?? 0))),
     );
-    // Before, its feet were 14 px or more above the written words'; now on the same line.
-    expect(feet - Math.max(...kept.flatMap((s) => ys(s.pts)))).toBeGreaterThan(10);
+    // Unmoved, its feet stand 8 px or more above the written words (they were 16 before the level line stood at the line's middle); now on the same line.
+    expect(feet - Math.max(...kept.flatMap((s) => ys(s.pts)))).toBeGreaterThan(5);
     expect(Math.abs(keptFeet - feet)).toBeLessThan(0.3 * profile.xHeight);
   });
 

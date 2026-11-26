@@ -20,6 +20,12 @@ extracted from the matching section of this file by `release.yml`.
   a word alone on its line included; the lasso's Beautify still does whole
   lines.
 
+- **Beautify keeps what it could get wrong.** Beautify now leaves single
+  letters and digits, exponents, and words it is unsure of, in your own
+  handwriting instead of risking writing a different word. It asks about
+  as many words as the selection is long: two for a line of eight words,
+  never more than eight.
+
 - **Help improve Grape: new terms (version 3).** Before a shared item is used
   to train Grape, its label may be checked against its ink by Claude, an AI by
   Anthropic: only a picture of the ink and its text are sent, and Anthropic
@@ -161,6 +167,10 @@ extracted from the matching section of this file by `release.yml`.
   the command palette) makes a copy in the old layout.
 
 ### Fixed
+
+- **Beautify on a slanted line.** Words Beautify left alone no longer end up
+  below the line, on top of the next one, and a rewritten "I" no longer gets
+  a second bar.
 
 - **S Pen side button on tablets that report no hovering**
   ([discussion #209](https://github.com/Joost-8/FineNotes/discussions/209)).

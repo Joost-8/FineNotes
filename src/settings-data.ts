@@ -96,6 +96,8 @@ export interface GoodObsidianSettings {
   defaultColor: string;
   /** The laser pointer's default colour, `#rgb` or `#rrggbb`. */
   laserDefaultColor: string;
+  /** Hold laser strokes solid for a moment before fading out together; false fades continuously. */
+  laserSustain: boolean;
   defaultSize: number;
   /** The eraser's last mode, kept between sessions. */
   eraserMode: EraserMode;
@@ -612,6 +614,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   customColors: [],
   defaultColor: PALETTE[0],
   laserDefaultColor: "#ff3b30",
+  laserSustain: true,
   defaultSize: SIZES[1],
   eraserMode: "standard",
   eraserSize: DEFAULT_ERASER_SIZE,
@@ -753,6 +756,11 @@ export function laserDefaultColorOf(raw: unknown): string {
   return typeof raw === "string" && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(raw)
     ? raw
     : DEFAULT_SETTINGS.laserDefaultColor;
+}
+
+/** A stored laser sustain flag, defaulting to `true` when missing or invalid. */
+export function laserSustainOf(raw: unknown): boolean {
+  return typeof raw === "boolean" ? raw : DEFAULT_SETTINGS.laserSustain;
 }
 
 // --- Settings sections -----------------------------------------------------------
