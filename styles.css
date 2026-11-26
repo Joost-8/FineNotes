@@ -22920,6 +22920,18 @@ button.goodobsidian-edit-switch.is-nudged {
 .goodobsidian-share-desc.is-hidden {
   display: none;
 }
+/* The consent's one box: share later items automatically. Below the terms, always in view. */
+.goodobsidian-share-auto {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 12px;
+  font-size: var(--font-ui-small);
+}
+.goodobsidian-share-auto input {
+  flex: none;
+  margin: 2px 0 0;
+}
 .goodobsidian-share-facts {
   border-top: 1px solid var(--background-modifier-border);
   margin-top: 12px;

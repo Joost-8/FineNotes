@@ -13,8 +13,14 @@ export interface SharingFeature {
   drawRow(setting: Setting, redraw: () => void): void;
   /** The one-time invite, drawn into the learn window under a run that helped. */
   drawInvite(parent: HTMLElement): void;
-  /** The one-time invite as a card in the corner, when a practice sheet was just finished. */
+  /**
+   * A practice sheet was just finished: the one-time invite for someone not
+   * sharing; for someone who is, new items are sent by themselves or, every
+   * so many, a reminder to share them.
+   */
   inviteAfterSheet(): void;
+  /** New labelled items were made elsewhere (a word answered): send or remind, after a pause. */
+  itemsAdded(): void;
   /** On load: send a delete the server has not confirmed yet. */
   start(): void;
 }
