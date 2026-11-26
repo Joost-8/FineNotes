@@ -9,6 +9,7 @@
  * against 13.6 % overall (research/handwriting-rig/gen/neaten_ledger.mts with
  * neaten_tally.mjs, 2026-11-26). So a word keeps the writer's ink when it is
  *
+ * - "exponent": read with a "^", which the model cannot raise (answered or not);
  * - "lone": one letter or digit at most;
  * - "unsure": Grape's sureness of it is under `WRITE_UNASKED_FROM`.
  *
@@ -20,7 +21,17 @@
 /** A word the writer did not answer is written only when Grape's sureness of it (`wordSureness`) is at least this. */
 export const WRITE_UNASKED_FROM = 0.5;
 
-export type OwnInkReason = "lone" | "unsure";
+export type OwnInkReason = "exponent" | "lone" | "unsure";
+
+/**
+ * Whether a word is read with an exponent mark ("a^2"). The model writes along
+ * one line and cannot raise anything: it wrote the mark like a 7. Of 48 such
+ * words on donated handwriting the read-back refused 30 and 17 took a card
+ * whose answer could not be written either.
+ */
+export function holdsExponent(text: string): boolean {
+  return text.includes("^");
+}
 
 export interface OwnInkWord {
   text: string;
@@ -35,6 +46,8 @@ export function isLone(text: string): boolean {
 
 /** Why a word keeps the writer's ink, or null when it may be written. */
 export function ownInkReason(word: OwnInkWord): OwnInkReason | null {
+  // Even when answered: no answer makes it writable.
+  if (holdsExponent(word.text)) return "exponent";
   if (word.answered) return null;
   if (isLone(word.text)) return "lone";
   if (word.sure < WRITE_UNASKED_FROM) return "unsure";

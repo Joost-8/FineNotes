@@ -15,8 +15,10 @@ extracted from the matching section of this file by `release.yml`.
   lines.
 
 - **Beautify keeps what it could get wrong.** Beautify now leaves single
-  letters and digits, and words it is unsure of, in your own
-  handwriting instead of risking writing a different word.
+  letters and digits, exponents, and words it is unsure of, in your own
+  handwriting instead of risking writing a different word. It asks about
+  as many words as the selection is long: two for a line of eight words,
+  never more than eight.
 
 - **Help improve Grape: new terms (version 3).** Before a shared item is used
   to train Grape, its label may be checked against its ink by Claude, an AI by

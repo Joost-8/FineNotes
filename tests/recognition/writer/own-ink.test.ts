@@ -45,6 +45,12 @@ describe("ownInkReason", () => {
   it("never keeps an answered word", () => {
     expect(ownInkReason(word({ text: "a", sure: 0, answered: true }))).toBeNull();
   });
+
+  it("keeps a word read with an exponent mark, answered or not: the model cannot raise it", () => {
+    expect(ownInkReason(word({ text: "a^2+", sure: 1 }))).toBe("exponent");
+    expect(ownInkReason(word({ text: "O(n^2)", sure: 1, answered: true }))).toBe("exponent");
+    expect(ownInkReason(word({ text: "x2", sure: 1 }))).toBeNull();
+  });
 });
 
 describe("keepOwnInk", () => {

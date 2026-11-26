@@ -21,7 +21,7 @@
 
 import type { CharReading } from "../hwr/char-readings";
 import { plainWord } from "../hwr/corrections";
-import { isLone } from "./own-ink";
+import { holdsExponent, isLone } from "./own-ink";
 import { opcodes } from "./repair";
 
 export interface SureBars {
@@ -241,6 +241,7 @@ export function unsureCandidates(
     line.read.flatMap((w, word) =>
       !line.rewrite[word] &&
       /[\p{L}\p{N}]/u.test(w) &&
+      !holdsExponent(w) &&
       (options.lone || !isLone(w)) &&
       line.words[word]?.length
         ? [{ line: li, word, sure: line.sure[word] ?? 0 }]
