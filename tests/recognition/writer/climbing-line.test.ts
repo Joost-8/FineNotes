@@ -192,3 +192,52 @@ describe("Beautify on a climbing line", () => {
     expect(right).toBeLessThan(real.width);
   });
 });
+
+describe("Beautify on a climbing line squeezed between two lines (stock seed 6)", () => {
+  // The level line is moved to clear the line above and below; with the line just stood level,
+  // Tidy must not regroup it with the line below and level it to that again (the kept word ended
+  // 5.8 px under the new words, the new words moved up to 7 px).
+  const squeezed = JSON.parse(
+    readFileSync(join(__dirname, "fixtures", "joost-climbing-line-squeezed.json"), "utf8"),
+  ) as typeof real;
+  const all = squeezed.strokes.map((s) => ({ ...s, tool: "pen", shape: null }));
+  const hand2 = measureHand(all);
+  if (!hand2) throw new Error("no hand");
+  const ids = new Set(squeezed.lineIds);
+  const own = all.filter((s) => ids.has(s.id));
+  const [lineOut] = placeLines(
+    [
+      {
+        strokes: own,
+        words: squeezed.words,
+        rewrite: squeezed.rewrite,
+        written: squeezed.written,
+        xHeight: squeezed.xHeight,
+        clear: clearanceFor(
+          own,
+          all.filter((s) => !ids.has(s.id)),
+          hand2.xHeight,
+        ),
+      },
+    ],
+    hand2,
+    squeezed.width,
+  );
+  const out = neatenEdit(all, [lineOut], hand2, null, ids);
+
+  it("leaves the written words where placeLines put them", () => {
+    out.added.forEach((s, i) => {
+      s.pts.forEach((v, k) => {
+        if (k % 3 !== 2) expect(Math.abs(v - lineOut.added[i].pts[k])).toBeLessThan(0.5);
+      });
+    });
+  });
+
+  it("leaves the kept word on the written words' feet", () => {
+    const feet = median(out.added.map((s) => bottom(s.pts)));
+    const kept = median(
+      squeezed.words[2].map((id) => bottom(out.moved.get(id) ?? all.find((s) => s.id === id)!.pts)),
+    );
+    expect(Math.abs(kept - feet)).toBeLessThan(3);
+  });
+});

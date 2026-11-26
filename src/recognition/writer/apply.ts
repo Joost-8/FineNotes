@@ -1,9 +1,10 @@
 /**
  * The edit Neaten makes to a page, worked out before anything changes: the
  * writer's strokes that go, the new strokes and where each stroke ends up
- * after Tidy has been over the neatened lines. Tidy runs here, on the page
+ * after Tidy has been over the selected lines. Tidy runs here, on the page
  * as it will be, so the caller applies one command and one undo step brings
- * everything back.
+ * everything back. A line `placeLines` has just stood level is not tidied
+ * again on plain paper (see `neatenEdit`).
  *
  * PURE: no DOM, no Obsidian.
  */
@@ -22,13 +23,14 @@ export interface NeatenEdit {
   /** The writer's strokes the new ones replace. */
   removed: string[];
   added: NewStroke[];
-  /** Strokes that stay but move (kept words along their line, then Tidy): their new points. */
+  /** Strokes that stay but move (kept words along their line, and Tidy on the lines it still tidies): their new points. */
   moved: Map<string, number[]>;
 }
 
 /**
- * The page's edit for `placed` lines, Tidy run over every line of `selected`
- * (the user asked, so steep lines are levelled too: `ASKED_LEVEL_SLOPE`). `strokes` is every stroke of the page
+ * The page's edit for `placed` lines, Tidy run over every selected line that
+ * `placeLines` did not just place (the user asked, so steep lines are levelled
+ * too: `ASKED_LEVEL_SLOPE`). `strokes` is every stroke of the page
  * the edit may touch (the caller leaves out mirrors of joined pages); `rules`
  * the page's ruled lines, if any.
  */
@@ -60,11 +62,22 @@ export function neatenEdit<S extends PageInk>(
       }),
     ...added.map((s, i) => ({ id: tag(i), tool: "pen", shape: null, t0: null, pts: s.pts })),
   ];
-  // Tidy only the neatened lines; the rest of the page holds still around them.
-  // Every selected line is tidied (Beautify), the rewritten ones and the rest; the page holds still around them.
-  const only = new Set<string>(added.map((_, i) => tag(i)));
-  for (const line of placed) for (const id of line.kept.keys()) only.add(id);
-  for (const id of selected) if (!removed.has(id)) only.add(id);
+  // Beautify tidies the selected lines it did not rewrite; the page holds still around them.
+  // A line `placeLines` has just stood level (its new strokes and its kept words) must not be
+  // regrouped with the ink of its neighbours and levelled to that again: on "I'm the captain"
+  // Tidy took the kept word 6 px under the new words and moved the I's bars (26 November).
+  // On plain paper it is left as placed; on ruled paper Tidy still snaps it to the rules.
+  const ruled = !!rules && rules.length > 0;
+  const laid = new Set<string>();
+  if (!ruled)
+    for (const line of placed)
+      if (line.added.length > 0) for (const id of line.kept.keys()) laid.add(id);
+  const only = new Set<string>();
+  for (const line of placed) {
+    if (ruled || line.added.length === 0) for (const id of line.kept.keys()) only.add(id);
+  }
+  if (ruled) added.forEach((_, i) => only.add(tag(i)));
+  for (const id of selected) if (!removed.has(id) && !laid.has(id)) only.add(id);
   const tidied = tidyInk(working, { profile, rules, only, maxLevelSlope: ASKED_LEVEL_SLOPE });
   const moved = new Map<string, number[]>();
   for (const s of working) {
