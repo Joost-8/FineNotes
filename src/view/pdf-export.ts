@@ -39,9 +39,24 @@ import { VaultBackdropRenderer } from "./backdrop-renderer";
 import type { VaultImageCache } from "./image-cache";
 import { releaseCanvas } from "./image-import";
 import type { PdfBackdropCache } from "./pdf-backdrop";
+import { t } from "../i18n/translate";
+import { exportMarginsOf } from "../export/export-choice";
 
 /** JPEG quality, in a PDF and a JPG: ink edges stay clean, a PDF slide stays small. */
 const JPEG_QUALITY = 0.9;
+
+/** The export dialog's switches, as last left in `settings`, over `preview`. */
+export function withExportSwitches(
+  preview: PdfExportSources,
+  settings: { exportPlainPaper?: boolean; exportWithoutTapes?: boolean; exportMargins?: unknown },
+): PdfExportSources {
+  return {
+    ...preview,
+    plainPaper: settings.exportPlainPaper === true,
+    withoutTapes: settings.exportWithoutTapes === true,
+    margins: exportMarginsOf(settings.exportMargins),
+  };
+}
 
 export interface PdfExportSources {
   /** Read the original PDF bytes without modifying the source. */
@@ -109,10 +124,14 @@ function withTapesOf(page: Page, sources: PdfExportSources): Page {
 
 export interface PdfExportOptions {
   title: string;
+  /** Optional PDF Subject metadata (used by Companion PDFs to store stable identity). */
+  subject?: string;
   /** Called before each page renders: `done` pages of `total` are finished. */
   onProgress?: (done: number, total: number) => void;
   /** Checked between pages; when it returns true the export stops with an `AbortError`. */
   cancelled?: () => boolean;
+  /** Awaited between pages: an export in the background waits here while the pen writes. */
+  between?: () => Promise<void>;
 }
 
 /** Render `pages` in order and return the PDF's bytes. */
@@ -123,15 +142,18 @@ export async function exportPagesToPdf(
 ): Promise<Uint8Array> {
   const out: PdfImagePage[] = [];
   const hasPdf = pages.some((page) => page.backdrop.kind === "pdf");
-  if (hasPdf && !sources.readPdf) throw new Error("PDF source reader unavailable");
+  if (hasPdf && !sources.readPdf) throw new Error(t("notebooks.export.errNoPdfReader"));
   const vector = sources.vectorInk !== false;
   const composer =
-    hasPdf || vector ? await PdfComposer.create(options.title, sources.readPdf ?? null) : null;
+    hasPdf || vector || options.subject
+      ? await PdfComposer.create(options.title, sources.readPdf ?? null, options.subject)
+      : null;
   for (const [i, original] of pages.entries()) {
     if (options.cancelled?.()) throw new DOMException("Export cancelled", "AbortError");
     options.onProgress?.(i, pages.length);
     // Let the dialog paint its progress before the next page blocks the thread.
     await new Promise((resolve) => window.setTimeout(resolve, 0));
+    await options.between?.();
     if (composer && original.backdrop.kind === "pdf") {
       // Margins and plain paper reach a PDF page here; a picture page gets
       // them in paintForExport, which asks the furniture for the original.
@@ -238,7 +260,7 @@ async function paintForExport<T>(
   const page = withTapesOf(pageOf(original, sources), sources);
   const { width, height } = page.geometry;
   const scale = Math.min(exportPixelScale(width, height), sources.maxPixelScale ?? Infinity);
-  if (!(scale > 0)) throw new Error("A page has no size");
+  if (!(scale > 0)) throw new Error(t("notebooks.export.errPageSize"));
 
   // What lies over the ink needs neither the paper nor a PDF slide.
   const painter =
@@ -355,7 +377,7 @@ function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality?: number)
     canvas.toBlob(
       (blob) => {
         if (blob) resolve(blob);
-        else reject(new Error("The page could not be encoded — it may be too large"));
+        else reject(new Error(t("notebooks.export.errEncodePage")));
       },
       type,
       type === "image/jpeg" ? (quality ?? JPEG_QUALITY) : undefined,
@@ -371,7 +393,7 @@ async function renderAnnotationPng(
   parts?: "under" | "over",
 ): Promise<Uint8Array> {
   const scale = exportPixelScale(page.geometry.width, page.geometry.height);
-  if (!scale) throw new Error("A page has no size");
+  if (!scale) throw new Error(t("notebooks.export.errPageSize"));
   if (sources.images) await sources.images.prepare(page.images, scale);
   const canvas = createEl("canvas");
   try {
@@ -399,7 +421,7 @@ function canvasToPng(canvas: HTMLCanvasElement): Promise<Uint8Array> {
   return new Promise<Uint8Array>((resolve, reject) => {
     canvas.toBlob((blob) => {
       if (!blob) {
-        reject(new Error("PDF annotations could not be encoded"));
+        reject(new Error(t("notebooks.export.errEncodeOverlay")));
         return;
       }
       blob.arrayBuffer().then((bytes) => resolve(new Uint8Array(bytes)), reject);

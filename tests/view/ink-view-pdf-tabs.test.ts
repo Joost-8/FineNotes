@@ -9,6 +9,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { notices, resetFakes } from "./fake-obsidian";
+import type { CompanionSession } from "../../src/view/companion-session";
 
 vi.mock("obsidian", () => import("./fake-obsidian"));
 
@@ -349,5 +350,96 @@ describe("a PDF tab's contents", () => {
     view.showTab("b2");
     await flush();
     expect(lastOutline(sidebar.setPdfTab)).toEqual([true, []]);
+  });
+});
+
+describe("the companion PDF while a PDF's tab is shown", () => {
+  const ID = "a3f9211234567890";
+
+  /** The view with its real companion session, a manager that records what it is asked. */
+  async function companionSetup() {
+    const s = setup();
+    const { DocumentEncoder } = await import("../../src/model/serialize");
+    const entry = { enabled: true, dirty: true };
+    const manager = recorder({
+      entry: () => entry,
+      mine: (e?: { enabled: boolean }) => e?.enabled === true,
+      requestExport: vi.fn(async () => {}),
+    });
+    const file = { path: "Algo/Algo.notebook.md", basename: "Algo.notebook", parent: null };
+    const saveNow = vi.fn(async () => {});
+    const view = Object.assign(s.view, {
+      file,
+      encoder: new DocumentEncoder(),
+      noteBody: `---\nfinenotes-companion-id: ${ID}\nfinenotes-companion-pdf: Algo.pdf\n---\n`,
+      plugin: recorder({
+        settings: { paperWidth: 1024 },
+        companionPdfs: manager,
+        readingGuard: recorder({}),
+      }),
+      saveNow,
+      devicePages: null,
+      writeHold: { savePending: true, writing: () => false },
+      saver: { busy: false },
+      audio: null,
+      recordLastPage: vi.fn(),
+      pdfExportSources: () => ({ usePressure: true, highlighterAlpha: 0.4 }),
+    }) as unknown as Inside & {
+      companion: CompanionSession;
+      companionSession(): CompanionSession;
+      bindWindowEvents(root: unknown): void;
+    };
+    view.companion = view.companionSession();
+    return { ...s, view, manager, saveNow, file, entry };
+  }
+
+  it("closing exports the notebook's own pages, never the tab's document", async () => {
+    const { view, manager, saveNow, file, surface, doc } = await companionSetup();
+    view.showTab("b1");
+    expect(surface.document.pages).toHaveLength(4);
+    await view.companion.close(file as never);
+    expect(saveNow).toHaveBeenCalled();
+    const [id, , capture, force] = manager.requestExport.mock.calls[0] as unknown as [
+      string,
+      unknown,
+      () => { snapshot: { pages: Array<{ json: string }> }; title: string },
+      boolean,
+    ];
+    expect(id).toBe(ID);
+    expect(force).toBe(false);
+    const made = capture();
+    expect(made.title).toBe("Algo");
+    expect(made.snapshot.pages.map((page) => JSON.parse(page.json).id)).toEqual(
+      doc.pages.map((page) => page.id),
+    );
+    // Closed once: the tab's close after the file's unload queues nothing more.
+    await view.companion.close(file as never);
+    expect(manager.requestExport).toHaveBeenCalledTimes(1);
+  });
+
+  it("going to the background saves, and exports nothing", async () => {
+    const { view, manager, saveNow } = await companionSetup();
+    view.showTab("b1");
+    const listeners = new Map<string, () => void>();
+    const doc = {
+      visibilityState: "hidden",
+      addEventListener: (type: string, listener: () => void) => listeners.set(type, listener),
+      removeEventListener: () => undefined,
+    };
+    const win = { addEventListener: () => undefined, removeEventListener: () => undefined };
+    Object.assign(doc, { defaultView: win });
+    view.bindWindowEvents({ ownerDocument: doc });
+    listeners.get("visibilitychange")!();
+    expect(saveNow).toHaveBeenCalled();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(manager.requestExport).not.toHaveBeenCalled();
+  });
+
+  it("a notebook not changed since its PDF was checked is not even saved at close", async () => {
+    const { view, manager, saveNow, file, entry } = await companionSetup();
+    entry.dirty = false;
+    await view.companion.close(file as never);
+    expect(saveNow).not.toHaveBeenCalled();
+    expect(manager.requestExport).not.toHaveBeenCalled();
   });
 });

@@ -59,6 +59,8 @@ export interface ExportedFiles {
   where: string;
   /** The same files, for the share sheet. */
   files: File[];
+  /** Link this exact saved export as the notebook’s companion. */
+  keepUpdated?: () => Promise<void>;
 }
 
 export interface ExportPdfHost {
@@ -681,6 +683,36 @@ export class ExportPdfModal extends Modal {
     });
     const status = contentEl.createDiv({ cls: "goodobsidian-ask-status" });
     const actions = contentEl.createDiv({ cls: "goodobsidian-ask-actions" });
+
+    // Keep updated: this PDF becomes the notebook's companion. An icon, its
+    // words in the label, so a long language does not push the row; done, it
+    // keeps its place as a check mark.
+    const keepUpdated = saved.keepUpdated;
+    if (keepUpdated) {
+      const keep = actions.createEl("button", {
+        cls: "clickable-icon goodobsidian-export-keep",
+        attr: { type: "button", "aria-label": t("notebooks.companion.keepUpdated") },
+      });
+      setIcon(keep, "link");
+      keep.addEventListener("click", () => {
+        keep.disabled = true;
+        status.removeClass("is-error");
+        status.setText("");
+        void keepUpdated()
+          .then(() => {
+            if (this.closed) return;
+            setIcon(keep, "check");
+            keep.addClass("is-active");
+            keep.setAttribute("aria-label", t("notebooks.companion.keptUpdated"));
+          })
+          .catch((error: unknown) => {
+            if (this.closed) return;
+            keep.disabled = false;
+            status.addClass("is-error");
+            status.setText(errorMessage(error));
+          });
+      });
+    }
 
     if (canShareFiles(saved.files)) {
       // A fresh tap: the share sheet needs a user gesture, which the export's

@@ -306,6 +306,18 @@ export function requireApiVersion(_version: string): boolean {
 
 export function setIcon(): void {}
 
+/** Enough YAML for the tests: `key: value` lines and list items; anything else is an error. */
+export function parseYaml(text: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim() || line.trim().startsWith("#") || /^\s+-\s/.test(line)) continue;
+    const at = line.indexOf(":");
+    if (at <= 0 || /^\s/.test(line)) throw new Error(`YAML: ${line}`);
+    out[line.slice(0, at)] = line.slice(at + 1).trim();
+  }
+  return out;
+}
+
 /** Every tooltip shown with `displayTooltip`, as its text. */
 export const tooltips: string[] = [];
 

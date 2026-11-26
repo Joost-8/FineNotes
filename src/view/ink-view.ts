@@ -73,6 +73,7 @@ import {
   emptyDocument,
 } from "../model/document";
 import { DocumentEncoder, buildInkFile, inkFileText, parseInkFile } from "../model/serialize";
+import { CompanionSession } from "./companion-session";
 import { DotClock, attachDotClock, dotClockOf, idsIn } from "../model/dot-ids";
 import {
   type DevicePagesLoad,
@@ -540,6 +541,7 @@ import {
   exportPagesToImages,
   exportPagesToPdf,
   keepsMargins,
+  withExportSwitches,
   paintPagePreview,
 } from "./pdf-export";
 import { exportBaseName } from "../export/page-range";
@@ -1084,6 +1086,7 @@ export class InkView extends TextFileView {
           ? null
           : (await import("./save-worker-client")).startSaveWorker(),
     );
+    this.companion = this.companionSession();
     this.showHud = plugin.settings.debugHud;
     this.doc = this.blankNotebook();
     this.toolState = toolStateFrom(plugin.settings);
@@ -1430,6 +1433,7 @@ export class InkView extends TextFileView {
       void this.readDevicePages();
     }
     this.textPanel?.load(this.noteBody);
+    this.companion.loaded(again);
     if (!this.mounted) return;
     this.showDocument();
     this.matchPdfResolution();
@@ -1488,6 +1492,8 @@ export class InkView extends TextFileView {
       this.devicePagesNoticed = null;
       // Files it points at that moved while it was closed (#14).
       if (this.relinkDoc() > 0) this.requestSave();
+      // Pages from other devices: the companion PDF may be behind them.
+      this.companion.changed();
     }
     if (!this.mounted) return;
     this.showDocument();
@@ -1764,6 +1770,7 @@ export class InkView extends TextFileView {
     }
     // Where the PDF's tab was left goes into this save.
     this.saveTabView();
+    await this.companion.close(file);
     // A page asked for in this file is not one to look for in the next.
     this.pendingPageId = null;
     this.pendingHighlightPage = false;
@@ -1984,6 +1991,8 @@ export class InkView extends TextFileView {
   }
 
   override async onClose(): Promise<void> {
+    // onUnloadFile is not reached when the tab closes: its companion is queued here.
+    if (this.file) await this.companion.close(this.file);
     this.presenter?.stop();
     window.clearTimeout(this.tabViewTimer);
     this.tabViewTimer = 0;
@@ -2572,6 +2581,36 @@ export class InkView extends TextFileView {
   /** Canvas used only to measure text boxes that grow with their text. */
   private measureCtx: CanvasRenderingContext2D | null = null;
 
+  /** This notebook's Companion PDF (`companion-session.ts`). */
+  readonly companion: CompanionSession;
+
+  private companionSession(): CompanionSession {
+    return new CompanionSession(
+      {
+        app: this.app,
+        file: () => this.file,
+        body: () => this.noteBody,
+        setBody: (body) => (this.noteBody = body),
+        doc: () => this.doc,
+        paperWidth: () => this.settings.paperWidth,
+        snapshot: () => this.encoder.snapshot(this.doc),
+        options: () => withExportSwitches(this.previewSources(), this.settings),
+        crop: (page) => this.boardDrawing(page),
+        exportsFolder: () => this.attachmentFolder("exports"),
+        saveNow: () => this.saveNow(false, true),
+        saveBody: () => {
+          this.requestBodySave();
+          return this.saveNow(false, true);
+        },
+        writable: () => !this.guard.locked && !this.devicePagesSyncing(),
+        penDown: () => this.writeHold.writing(performance.now()),
+        isLeaf: (leaf) => leaf === this.leaf,
+        hidden: () => docOf(this.contentEl).visibilityState === "hidden",
+      },
+      this.plugin.companionPdfs,
+    );
+  }
+
   /** A text box's height as the page paints it (`paintedTextHeight`). */
   private textHeight(text: TextBoxElement): number {
     this.measureCtx ??= createEl("canvas").getContext("2d");
@@ -3103,7 +3142,7 @@ export class InkView extends TextFileView {
     return {
       readPdf: async (path: string) => {
         const file = this.app.vault.getFileByPath(path);
-        if (!file) throw new Error(`Missing PDF source — ${path}`);
+        if (!file) throw new Error(t("view.pdf.missingSource", { path }));
         return this.app.vault.readBinary(file);
       },
       pdf: this.pdfCache,
@@ -5303,6 +5342,7 @@ export class InkView extends TextFileView {
           if (this.onPdfTab) this.syncTabMarks();
           this.requestSaveOf(pages);
           this.relinkMovedFiles();
+          this.companion.changed();
           // An undo, redo or edit may take Ask AI's changes back, or touch them.
           this.notifyAskChanges();
         },
@@ -5948,6 +5988,7 @@ export class InkView extends TextFileView {
     new NoteSettingsModal(this.app, {
       single: this.isSinglePage,
       board: this.isBoard,
+      companion: this.companion.settings(),
       scrollDirection: () => scrollDirectionOf(this.doc),
       setScrollDirection: (direction) => {
         apply(new SetScrollDirection(direction));
@@ -6516,17 +6557,14 @@ export class InkView extends TextFileView {
       return new Set((dir?.children ?? []).map((child) => child.name));
     };
     // The PDF this notebook's export last wrote under its typed name: the only file it replaces (#318).
+    // Its Companion PDF's file is its own too (one rule for both, #310).
     const own = (): string | undefined =>
-      ownPdfName(exportNamesOf(this.settings.exportNames)[note.path], folder);
+      ownPdfName(exportNamesOf(this.settings.exportNames)[note.path], folder) ??
+      this.companion.ownIn(folder);
     const preview = this.previewSources();
     // Plain paper or with the template, with the tapes or without, as the
     // dialog's switches were last left.
-    const exported = (): PdfExportSources => ({
-      ...preview,
-      plainPaper: this.settings.exportPlainPaper === true,
-      withoutTapes: this.settings.exportWithoutTapes === true,
-      margins: exportMarginsOf(this.settings.exportMargins),
-    });
+    const exported = (): PdfExportSources => withExportSwitches(preview, this.settings);
     const taped = doc.pages.some((page) => page.strokes.some(isTape));
     new ExportPdfModal(this.app, {
       noun: this.isSinglePage ? "page" : "notebook",
@@ -6613,14 +6651,8 @@ export class InkView extends TextFileView {
           const { name, replaces } = pdfName(typed ?? "", free, taken(), own());
           const path = inFolder(name);
           await ensureFolder(exports);
-          const buffer = bytes.buffer.slice(
-            bytes.byteOffset,
-            bytes.byteOffset + bytes.byteLength,
-          ) as ArrayBuffer;
-          const existing = replaces ? this.app.vault.getFileByPath(path) : null;
-          if (existing) await this.app.vault.modifyBinary(existing, buffer);
-          else await this.app.vault.createBinary(path, buffer);
-          return { paths: [path], where: path, files: [new File([buffer], name, { type })] };
+          const how = { whole: pages.length === total, typed: typed ?? "", replaces, type };
+          return this.companion.saveExport(path, bytes, how);
         }
         // Pictures: one file, or a new folder of them. Named at save time too.
         const target = exportTarget(note.basename, pages, total, format, taken());

@@ -19,6 +19,12 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Companion PDF** ([#310](https://github.com/Joost-8/FineNotes/pull/310), thanks @bendi087): a notebook can keep a PDF of itself up to date, made when it closes, when it has been left for another tab for a while, or with Update now (FineNotes rewrites this PDF: marks made in it elsewhere are not kept); turn it on in the notebook's settings, or after exporting the whole notebook as a PDF.
+- **Export: a PDF name of your own (#318).** The Export dialog has a name
+  field for the PDF. Type a name and the export replaces the file of that
+  name (the button says Replace), so a link to it, or a copy synced to a
+  drive, always shows the newest version; the notebook remembers the name for
+  next time. Left empty, every export makes a new file, as before.
 - **E-ink screen** ([discussion #309](https://github.com/Joost-8/FineNotes/discussions/309)).
   A new row in Settings › Writing for paper-like screens such as an Onyx
   Boox: FineNotes' bars, menus and dialogs stop animating, and the layer

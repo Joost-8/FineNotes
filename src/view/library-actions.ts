@@ -11,6 +11,7 @@ import { parseInkFile } from "../model/serialize";
 import { readDevicePagesFolder } from "./device-pages-files";
 import { t } from "../i18n/translate";
 import { parentPath } from "../model/folder-notebook";
+import { withoutCompanionKeys } from "../model/companion-pdf";
 import {
   type Picked,
   duplicatePlan,
@@ -80,7 +81,10 @@ export class LibraryActions {
     // Kept as one file per page per device (#274): the copy is a notebook of its own,
     // with an id of its own, made of every device's pages as they are now.
     const forked = await this.forkDevicePages(file);
-    if (forked !== null) await vault.create(plan.note, forked);
+    // A copy keeps no companion PDF: the original's stays the original's.
+    const text = forked ?? (await vault.read(file));
+    const copy = withoutCompanionKeys(text);
+    if (forked !== null || copy !== text) await vault.create(plan.note, copy);
     else await vault.copy(file, plan.note);
     return plan.note;
   }

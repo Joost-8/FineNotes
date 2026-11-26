@@ -91,6 +91,12 @@ export function memoryVault(paths: string[]) {
         emit("create", made);
         return made;
       },
+      create: async (path: string, text: string) => {
+        if (nodes.has(path)) throw new Error(`exists: ${path}`);
+        const made = file(path, text);
+        emit("create", made);
+        return made;
+      },
       cachedRead: async (f: TFile) => texts.get(f.path) ?? "",
       read: async (f: TFile) => texts.get(f.path) ?? "",
     },
@@ -131,6 +137,10 @@ export function memoryVault(paths: string[]) {
     trashed,
     /** Fire a vault event, as a sync or another view would. */
     emit,
+    /** A file's text. */
+    text: (path: string) => texts.get(path),
+    /** Sets a file's text, as an editor would. */
+    write: (path: string, text: string) => void texts.set(path, text),
     /** Every file, sorted. */
     files: () => [...nodes.keys()].filter((p) => nodes.get(p) instanceof TFile).sort(),
     /** Every folder, sorted. */

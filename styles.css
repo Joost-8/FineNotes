@@ -25694,6 +25694,124 @@ button.clickable-icon.goodobsidian-ask-window-button {
   animation: finenotes-note-tints-in 0.18s cubic-bezier(0.2, 0.9, 0.25, 1);
 }
 
+/* --- Companion PDF: one row of the notebook's settings ------------------------- */
+
+/* Its state, as a mark after its name: a dot when up to date, a ring while
+   behind or updating (turning), the error colour when it failed. */
+.goodobsidian-ns-companion-mark {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: var(--size-4-2);
+  border: 2px solid var(--interactive-accent);
+  border-radius: 50%;
+  vertical-align: middle;
+  box-sizing: border-box;
+}
+
+.goodobsidian-ns-companion-mark.is-current {
+  background-color: var(--interactive-accent);
+}
+
+.goodobsidian-ns-companion-mark.is-stale,
+.goodobsidian-ns-companion-mark.is-busy {
+  background-color: transparent;
+}
+
+.goodobsidian-ns-companion-mark.is-busy {
+  border-right-color: transparent;
+  animation: goodobsidian-spin 1s linear infinite;
+}
+
+.goodobsidian-ns-companion-mark.is-error {
+  border-color: var(--text-error);
+  background-color: var(--text-error);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goodobsidian-ns-companion-mark.is-busy {
+    animation: none;
+  }
+}
+
+/* The name keeps its width; the controls take the rest, the folder chip
+   what is left of it, so its name shows whole when there is room. */
+.modal.goodobsidian-note-settings .goodobsidian-ns-companion .setting-item-info {
+  flex: 0 0 auto;
+}
+
+.modal.goodobsidian-note-settings .goodobsidian-ns-companion .setting-item-control {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.goodobsidian-ns-companion-controls {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--size-4-1);
+  min-width: 0;
+}
+
+/* The folder: its icon and name, as a chip. A clickable-icon, so the iPad's
+   20 px button padding stays off it (obsidian-host.md, 2026-09-21); this
+   outranks a theme's .clickable-icon padding too. */
+button.goodobsidian-ns-companion-folder.clickable-icon {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: var(--size-4-1);
+  min-width: 0;
+  max-width: 100%;
+  height: 30px;
+  padding: 0 var(--size-4-2);
+  border-radius: var(--gob-radius-s, 8px);
+  background-color: var(--background-modifier-hover);
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+
+.goodobsidian-ns-companion-folder-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-muted);
+  --icon-size: 14px;
+}
+
+.goodobsidian-ns-companion-folder-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Why it failed, under the row, only while it is so: one line. */
+.goodobsidian-ns-companion-error {
+  padding: 0 0 6px;
+  overflow: hidden;
+  color: var(--text-error);
+  font-size: var(--font-ui-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Keep updated, after a PDF export: a round icon like the template switch; a check once it is. */
+.goodobsidian-ask-actions button.goodobsidian-export-keep.clickable-icon {
+  width: var(--gob-touch);
+  padding: 0;
+  border-radius: var(--gob-radius-pill);
+  background-color: var(--interactive-normal);
+  color: var(--text-muted);
+}
+
+.goodobsidian-ask-actions button.goodobsidian-export-keep.clickable-icon.is-active {
+  background: hsla(var(--interactive-accent-hsl), 0.15);
+  color: var(--interactive-accent);
+  opacity: 1;
+}
+
 /* --- Handwrite here: blocks in a note, and one written in place --- */
 .markdown-source-view.mod-cm6 .goodobsidian-page-embed-page.is-transparent {
   border-radius: var(--radius-m);

@@ -214,6 +214,7 @@ import {
 import { inlineEditorHost, registerHandwriteHere } from "./view/handwrite-here";
 import { cleanHandwriteSettings } from "./model/handwrite-blocks";
 import { InkView } from "./view/ink-view";
+import { CompanionPdfManager } from "./view/companion-pdf";
 import { starsOf } from "./model/favorites";
 import {
   type SimplePart,
@@ -630,6 +631,9 @@ export default class GoodObsidianPlugin extends Plugin {
     paperWidth: () => this.settings.paperWidth,
   });
 
+  /** Companion PDFs: this device's journal and the one export queue (`view/companion-pdf.ts`). */
+  readonly companionPdfs = new CompanionPdfManager(this.app);
+
   /** The transcription engine chosen in the settings; Manual when it is gone. */
   activeProvider(): RecognitionProvider {
     return resolveProvider(this.providers, this.settings.recognitionProviderId);
@@ -648,6 +652,28 @@ export default class GoodObsidianPlugin extends Plugin {
     await this.loadSettings();
     // Before anything with words in it is made.
     await this.language.start();
+    // A notebook's typed export name (#318) names its companion PDF too, and
+    // both keep one record of the file that is the notebook's own.
+    this.companionPdfs.register(this, () => this.openNotebooks().map((view) => view.companion), {
+      get: (path) => exportNamesOf(this.settings.exportNames)[path],
+      setFile: (path, file) => {
+        const names = exportNamesOf(this.settings.exportNames);
+        const entry = names[path];
+        if (!entry || entry.file === file) return;
+        this.settings.exportNames = { ...names, [path]: { name: entry.name, file } };
+        void this.saveSettings();
+      },
+    });
+    this.addCommand({
+      id: "update-companion-pdf",
+      name: t("notebooks.companion.updateNow"),
+      checkCallback: (checking) => {
+        const view = this.app.workspace.getActiveViewOfType(InkView);
+        if (!view?.companion.enabled) return false;
+        if (!checking) void view.companion.updateNow();
+        return true;
+      },
+    });
     this.installFullScreen();
     this.installEink();
     // The chosen speech model shows under Settings › Models on this device from the start.
@@ -884,7 +910,8 @@ export default class GoodObsidianPlugin extends Plugin {
     );
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => {
-        this.fileMoves.renamed(file, oldPath);
+        // A companion PDF's own staging renames are not the user's moves.
+        if (!this.companionPdfs.isInternal(oldPath)) this.fileMoves.renamed(file, oldPath);
         this.keepFolderNotebookPaired(file, oldPath);
         void this.followPagesFolder(file, oldPath);
         followNoteFiles(this.app, file, oldPath);

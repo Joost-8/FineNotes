@@ -4,6 +4,7 @@
  * layered page — a JPEG of what lies under the ink, the ink as vector paths
  * (`./vector-ink`), and a transparent PNG of what lies over it.
  */
+import { t } from "../i18n/translate";
 import {
   BlendMode,
   PDFDocument,
@@ -45,17 +46,21 @@ export class PdfComposer {
   private constructor(
     private readonly output: PDFDocument,
     private readonly readPdf: ((path: string) => Promise<ArrayBuffer>) | null,
+    /** With a Subject, the Info dictionary stays readable without inflating (companion-metadata.ts). */
+    private readonly clearInfo: boolean,
   ) {}
 
   static async create(
     title: string,
     readPdf: ((path: string) => Promise<ArrayBuffer>) | null = null,
+    subject?: string,
   ): Promise<PdfComposer> {
     const output = await PDFDocument.create();
     output.setTitle(title);
+    if (subject) output.setSubject(subject);
     output.setProducer("FineNotes");
     output.setCreationDate(new Date());
-    return new PdfComposer(output, readPdf);
+    return new PdfComposer(output, readPdf, !!subject);
   }
 
   async addImage(page: PdfImagePage): Promise<void> {
@@ -71,7 +76,7 @@ export class PdfComposer {
     layers: AsyncIterable<PdfLayer> | Iterable<PdfLayer>,
   ): Promise<void> {
     if (!(widthPt > 0 && heightPt > 0 && Number.isFinite(widthPt * heightPt))) {
-      throw new Error("A page has no size");
+      throw new Error(t("notebooks.export.errPageSize"));
     }
     const target = this.output.addPage([widthPt, heightPt]);
     for await (const layer of layers) await this.drawLayer(target, widthPt, heightPt, layer);
@@ -80,15 +85,18 @@ export class PdfComposer {
   /** Fails clearly if a source is missing/unreadable, never silently flattens it. */
   async addPdf(page: Page, overlay: () => AsyncIterable<PdfLayer>): Promise<void> {
     const backdrop = page.backdrop;
-    if (backdrop.kind !== "pdf") throw new Error("A PDF backdrop is required");
-    if (!this.readPdf) throw new Error("PDF source reader unavailable");
+    if (backdrop.kind !== "pdf") throw new Error(t("notebooks.export.errPdfBackdrop"));
+    if (!this.readPdf) throw new Error(t("notebooks.export.errNoPdfReader"));
     let source = this.documents.get(backdrop.path);
     if (!source) {
       source = this.readPdf(backdrop.path).then((bytes) => PDFDocument.load(bytes));
       this.documents.set(backdrop.path, source);
     }
     const original = (await source).getPages()[backdrop.page];
-    if (!original) throw new Error(`Missing page ${backdrop.page + 1} in ${backdrop.path}`);
+    if (!original)
+      throw new Error(
+        t("notebooks.export.errMissingPdfPage", { page: backdrop.page + 1, path: backdrop.path }),
+      );
     const media = original.getMediaBox();
     const crop = original.getCropBox();
     // PDF viewers clip to the intersection of CropBox and MediaBox.
@@ -98,13 +106,15 @@ export class PdfComposer {
     const top = Math.min(media.y + media.height, crop.y + crop.height);
     const width = right - left;
     const height = top - bottom;
-    if (!(width > 0 && height > 0)) throw new Error("PDF page has an empty crop box");
+    if (!(width > 0 && height > 0)) throw new Error(t("notebooks.export.errEmptyPdfCrop"));
     const rotation = ((original.getRotation().angle % 360) + 360) % 360;
-    if (![0, 90, 180, 270].includes(rotation)) throw new Error("Unsupported PDF page rotation");
+    if (![0, 90, 180, 270].includes(rotation))
+      throw new Error(t("notebooks.export.errPdfRotation"));
     const rotated = rotation === 90 || rotation === 270;
     const w = page.geometry.width * POINTS_PER_PAGE_PX;
     const h = page.geometry.height * POINTS_PER_PAGE_PX;
-    if (!(w > 0 && h > 0 && Number.isFinite(w * h))) throw new Error("A page has no size");
+    if (!(w > 0 && h > 0 && Number.isFinite(w * h)))
+      throw new Error(t("notebooks.export.errPageSize"));
     const target = this.output.addPage([w, h]);
     target.drawRectangle({ width: w, height: h, color: rgb(1, 1, 1) });
     if (original.node.Contents()) {
@@ -152,7 +162,7 @@ export class PdfComposer {
   }
 
   save(): Promise<Uint8Array> {
-    return this.output.save();
+    return this.output.save({ useObjectStreams: !this.clearInfo });
   }
 
   private name(kind: string): string {

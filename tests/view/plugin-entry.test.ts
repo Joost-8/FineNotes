@@ -596,6 +596,7 @@ describe("registration", () => {
         "toggle-text-layer",
         "transcribe-page",
         "turn-selection-into-text",
+        "update-companion-pdf",
         "view-changelog",
         "write-handwriting-practice",
         "write-symbol-practice",
