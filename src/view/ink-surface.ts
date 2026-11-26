@@ -371,7 +371,7 @@ import {
   stabilizationReach,
 } from "../ink/stroke-builder";
 import { stabilizationOf } from "../model/pen-stabilization";
-import { InkTracer } from "../ink/freehand";
+import { InkTracer, penOptions } from "../ink/freehand";
 import { coasting } from "../canvas/coast";
 import { FramePace } from "../canvas/frame-pace";
 import { FrameRun } from "../canvas/frame-run";
@@ -706,14 +706,8 @@ import {
   pressOverride,
   stylusButtonDown,
 } from "../input/pen-modifiers";
-import {
-  LASER_COLOR,
-  LASER_GLOW_PX,
-  LASER_WIDTH_PX,
-  type LaserPoint,
-  LaserTrail,
-  laserPaths,
-} from "../canvas/laser-trail";
+import { LASER_COLOR, LaserSession, type LaserPenSnapshot } from "../canvas/laser-trail";
+import { LaserPainter } from "../canvas/laser-paint";
 import { REJOIN_MS, REJOIN_PX, rejoinsStroke } from "../input/pen-rejoin";
 import { cancelsStylusTouch, hasStylusTouch } from "../input/stylus-touch";
 import { type StylusClickAction, stylusClickActionOf } from "../input/stylus-click";
@@ -1049,6 +1043,7 @@ export interface InkSurfaceOptions {
   palette?: readonly string[];
   /** The global laser settings, read live so an open note follows Settings changes. */
   laserColor?: () => string;
+  laserSustain?: () => boolean;
 }
 
 /** What the surface tells its host, and asks it. Only `onChange` is required. */
@@ -2787,7 +2782,9 @@ export class InkSurface {
   /** The eraser's footprint, shown on the page while erasing. */
   private readonly eraserCursorEl: HTMLElement;
   /** The laser pointer's trail, and the canvas it is drawn on (FineNotes#25). Never saved. */
-  private readonly laserTrail = new LaserTrail();
+  private readonly laser = new LaserSession();
+  private readonly laserPainter = new LaserPainter();
+  private lastLaserSustain: boolean | null = null;
   private readonly laserCanvas: HTMLCanvasElement;
   /** The paper and the committed ink, bottom to top: what `snapshotPage` copies. */
   private readonly paneLayers: HTMLCanvasElement[];
@@ -3304,11 +3301,10 @@ export class InkSurface {
     });
     this.hudEl = this.surfaceEl.createDiv({ cls: "goodobsidian-hud" });
     this.eraserCursorEl = this.paperEl.createDiv({ cls: "goodobsidian-eraser-cursor is-hidden" });
-    // Over the ink and under the text boxes, in screen px: the laser's trail.
+    // Over the ink and text boxes, in screen px: the laser's trail.
     this.laserCanvas = this.surfaceEl.createEl("canvas", {
       cls: "goodobsidian-canvas goodobsidian-canvas-laser",
     });
-    this.surfaceEl.insertBefore(this.laserCanvas, this.scrollEl);
     this.setDebug(this.options.debug);
 
     // A lock badge on each locked picture, under the selection chrome. The
@@ -3779,6 +3775,7 @@ export class InkSurface {
     this.focusHoldFrame = this.relayoutFrame = this.laserFrame = 0;
     this.zoomPaintFrame = this.zoomSlideFrame = 0;
     this.bindWindow();
+    this.clearLaser();
     // The new window may be on a screen of another density.
     this.renderer?.repaintAll();
     this.scheduleRelayout();
@@ -3791,6 +3788,7 @@ export class InkSurface {
    * host's to remove.
    */
   destroy(): void {
+    this.clearLaser();
     this.penHover?.destroy();
     this.penHover = null;
     this.snippetDrag?.drag.cancel();
@@ -4033,6 +4031,7 @@ export class InkSurface {
   private interruptForSwap(): void {
     // A lasso round nothing is of the page going away (a snippet's drag outlives it).
     this.dropEmptyLasso();
+    this.clearLaser();
     this.endExplore(false);
     if (this.zoomBox) this.closeZoomBox(true);
     this.endWetStroke();
@@ -5015,6 +5014,14 @@ export class InkSurface {
     // into it, so the one being replaced is read from `toolSeen`.
     if (tool === "text" && this.toolSeen !== "text") this.toolBeforeText = this.toolSeen;
     if (tool !== "select") this.selectionToolUsed = false;
+    if (tool === "laser") {
+      const from = this.toolState.laserFromTool ?? null;
+      this.laser?.setPen(from ? this.captureLaserPen(from) : null);
+    } else {
+      this.toolState.laserFromTool = null;
+      this.laser?.setPen(null);
+      this.clearLaser();
+    }
     this.drawingTool = drawingToolOf(this.drawingTool, tool);
     // A tool picked by hand overrides a return still waiting to happen.
     this.cancelPendingReturn();
@@ -5388,6 +5395,7 @@ export class InkSurface {
   private putToolInHand(tool: ActiveTool): void {
     if ((tool === "pen" || tool === "highlighter") && this.callbacks.onPenShortcut?.(tool) === true)
       return;
+    if (tool === "laser") this.toolState.laserFromTool = null;
     this.setTool(tool);
     this.callbacks.onToolChange?.(tool);
   }
@@ -11408,15 +11416,48 @@ export class InkSurface {
     this.setTapesShown(next);
   }
 
-  /** The laser pointer: a fading trail behind the pen, never part of the notebook. */
+  /**
+   * Snapshots the active pen's exact `PenOptions` and `StrokeBuilderOptions`
+   * from `currentStyle()` and `builderOpts()` so the laser automatically
+   * inherits every current and future pen feature without duplicating pen math.
+   */
+  private captureLaserPen(fromTool: "pen" | "highlighter"): LaserPenSnapshot {
+    const prev = this.toolState.tool;
+    this.toolState.tool = fromTool;
+    try {
+      const style = this.currentStyle();
+      return {
+        pen: penOptions(style.size, style.usePressure, style.nib, style.tip),
+        builderOpts: this.builderOpts(),
+      };
+    } finally {
+      this.toolState.tool = prev;
+    }
+  }
+
+  clearLaser(): void {
+    if (this.laserFrame) {
+      this.boundWin?.cancelAnimationFrame(this.laserFrame);
+      this.laserFrame = 0;
+    }
+    this.lastLaserSustain = null;
+    this.laser?.clear();
+    if (this.laserCanvas) this.laserPainter?.clear(this.laserCanvas);
+  }
+
+  /** The laser pointer: a fading neon trail behind the pen, never part of the notebook. */
   private readonly laserGesture: PenGesture = {
     down: (_box, _at, sample) => {
-      this.laserTrail.start({ x: sample.x, y: sample.y, t: now() });
+      const sustain = this.options.laserSustain?.() ?? true;
+      if (this.lastLaserSustain !== null && this.lastLaserSustain !== sustain) {
+        this.clearLaser();
+      }
+      this.lastLaserSustain = sustain;
+      this.laser.down(sample, now(), sustain);
       this.requestLaser();
     },
     move: (_box, samples) => {
-      const t = now();
-      for (const sample of samples) this.laserTrail.add({ x: sample.x, y: sample.y, t });
+      this.laser.move(samples, now(), this.options.laserSustain?.() ?? true);
       this.requestLaser();
     },
     up: () => this.endLaser(),
@@ -11424,7 +11465,7 @@ export class InkSurface {
   };
 
   private endLaser(): void {
-    this.laserTrail.end(now());
+    this.laser.up(now(), this.options.laserSustain?.() ?? true);
     this.activePage = null;
     this.requestLaser();
   }
@@ -11437,68 +11478,42 @@ export class InkSurface {
     });
   }
 
-  /**
-   * Draw the laser's trail where its points are on screen now (it stays on
-   * what it pointed at while the page moves), and keep drawing while any
-   * of it is still fading.
-   */
+  /** Draw the laser's neon trail in layout space and keep animating while visible. */
   private paintLaser(): void {
     const canvas = this.laserCanvas;
+    const sustain = this.options.laserSustain?.() ?? true;
+    if (this.lastLaserSustain !== null && this.lastLaserSustain !== sustain) {
+      this.clearLaser();
+      this.lastLaserSustain = sustain;
+      return;
+    }
+    this.lastLaserSustain = sustain;
     const ratio = this.win.devicePixelRatio || 1;
     const width = Math.round(this.cssW * ratio);
     const height = Math.round(this.cssH * ratio);
     if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width;
       canvas.height = height;
+      this.laserPainter.reset();
     }
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const t = now();
-    if (!this.laserTrail.visible(t)) return;
-    const scale = this.unitScale;
-    const scrollY = this.viewport.scrollY;
-    const sx = (x: number): number => (x * scale + this.offsetX) * ratio;
-    const sy = (y: number): number => (y - scrollY) * scale * ratio;
-    ctx.lineCap = "butt";
-    ctx.lineJoin = "round";
-    const color = this.options.laserColor?.() ?? LASER_COLOR;
-    ctx.strokeStyle = color;
-    const paths = laserPaths(this.laserTrail.segments(t));
-    // A wide faint pass is the glow, a narrow one the beam: no canvas blur,
-    // which is slow on the iPad.
-    for (const [lineWidth, strength] of [
-      [LASER_GLOW_PX, 0.25],
-      [LASER_WIDTH_PX, 1],
-    ] as const) {
-      ctx.lineWidth = lineWidth * ratio;
-      for (const { alpha, runs } of paths) {
-        ctx.globalAlpha = alpha * strength;
-        this.strokeLaserRuns(ctx, runs, sx, sy);
-      }
+    const frame = this.laser.trail.activeStrokes(now(), sustain);
+    if (!(frame.alpha > 0) || frame.strokes.length === 0) {
+      this.laserPainter.clear(canvas);
+      return;
     }
-    ctx.globalAlpha = 1;
+    canvas.setCssStyles({ opacity: frame.sustain ? String(frame.alpha) : "" });
+    this.laserPainter.paint(ctx, frame, {
+      color: this.options.laserColor?.() ?? LASER_COLOR,
+      ratio,
+      scale: this.unitScale,
+      offsetX: this.offsetX,
+      scrollY: this.viewport.scrollY,
+      cssW: this.cssW,
+      cssH: this.cssH,
+    });
     this.requestLaser();
-  }
-
-  /** One path for every run of a fade level, stroked once: lines meet without overlapping. */
-  private strokeLaserRuns(
-    ctx: CanvasRenderingContext2D,
-    runs: readonly LaserPoint[][],
-    sx: (x: number) => number,
-    sy: (y: number) => number,
-  ): void {
-    ctx.beginPath();
-    for (const run of runs) {
-      const first = run[0];
-      if (!first) continue;
-      ctx.moveTo(sx(first.x), sy(first.y));
-      for (let index = 1; index < run.length; index++) {
-        const point = run[index];
-        ctx.lineTo(sx(point.x), sy(point.y));
-      }
-    }
-    ctx.stroke();
   }
 
   /**

@@ -1,12 +1,15 @@
-/** `src/canvas/laser-trail.ts` — the laser pointer's fading trail (FineNotes#25). */
+/** `src/canvas/laser-trail.ts` — the laser pointer's neon trail and pen options (FineNotes#25). */
 
 import { describe, expect, it } from "vitest";
+import { penOptions } from "../../src/ink/freehand";
 import {
   LASER_FADE_MS,
-  LASER_FADE_STEPS,
+  LASER_HOLD_MS,
+  LaserSession,
   LaserTrail,
+  MAX_LASER_POINTS,
   fade,
-  laserPaths,
+  syncLaserStream,
 } from "../../src/canvas/laser-trail";
 
 describe("fade", () => {
@@ -23,109 +26,190 @@ describe("fade", () => {
 });
 
 describe("LaserTrail", () => {
-  it("draws the pen's path, newest pieces strongest", () => {
+  it("keeps strokes 100% solid while writing, holds after lift, then fades out together", () => {
     const trail = new LaserTrail();
     trail.start({ x: 0, y: 0, t: 0 });
     trail.add({ x: 10, y: 0, t: 100 });
     trail.add({ x: 20, y: 0, t: 200 });
-    const segments = trail.segments(200);
-    expect(segments).toHaveLength(2);
-    expect(segments[0].alpha).toBeLessThan(segments[1].alpha);
-    expect(segments[1]).toMatchObject({ a: { x: 10 }, b: { x: 20 }, alpha: 1 });
+
+    const active = trail.activeStrokes(200);
+    expect(active.alpha).toBe(1);
+    expect(active.strokes).toHaveLength(1);
+    expect(active.tip?.point).toMatchObject({ x: 20, y: 0 });
+
+    trail.end(500);
+    expect(trail.activeStrokes(500).tip).toBeNull();
+    expect(trail.alpha(500 + LASER_HOLD_MS)).toBe(1);
+    const mid = trail.alpha(500 + LASER_HOLD_MS + LASER_FADE_MS / 2);
+    expect(mid).toBeGreaterThan(0);
+    expect(mid).toBeLessThan(1);
+    expect(trail.activeStrokes(500 + LASER_HOLD_MS + LASER_FADE_MS).strokes).toEqual([]);
   });
 
-  describe("laserPaths", () => {
-    const point = (x: number, t: number) => ({ x, y: 0, t });
-
-    it("joins contiguous pieces of one opacity step into a single run", () => {
-      const paths = laserPaths([
-        { a: point(0, 0), b: point(10, 10), alpha: 1 },
-        { a: point(10, 10), b: point(20, 20), alpha: 1 },
-      ]);
-      expect(paths).toHaveLength(1);
-      expect(paths[0].alpha).toBe(1);
-      expect(paths[0].runs).toHaveLength(1);
-      expect(paths[0].runs[0].map((each) => each.x)).toEqual([0, 10, 20]);
-    });
-
-    it("keeps a break in the trail as separate runs of the same step", () => {
-      const paths = laserPaths([
-        { a: point(0, 0), b: point(10, 10), alpha: 1 },
-        { a: point(100, 20), b: point(110, 30), alpha: 1 },
-      ]);
-      expect(paths).toHaveLength(1);
-      expect(paths[0].runs).toHaveLength(2);
-    });
-
-    it("groups by opacity step, so each step is stroked once", () => {
-      const segments = [
-        { a: point(0, 0), b: point(10, 10), alpha: 0.1 },
-        { a: point(10, 10), b: point(20, 20), alpha: 0.5 },
-        { a: point(20, 20), b: point(30, 30), alpha: 1 },
-      ];
-      const paths = laserPaths(segments);
-      expect(paths).toHaveLength(3);
-      expect(paths.map((path) => path.alpha)).toEqual([
-        Math.round(0.1 * LASER_FADE_STEPS) / LASER_FADE_STEPS,
-        Math.round(0.5 * LASER_FADE_STEPS) / LASER_FADE_STEPS,
-        1,
-      ]);
-      for (const path of paths) expect(path.runs).toHaveLength(1);
-    });
-
-    it("uses at most the fade's steps and never drops a very faint piece", () => {
-      const segments = Array.from({ length: 60 }, (_, index) => ({
-        a: point(index, index),
-        b: point(index + 1, index + 1),
-        alpha: (index + 1) / 60,
-      }));
-      const paths = laserPaths(segments);
-      expect(paths.length).toBeLessThanOrEqual(LASER_FADE_STEPS);
-      expect(paths[0].alpha).toBeGreaterThan(0);
-      expect(paths[paths.length - 1].alpha).toBe(1);
-    });
-  });
-
-  it("lets the old part fade while the pen goes on, with no dot left behind", () => {
-    const trail = new LaserTrail();
-    trail.start({ x: 0, y: 0, t: 0 });
-    trail.add({ x: 10, y: 0, t: 10 });
-    trail.add({ x: 20, y: 0, t: 1000 });
-    expect(trail.segments(1000)).toHaveLength(1);
-    // Held still long after: no segment is left, and nothing is drawn.
-    expect(trail.segments(5000)).toHaveLength(0);
-    expect(laserPaths(trail.segments(5000))).toEqual([]);
-  });
-
-  it("fades out after the lift, from the lift", () => {
-    const trail = new LaserTrail();
-    trail.start({ x: 0, y: 0, t: 0 });
-    trail.add({ x: 10, y: 0, t: 10 });
-    trail.end(2000);
-    expect(trail.visible(2000)).toBe(true);
-    expect(trail.visible(2000 + LASER_FADE_MS)).toBe(false);
-    expect(trail.segments(2000 + LASER_FADE_MS)).toEqual([]);
-  });
-
-  it("does not join one trail to the next", () => {
+  it("keeps earlier visible strokes solid when starting a follow-up stroke", () => {
     const trail = new LaserTrail();
     trail.start({ x: 0, y: 0, t: 0 });
     trail.add({ x: 10, y: 0, t: 10 });
     trail.end(20);
-    trail.start({ x: 100, y: 100, t: 30 });
-    trail.add({ x: 110, y: 100, t: 40 });
-    const segments = trail.segments(40);
-    expect(segments.some(({ a, b }) => a.x === 10 && b.x === 100)).toBe(false);
-    expect(segments.some(({ a, b }) => a.x === 100 && b.x === 110)).toBe(true);
+
+    trail.start({ x: 100, y: 100, t: 30 + LASER_HOLD_MS + 100 });
+    trail.add({ x: 110, y: 100, t: 40 + LASER_HOLD_MS + 100 });
+
+    const frame = trail.activeStrokes(40 + LASER_HOLD_MS + 100);
+    expect(frame.alpha).toBe(1);
+    expect(frame.strokes).toHaveLength(2);
+    expect(frame.strokes[0].points.map((p) => p.x)).toEqual([0, 10]);
+    expect(frame.strokes[1].points.map((p) => p.x)).toEqual([100, 110]);
   });
 
-  it("takes no points while the pen is up, and a lift with none is nothing", () => {
+  it("replaces active stroke points with StrokeBuilder flat/tilts and preserves PenOptions", () => {
+    const calligraphy = penOptions(8, false, 40);
+    const trail = new LaserTrail();
+    trail.start({ x: 0, y: 0, t: 0, p: 0.5 }, calligraphy);
+    trail.replaceCurrent(
+      [
+        { x: 0, y: 0, t: 10, p: 0.5 },
+        { x: 12, y: 4, t: 20, p: 0.8 },
+      ],
+      [0, 0, 0.5, 12, 4, 0.8],
+      [45, 50],
+    );
+    trail.end(20);
+    trail.start({ x: 50, y: 50, t: 30 }, null);
+
+    const frame = trail.activeStrokes(30);
+    expect(frame.strokes).toHaveLength(2);
+    expect(frame.strokes[0].pen).toEqual(calligraphy);
+    expect(frame.strokes[0].flat).toEqual([0, 0, 0.5, 12, 4, 0.8]);
+    expect(frame.strokes[0].tilts).toEqual([45, 50]);
+    expect(frame.strokes[1].pen).toBeNull();
+    expect(frame.tip?.pen).toBeNull();
+  });
+
+  it("prunes old points continuously behind the pen when sustain is false", () => {
+    const trail = new LaserTrail();
+    trail.start({ x: 0, y: 0, t: 0 });
+    trail.add({ x: 10, y: 0, t: 100 });
+    trail.add({ x: 20, y: 0, t: 200 });
+
+    expect(trail.activeStrokes(200, false).strokes[0].points).toHaveLength(3);
+
+    // After LASER_FADE_MS past the earlier points, only the live tail remains.
+    trail.add({ x: 30, y: 0, t: 1000 });
+    expect(trail.activeStrokes(1000, false).strokes[0].points.map((p) => p.x)).toEqual([20, 30]);
+    trail.end(1000);
+    expect(trail.activeStrokes(1000 + LASER_FADE_MS, false).strokes).toEqual([]);
+  });
+
+  it("takes no points while the pen is up, and clear resets everything", () => {
     const trail = new LaserTrail();
     trail.add({ x: 1, y: 1, t: 0 });
     trail.end(0);
-    expect(trail.visible(0)).toBe(false);
+    expect(trail.activeStrokes(0).strokes).toEqual([]);
     trail.start({ x: 0, y: 0, t: 0 });
     trail.clear();
-    expect(trail.visible(0)).toBe(false);
+    expect(trail.activeStrokes(0).strokes).toEqual([]);
+  });
+
+  it("never revives expired marks on delayed lift after continuous-fade pruning", () => {
+    const trail = new LaserTrail();
+    const times: number[] = [];
+    const pen = penOptions(4, true);
+    trail.start({ x: 0, y: 0, t: 100, p: 0.5 }, pen);
+
+    // Draw 4 settled points at t = 100..130.
+    const view = [0, 0, 0.5, 10, 0, 0.5, 20, 0, 0.5, 30, 0, 0.5];
+    const tiltView = [40, 45, 50, 55];
+    const drawn = syncLaserStream(view, tiltView, [], times, 100, false);
+    trail.replaceCurrent(drawn.points, drawn.flat, drawn.tilts);
+    expect(times).toEqual([100, 100, 100, 100]);
+
+    // Pause with pen down until all 4 points have faded past LASER_FADE_MS (pruning the trail).
+    const afterFade = 100 + LASER_FADE_MS + 500;
+    trail.activeStrokes(afterFade, false);
+
+    // Lift at afterFade: builder still holds all 4 settled points, but syncLaserStream must NOT revive them!
+    const onLift = syncLaserStream(view, tiltView, [], times, afterFade, false);
+    expect(onLift.points).toEqual([]);
+    if (onLift.points.length > 0) trail.replaceCurrent(onLift.points, onLift.flat, onLift.tilts);
+    trail.end(afterFade);
+    expect(trail.activeStrokes(afterFade, false).strokes).toEqual([]);
+  });
+
+  it("caps retained points at MAX_LASER_POINTS and keeps version stable during stationary hold/fade", () => {
+    const trail = new LaserTrail();
+    trail.start({ x: 0, y: 0, t: 0 });
+    for (let i = 1; i <= MAX_LASER_POINTS + 50; i++) {
+      trail.add({ x: i * 2, y: 0, t: i });
+    }
+    const downFrame = trail.activeStrokes(MAX_LASER_POINTS + 50);
+    expect(downFrame.strokes[0].points.length).toBeLessThanOrEqual(MAX_LASER_POINTS);
+
+    trail.end(MAX_LASER_POINTS + 60);
+    const holdFrame = trail.activeStrokes(MAX_LASER_POINTS + 100);
+    const fadeFrame = trail.activeStrokes(MAX_LASER_POINTS + 60 + LASER_HOLD_MS + 100);
+    expect(fadeFrame.version).toBe(holdFrame.version);
+  });
+});
+
+describe("LaserSession", () => {
+  it("never revives expired marks on delayed lift with centred-smoothing StrokeBuilder", () => {
+    const session = new LaserSession();
+    session.setPen({
+      pen: penOptions(4, true),
+      builderOpts: {
+        minDistance: 2,
+        pressureEnabled: true,
+        fallbackPressure: 0.5,
+        smoothing: "centred",
+      },
+    });
+    session.down({ x: 0, y: 0, pressure: 0.5 }, 100, false);
+    session.move(
+      [
+        { x: 10, y: 0, pressure: 0.5 },
+        { x: 20, y: 0, pressure: 0.6 },
+        { x: 30, y: 0, pressure: 0.7 },
+        { x: 40, y: 0, pressure: 0.6 },
+      ],
+      130,
+      false,
+    );
+
+    // Pause with pen down until all drawn points have faded out and pruned.
+    const afterFade = 130 + LASER_FADE_MS + 500;
+    session.trail.activeStrokes(afterFade, false);
+
+    // A tiny move at the same position (rejected by StrokeBuilder) must NOT revive the expired tail.
+    session.move([{ x: 40, y: 0, pressure: 0.6 }], afterFade, false);
+    const afterTinyMove = session.trail.activeStrokes(afterFade, false);
+    expect(afterTinyMove.strokes[0]?.points.length ?? 0).toBeLessThanOrEqual(1);
+    expect(afterTinyMove.strokes[0]?.points.every((p) => p.t <= 130)).toBe(true);
+
+    // Delayed lift flushes builder.settle(), which must NOT revive expired points.
+    session.up(afterFade + 10, false);
+    expect(session.trail.activeStrokes(afterFade + 10, false).strokes).toEqual([]);
+  });
+
+  it("rolls over the StrokeBuilder on very long strokes to bound memory and point count", () => {
+    const session = new LaserSession();
+    session.setPen({
+      pen: penOptions(4, true),
+      builderOpts: {
+        minDistance: 1,
+        pressureEnabled: true,
+        fallbackPressure: 0.5,
+      },
+    });
+    session.down({ x: 0, y: 0, pressure: 0.5 }, 0, true);
+    const totalSamples = MAX_LASER_POINTS * 2 + 20;
+    for (let i = 1; i <= totalSamples; i++) {
+      session.move([{ x: i * 4, y: 0, pressure: 0.5 }], i, true);
+    }
+    const frame = session.trail.activeStrokes(totalSamples, true);
+    const retained = frame.strokes.reduce((sum, s) => sum + s.points.length, 0);
+    expect(retained).toBeLessThanOrEqual(MAX_LASER_POINTS);
+    session.clear();
+    expect(session.trail.activeStrokes(totalSamples + 1, true).strokes).toEqual([]);
   });
 });

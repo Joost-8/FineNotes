@@ -135,7 +135,7 @@ export const ROW_NEED_SEEDS: Readonly<Record<string, number>> = {
   select: 485,
   eraser: 469,
   fill: 427,
-  laser: 262,
+  laser: 308,
 };
 
 /**
