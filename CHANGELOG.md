@@ -160,6 +160,10 @@ extracted from the matching section of this file by `release.yml`.
   FineNotes ready for the pen touching down with the button held, so that
   holding the button and writing erases. "Copy shape diagnostics" now says
   whether your tablet reports the hovering pen (`penSeen`).
+- **Home deletes a folder a notebook left behind.** A notebook deleted
+  without its folder left its pages there, and Delete on that folder did
+  nothing; now it goes to the trash. And a long press on a notebook or
+  folder in Home starts picking several, with that one picked.
 - **Quick handwriting keeps its letters (#275).** A letter started soon
   after the last one could lose its first strokes or come out as a line,
   most of all on handwriting practice sheets and with the page sidebar

@@ -129,6 +129,37 @@ describe("trashPlan", () => {
     expect(plan.kept).toBe(1);
   });
 
+  it("takes the page files a notebook left behind, with their folder", () => {
+    // As in the vault on 2026-11-26: the note went to the trash without its folder.
+    const files = [
+      "Untitled notebook 5/Pages/77xw5f4g/p1.d5l84mu4.md",
+      "Untitled notebook 5/Pages/77xw5f4g/_meta.d5l84mu4.md",
+    ];
+    const plan = trashPlan([{ path: "Untitled notebook 5", folder: true }], files, isNotebook);
+    expect(plan).toEqual({ trash: ["Untitled notebook 5"], notebooks: [], files: [], kept: 0 });
+  });
+
+  it("keeps the page files of a notebook that stays, and the user's notes beside lost ones", () => {
+    const files = [
+      "Uni/Physics/Physics.notebook.md",
+      "Uni/Physics/Pages/77xw5f4g/p1.d5l84mu4.md",
+      "Uni/Old/Pages/k1i0x7o0/p1.d5l84mu4.md",
+      "Uni/Old/My notes.md",
+      "Uni/Old/Pages/notes.md",
+    ];
+    const plan = trashPlan(
+      [{ path: "Uni/Old", folder: true }],
+      files.filter((p) => !p.startsWith("Uni/Physics")),
+      isNotebook,
+    );
+    expect(plan.trash).toEqual(["Uni/Old/Pages/k1i0x7o0"]);
+    expect(plan.kept).toBe(2);
+    const kept = trashPlan([{ path: "Uni", folder: true }], files, isNotebook);
+    expect(kept.trash).toContain("Uni/Physics");
+    expect(kept.trash).toContain("Uni/Old/Pages/k1i0x7o0");
+    expect(kept.kept).toBe(2);
+  });
+
   it("takes a plain notebook alone", () => {
     const plan = trashPlan(
       [{ path: "Uni/Algebra.notebook.md", folder: false }],

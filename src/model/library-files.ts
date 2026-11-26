@@ -14,6 +14,7 @@ import { t, tn } from "../i18n/translate";
 import { freeName } from "./library-style";
 import { NOTEBOOK_FILE_SUFFIX } from "../constants";
 import { OWN_FOLDERS, OWN_FOLDER_PAGES, inkFileSuffix, stripInkSuffix } from "./new-notebook";
+import { devicePagesFolderOfFile } from "./device-pages";
 
 /** Whether `path` lies below `folder`. */
 function under(path: string, folder: string): boolean {
@@ -118,10 +119,26 @@ export interface TrashPlan {
 }
 
 /**
+ * Whether `path` is a page file whose notebook is gone: a file of
+ * `X/Pages/<id>/` with no notebook directly in `X`. A notebook sent to the
+ * trash without its folder leaves these, and they are no file of the user's.
+ */
+function isLostPageFile(
+  path: string,
+  files: readonly string[],
+  isNotebook: (path: string) => boolean,
+): boolean {
+  const pages = devicePagesFolderOfFile(path);
+  if (pages === null) return false;
+  const home = parentPath(parentPath(pages));
+  return !files.some((p) => parentPath(p) === home && isNotebook(p));
+}
+
+/**
  * Deleting `picked`: every notebook picked, or in a picked folder, with the
  * folder of its own, and every other file picked. A folder goes whole only
  * when nothing else is in it; otherwise only the notebooks in it go, and the
- * rest stays.
+ * rest stays. Page files a gone notebook left go with a picked folder too.
  */
 export function trashPlan(
   picked: readonly Picked[],
@@ -130,18 +147,23 @@ export function trashPlan(
 ): TrashPlan {
   const notebooks = new Set<string>();
   const others = new Set<string>();
+  const lost = new Set<string>();
   const roots: string[] = [];
   for (const item of picked) {
     if (item.folder) {
       roots.push(item.path);
-      for (const p of files) if (under(p, item.path) && isNotebook(p)) notebooks.add(p);
+      for (const p of files) {
+        if (!under(p, item.path)) continue;
+        if (isNotebook(p)) notebooks.add(p);
+        else if (isLostPageFile(p, files, isNotebook)) lost.add(p);
+      }
     } else if (isNotebook(item.path)) {
       notebooks.add(item.path);
     } else if (files.includes(item.path)) {
       others.add(item.path);
     }
   }
-  const doomed = new Set<string>(others);
+  const doomed = new Set<string>([...others, ...lost]);
   for (const note of notebooks) {
     doomed.add(note);
     const unit = notebookUnit(note, files, isNotebook);
