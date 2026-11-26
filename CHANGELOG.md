@@ -32,10 +32,11 @@ extracted from the matching section of this file by `release.yml`.
   learns. Editing a lassoed title (Add to contents, Link to…) no longer
   teaches Grape unless you chose **Correct**.
 - **Grape reads Dutch, German, French, Spanish, Portuguese and Italian.**
-  A page written in one of them is recognised by its words and, when that
-  language's pack is on the device (Grape in Nederlands, Deutsch, …: 1 to
-  2 MB, in the plugin's `handwriting/languages` folder), read with it, which
-  cuts the words misread there to about a third. On French, Spanish and
+  A page written in one of them is recognised by its words, and the first
+  time, FineNotes offers that language's pack (Grape in Nederlands,
+  Deutsch, …: 1 to 2 MB, once; listed in Settings › Models). With it the
+  page is read in that language, which cuts the words misread there to
+  about a third. On French, Spanish and
   Italian pages, words the pack does not know are underlined, and the word
   card suggests the language's own words everywhere. Without its pack, a
   page in another language is read without Grape's English model and is not

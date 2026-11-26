@@ -120,10 +120,15 @@ describe("the packs this build downloads", () => {
     }
   });
 
-  it("names a language in itself, and is not offered until published", () => {
+  it("names a language in itself, and is offered from Grape's languages-v1.0 release", () => {
     expect(languageName("nl")).toBe("Nederlands");
     expect(languageName("de")).toBe("Deutsch");
-    expect(LANGUAGE_PACKS_HOSTED).toBe(false);
+    expect(LANGUAGE_PACKS_HOSTED).toBe(true);
+    for (const language of PACK_LANGUAGES) {
+      expect(languagePackAsset(language)?.files[0].url).toBe(
+        `https://github.com/Joost-8/Grape/releases/download/languages-v1.0/grape-lang-${language}-1.0.bin`,
+      );
+    }
   });
 });
 
