@@ -6834,7 +6834,8 @@ export class InkSurface {
     const pdf = this.fixedPages || near.some((i) => this.doc.pages[i]?.backdrop.kind === "pdf");
     const still = { complete, held, pdf, zooming: zooming || this.zoomTransient };
     if (!coasting({ remaining, speed, ...still })) return;
-    this.renderer.prefetch(this.doc, this.inkPressure, this.pace.budget(PREFETCH_BUDGET_MS), pages);
+    const budget = this.pace.budget(PREFETCH_BUDGET_MS);
+    this.renderer.prefetch(this.doc, this.inkPressure, budget, pages, true);
   }
 
   /** The last turn went back a page: the pages before this one are made first. */

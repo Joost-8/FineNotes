@@ -2033,12 +2033,21 @@ export class Renderer {
    * during it were most of its slow frames (FineNotes#201). For these alone
    * room is made, from the tiles of pages neither here nor near: those used
    * longest ago, and no more of them than these pages need.
+   *
+   * `moving`: the view is still moving (the last px of a turn), so no frame
+   * may run long: a page's ink is traced a stroke at a time before its first
+   * tile ({@link tracePage}). At rest that tile traces the whole page in one
+   * frame, as it always did. Nothing shows a long frame there, and a few ms
+   * a frame is a third of the speed: with the CPU slowed 8x, tracing within
+   * the budget at rest used up the rest between two quick turns and left 38
+   * to 63 tiles to the turns, where the one long frame left 15 to 17.
    */
   prefetch(
     doc: InkDocument,
     usePressure: boolean,
     budgetMs: number,
     whole: readonly number[] = [],
+    moving = false,
   ): boolean {
     if (this.level === 0 || this.layout.boxes.length === 0) return false;
     const level = this.level;
@@ -2052,14 +2061,17 @@ export class Renderer {
     const screen = this.screenDevice;
     const around = this.boxesAround(doc.pages.length);
 
-    // First the ink's paths, a stroke at a time. The first tile or preview
-    // of a page traced every stroke on it, in one frame whatever the budget.
-    for (const box of around) {
-      if (!this.tracePage(doc.pages[box.index], usePressure, deadline)) return true;
-    }
-    for (const index of whole) {
-      const page = this.layout.boxes[index] ? doc.pages[index] : undefined;
-      if (page && !this.tracePage(page, usePressure, deadline)) return true;
+    // While the view moves, first the ink's paths, a stroke at a time: the
+    // first tile or preview of a page traces every stroke on it in one
+    // frame, whatever the budget.
+    if (moving) {
+      for (const box of around) {
+        if (!this.tracePage(doc.pages[box.index], usePressure, deadline)) return true;
+      }
+      for (const index of whole) {
+        const page = this.layout.boxes[index] ? doc.pages[index] : undefined;
+        if (page && !this.tracePage(page, usePressure, deadline)) return true;
+      }
     }
     for (const box of around) {
       const page = doc.pages[box.index];

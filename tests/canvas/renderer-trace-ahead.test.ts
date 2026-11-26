@@ -1,4 +1,5 @@
 /**
+ * While the view still moves (`moving`, the last px of a turn),
  * `Renderer.prefetch` traces a page's ink a stroke at a time before it makes
  * the page's first tile. Painting any part of a page asks every stroke on it
  * for its path, so that first tile used to trace the whole page in one frame,
@@ -85,11 +86,20 @@ function row(): { renderer: Renderer; doc: InkDocument } {
 }
 
 describe("ink traced ahead of a page's first tile", () => {
+  it("only while the view moves: at rest the first tile traces the page in one frame, as before", () => {
+    const { renderer, doc } = row();
+    const tiles = renderer.stats().tiles;
+    // The same small budget and slow clock, without `moving`.
+    renderer.prefetch(doc, false, 10, [1]);
+    expect(traced).toBe(STROKES);
+    expect(renderer.stats().tiles).toBeGreaterThan(tiles);
+  });
+
   it("stops tracing at the budget, mid-page, and makes no tile of that page yet", () => {
     const { renderer, doc } = row();
     const tiles = renderer.stats().tiles;
     expect(traced).toBe(0);
-    expect(renderer.prefetch(doc, false, 10, [1])).toBe(true);
+    expect(renderer.prefetch(doc, false, 10, [1], true)).toBe(true);
     // About one stroke a ms of this clock: some, and far from all forty.
     expect(traced).toBeGreaterThan(0);
     expect(traced).toBeLessThan(STROKES / 2);
@@ -103,12 +113,12 @@ describe("ink traced ahead of a page's first tile", () => {
     // Until the whole page is traced no call traces more than its budget lets it.
     while (traced < STROKES) {
       before = traced;
-      expect(renderer.prefetch(doc, false, 10, [1])).toBe(true);
+      expect(renderer.prefetch(doc, false, 10, [1], true)).toBe(true);
       expect(traced - before).toBeLessThan(STROKES / 2);
       expect(++calls).toBeLessThan(20);
     }
     expect(calls).toBeGreaterThan(2);
-    while (renderer.prefetch(doc, false, 10, [1])) expect(++calls).toBeLessThan(200);
+    while (renderer.prefetch(doc, false, 10, [1], true)) expect(++calls).toBeLessThan(200);
     expect(traced).toBe(STROKES);
     // The turn then finds every tile made, and every path.
     const tiles = renderer.stats().tiles;
@@ -120,14 +130,14 @@ describe("ink traced ahead of a page's first tile", () => {
 
   it("after a stroke is added, looks only at the new one, not at the whole page again", () => {
     const { renderer, doc } = row();
-    while (renderer.prefetch(doc, false, 1000, [1]));
+    while (renderer.prefetch(doc, false, 1000, [1], true));
     const asked = vi.spyOn(
       renderer as unknown as { pathEntry: (s: Stroke) => unknown },
       "pathEntry",
     );
     // Writing: the page gets a new array, one stroke longer.
     doc.pages[1].strokes = [...doc.pages[1].strokes, writing("new")[0]];
-    renderer.prefetch(doc, false, 1000, [1]);
+    renderer.prefetch(doc, false, 1000, [1], true);
     const traced1 = asked.mock.calls.filter(([s]) => s.id === "new-0").length;
     expect(traced1).toBe(1);
     // The forty already traced were not asked for by the tracing pass.
@@ -136,24 +146,24 @@ describe("ink traced ahead of a page's first tile", () => {
 
   it("starts over when ink in the middle of the page was replaced", () => {
     const { renderer, doc } = row();
-    while (renderer.prefetch(doc, false, 1000, [1]));
+    while (renderer.prefetch(doc, false, 1000, [1], true));
     const strokes = [...doc.pages[1].strokes];
     // The eraser cut the last stroke in two: its pieces take its place.
     const [a, b] = writing("piece");
     strokes.splice(strokes.length - 1, 1, a, b);
     doc.pages[1].strokes = strokes;
-    renderer.prefetch(doc, false, 1000, [1]);
+    renderer.prefetch(doc, false, 1000, [1], true);
     expect(traced).toBe(STROKES + 2);
   });
 
   it("traces a page again only when its ink changed", () => {
     const { renderer, doc } = row();
-    while (renderer.prefetch(doc, false, 1000, [1]));
+    while (renderer.prefetch(doc, false, 1000, [1], true));
     expect(traced).toBe(STROKES);
-    renderer.prefetch(doc, false, 1000, [1]);
+    renderer.prefetch(doc, false, 1000, [1], true);
     expect(traced).toBe(STROKES);
     doc.pages[1].strokes = [...doc.pages[1].strokes, ...writing("more").slice(0, 3)];
-    renderer.prefetch(doc, false, 1000, [1]);
+    renderer.prefetch(doc, false, 1000, [1], true);
     expect(traced).toBe(STROKES + 3);
   });
 });
