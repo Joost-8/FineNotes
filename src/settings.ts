@@ -1785,7 +1785,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
 
   /** The ⓘ of "How to embed a notebook": the link forms, and where Handwrite here is. */
   private drawEmbedHelp(setting: Setting): void {
-    const panel = setting.descEl.createDiv({ cls: "goodobsidian-embed-help is-hidden" });
+    // Open from the start: the section has the room, and this is its reference.
+    const panel = setting.descEl.createDiv({ cls: "goodobsidian-embed-help" });
     for (const key of EMBED_HELP_LINES) {
       // "![[…]]: what it shows": the link as code, the rest as words.
       const line = panel.createDiv();
@@ -1797,15 +1798,16 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         line.appendText(text.slice(cut));
       }
     }
-    setting.addExtraButton((button) =>
+    setting.addExtraButton((button) => {
       button
         .setIcon("info")
         .setTooltip(t("settings.notes.embedHelp"))
         .onClick(() => {
           panel.toggleClass("is-hidden", !panel.hasClass("is-hidden"));
           button.extraSettingsEl.toggleClass("is-active", !panel.hasClass("is-hidden"));
-        }),
-    );
+        });
+      button.extraSettingsEl.addClass("is-active");
+    });
   }
 
   /** The paper, where new notebooks go, and what Obsidian's file list shows. */
