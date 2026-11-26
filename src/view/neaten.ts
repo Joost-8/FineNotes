@@ -24,7 +24,13 @@
 
 import { type App, Modal, Notice } from "obsidian";
 import type { Stroke } from "../model/document";
-import { ASKED_LEVEL_SLOPE, type RuleBlock, measureHand, measureLines } from "../ink/tidy";
+import {
+  ASKED_LEVEL_SLOPE,
+  type HandProfile,
+  type RuleBlock,
+  measureHand,
+  measureLines,
+} from "../ink/tidy";
 import { t } from "../i18n/translate";
 import { MIN_PRACTICE_LINES } from "../recognition/hwr/learned-model";
 import type { LineReading } from "../recognition/hwr/recognizer";
@@ -42,7 +48,14 @@ import {
   levelledStrokes,
   median,
 } from "../recognition/writer/rows";
-import { inkXHeight, leastXHeight, writtenXHeight } from "../recognition/writer/x-height";
+import {
+  inkFoot,
+  inkXHeight,
+  leastXHeight,
+  writtenFoot,
+  writtenXHeight,
+} from "../recognition/writer/x-height";
+import { heldWordAt, placeWord, wordEdit } from "../recognition/writer/held-word";
 import { DEFAULT_TRIES } from "../recognition/writer/flow-meta";
 import { type WriterKind, WRITER_KINDS, kindFor } from "../recognition/writer/kinds";
 import { guidanceAt } from "../recognition/writer/neatness";
@@ -119,6 +132,12 @@ export interface NeatenRequest {
   ask?: (words: string[][]) => Promise<string[][]>;
   /** Told just before `ask`: from then on the selection may go (a tap closing a card) without stopping the work. */
   asking?: () => void;
+  /**
+   * A stroke of the held word: only that word is rewritten ("Beautify this
+   * word", `held-word.ts`), and nothing else moves but the words after it.
+   * `selected` is then its line, or the word's own ink when it stands alone.
+   */
+  word?: string;
 }
 
 export type NeatenOutcome =
@@ -126,7 +145,27 @@ export type NeatenOutcome =
   /** Nothing could be rewritten (no model or sheet, no word Grape is sure of, a problem): tidy only. */
   | { kind: "tidy" }
   /** Stopped by the user (an edit, the selection left): nothing changes. */
-  | { kind: "stopped" };
+  | { kind: "stopped" }
+  /** "Beautify this word" could not write the word: it stays as written, nothing is tidied. */
+  | { kind: "nothing" };
+
+/** One line to beautify: its text, words, and which words to rewrite. */
+interface NeatenJob {
+  text: string;
+  strokes: Stroke[];
+  /** Each word's ink (stroke ids). */
+  words: string[][];
+  /** Each word's text. */
+  read: string[];
+  rewrite: boolean[];
+  /** How sure Grape is of each word (`wordSureness`); 1 for a word the writer answered. */
+  sure: number[];
+  /** Set once asked: the words the writer answered on a card. */
+  answered?: boolean[];
+  xHeight: number | null;
+  /** Grape's letters on the line, as indices into `strokes`. */
+  chars: NonNullable<LineReading["chars"]>;
+}
 
 /** A copied line the writer may be shown: its text and ink, and what identifies it for the cache. */
 interface PoolLine {
@@ -299,9 +338,11 @@ export class NeatenService {
     );
     const byId = new Map(selected.map((s) => [s.id, s]));
     // Lines found as Tidy you ask for finds them: a line climbing up to 30 degrees is one line.
-    const lines = measureLines(selected, ASKED_LEVEL_SLOPE).map((line) =>
+    const found = measureLines(selected, ASKED_LEVEL_SLOPE).map((line) =>
       line.strokes.map((id) => byId.get(id)).filter((s): s is Stroke => !!s),
     );
+    // A held word on no line of its own (a word alone) is read as a line by itself.
+    const lines = found.length === 0 && request.word !== undefined ? [selected] : found;
     const profile = measureHand(request.strokes.filter((s) => s.tool === "pen" && !s.shape));
     if (lines.length === 0 || !profile) return { kind: "tidy" };
     const lexicon = this.host.lexicon();
@@ -310,11 +351,16 @@ export class NeatenService {
     const jobsWith = async () => {
       const answers = request.note ? await this.host.answers(request.note, request.pageId) : [];
       return lines.flatMap((strokes, li) => {
-        const job = this.jobOf(strokes, readings[li], writable, listed, answers);
+        // For a held word only its own letters must be ones the model has (`workWord`).
+        const lineWritable = request.word === undefined ? writable : () => true;
+        const job = this.jobOf(strokes, readings[li], lineWritable, listed, answers);
         return job ? [job] : [];
       });
     };
     let jobs = await jobsWith();
+    if (request.word !== undefined) {
+      return this.workWord(request, request.word, jobs, jobsWith, { model, pool, profile });
+    }
     // Of the words Grape is not sure of, the least sure few are asked about with the word card,
     // about one per line (Joost, 25 November: ten cards for two lines was far too many). An
     // answered word is written as answered; a skipped one stays the writer's ink.
@@ -414,20 +460,7 @@ export class NeatenService {
     writable: (ch: string) => boolean,
     listed: ReadonlySet<string> | null,
     answers: readonly WordAnswer[],
-  ): {
-    text: string;
-    strokes: Stroke[];
-    /** Each word's ink (stroke ids). */
-    words: string[][];
-    /** Each word's text. */
-    read: string[];
-    rewrite: boolean[];
-    /** How sure Grape is of each word (`wordSureness`); 1 for a word the writer answered. */
-    sure: number[];
-    /** Set once asked: the words the writer answered on a card. */
-    answered?: boolean[];
-    xHeight: number | null;
-  } | null {
+  ): NeatenJob | null {
     if (!reading || !reading.wordStrokes || !reading.chars) return null;
     const read = wordsOf(reading.text);
     const ink = reading.wordStrokes.map((word) =>
@@ -464,7 +497,118 @@ export class NeatenService {
       sure: joined.sure ?? [],
       // The writer's x-height on this line, from the strokes Grape read as x-height letters.
       xHeight: inkXHeight(strokes, reading.chars),
+      chars: reading.chars,
     };
+  }
+
+  /**
+   * "Beautify this word": only the held word is rewritten. It is asked about
+   * when Grape is not sure of it (the word card, as for lines), written alone,
+   * read back, and put in its own place (`held-word.ts`); nothing else moves
+   * but the words after it, and nothing is tidied. Tidy is never the outcome
+   * here: a word that cannot be written stays as it is ("nothing").
+   */
+  private async workWord(
+    request: NeatenRequest,
+    held: string,
+    first: NeatenJob[],
+    again: () => Promise<NeatenJob[]>,
+    ctx: {
+      model: { manifest: WriterManifest; kind: WriterKind; key: string };
+      pool: PoolLine[];
+      profile: HandProfile;
+    },
+  ): Promise<NeatenOutcome> {
+    const nothing: NeatenOutcome = { kind: "nothing" };
+    let jobs = first;
+    let at = heldWordAt(jobs, held);
+    if (!at) return nothing;
+    let job = jobs[at.line];
+    // Asked about only when Grape is not sure of it, and never about another word.
+    const word = at.word;
+    const question = pickQuestions(unsureCandidates([job]).filter((q) => q.word === word))[0];
+    if (question && request.ask) {
+      request.asking?.();
+      const answered = await request.ask([job.words[at.word]]);
+      if (request.stop()) return { kind: "stopped" };
+      // Skipped: the word stays the writer's ink, and nothing needs saying.
+      if (answered.length === 0) return { kind: "stopped" };
+      jobs = await again();
+      at = heldWordAt(jobs, held);
+      if (!at) return nothing;
+      job = jobs[at.line];
+    }
+    const text = job.read[at.word];
+    const ink = job.words[at.word];
+    const { manifest, kind } = ctx.model;
+    if (!text || !ink?.length || !Array.from(text).every((ch) => manifest.chars.indexOf(ch) > 0))
+      return nothing;
+    const shown = await this.shownFor(text, ctx.pool, manifest, kind);
+    if (!shown) {
+      // Its own notice says why; a second one would only repeat it.
+      new Notice(problemText({ kind: "rows", detail: "the reader's curves differ" }), 8000);
+      return { kind: "stopped" };
+    }
+    const ref = kind.reference(text, shown, manifest, 1);
+    const guidance = manifest.sampling
+      ? guidanceAt(this.host.neatness(), manifest.sampling.guidance)
+      : undefined;
+    const tries = manifest.sampling?.tries ?? DEFAULT_TRIES;
+    if (request.stop()) return { kind: "stopped" };
+    const writer = await this.readyWriter(ctx.model);
+    const done = await neatenLine(
+      text,
+      ref,
+      0,
+      (t2, r, seed, id, low) => writer.write(t2, r, seed, id, low, guidance),
+      (written) => this.host.handwriting.readRows(written),
+      {
+        seed: 0,
+        tries,
+        repair: true,
+        stop: request.stop,
+        uneven: (written) => roughness(written, written.char, text),
+      },
+    );
+    if (!done || request.stop()) return { kind: "stopped" };
+    const written = straighten(
+      done.written,
+      done.written.char,
+      text,
+      strengthAt(this.host.neatness()),
+    );
+    // Placed only if it reads back as the word, every letter surely (as for lines).
+    const back = await this.host.handwriting.readRowsSure(written);
+    if (request.stop()) return { kind: "stopped" };
+    if (!readBackRewrite(text, back.text, [true], back.sure)[0]) return nothing;
+    // The feet of the held word's own letters (on a tilted line the line's would be off).
+    const inWord = new Set(ink);
+    const wordChars = job.chars.filter((c) =>
+      c.strokes.every((i) => inWord.has(job.strokes[i]?.id ?? "")),
+    );
+    const line = measureLines(job.strokes, ASKED_LEVEL_SLOPE).sort(
+      (a, b) => b.strokes.length - a.strokes.length,
+    )[0];
+    const placed = placeWord({
+      line: job.strokes,
+      word: ink,
+      held,
+      slope: line?.slope ?? 0,
+      written: levelledStrokes(written, written.char, text),
+      xHeight: {
+        ink: job.xHeight,
+        written: writtenXHeight(written, written.char, text),
+        least: leastXHeight(median(job.strokes.map((s) => s.size))),
+      },
+      foot: {
+        ink: inkFoot(job.strokes, wordChars),
+        written: writtenFoot(written, written.char, text),
+      },
+      pageWidth: request.pageWidth,
+    });
+    if (!placed) return nothing;
+    const style = job.strokes.find((s) => s.id === held) ?? job.strokes[0];
+    return { kind: "done", edit: wordEdit(request.strokes, placed), style: [style] };
   }
 
   /** Every prose-like copied line of the vault's practice sheets (not yet tied to its letters). */

@@ -62,6 +62,59 @@ export function inkXHeight(
   return heights.length >= MIN_SAMPLES ? median(heights) : null;
 }
 
+/** Letters whose foot may go under the line: never used to find where the line is. */
+const UNDER_LINE: ReadonlySet<string> = new Set("gjpqyfzJQ");
+
+/** Whether `ch` is a letter or digit that stands on the line. */
+function standsOnLine(ch: string | undefined): boolean {
+  return ch !== undefined && /[\p{L}\p{N}]/u.test(ch) && !UNDER_LINE.has(ch);
+}
+
+/**
+ * Where the writer's letters stand (page px, y down): the median bottom of
+ * the strokes Grape read as letters that stand on the line (no g, p, y, nor
+ * an f that may go under it). Null when there is none.
+ */
+export function inkFoot(
+  strokes: readonly { pts: ArrayLike<number> }[],
+  chars: readonly { char: string; strokes: readonly number[] }[],
+): number | null {
+  const letters = new Map<number, string[]>();
+  for (const c of chars) {
+    for (const i of c.strokes) letters.set(i, [...(letters.get(i) ?? []), c.char]);
+  }
+  const feet: number[] = [];
+  for (const [i, of] of letters) {
+    if (!of.every((ch) => standsOnLine(ch))) continue;
+    const pts = strokes[i]?.pts;
+    if (!pts || pts.length < 3) continue;
+    let hi = -Infinity;
+    for (let k = 1; k < pts.length; k += 3) hi = Math.max(hi, pts[k]);
+    feet.push(hi);
+  }
+  return feet.length ? median(feet) : null;
+}
+
+/**
+ * Where a written line's letters stand, in the model's units (y up): the
+ * median bottom of the curves written for letters that stand on the line.
+ * Null when there is none, or `char` is of another length.
+ */
+export function writtenFoot(r: Rows, char: ArrayLike<number>, text: string): number | null {
+  if (char.length !== r.n) return null;
+  const { pts } = curvePoints(r, POINTS_PER_CURVE);
+  const lo = new Map<number, number>();
+  for (let row = 0; row < r.n; row++) {
+    const i = char[row];
+    if (!standsOnLine(text[i]) || isUp(r.x, row)) continue;
+    for (let j = 0; j < POINTS_PER_CURVE; j++) {
+      lo.set(i, Math.min(lo.get(i) ?? Infinity, pts[(row * POINTS_PER_CURVE + j) * 2 + 1]));
+    }
+  }
+  const feet = [...lo.values()].filter(Number.isFinite);
+  return feet.length ? median(feet) : null;
+}
+
 /**
  * A written line's x-height in the model's units: the median height of the
  * curves it wrote for each x-height letter of `text` (`char`: the letter of

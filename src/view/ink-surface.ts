@@ -378,7 +378,8 @@ import { FrameRun } from "../canvas/frame-run";
 import { type RunBox, type RunMark, boundsSince, unionBox } from "../ink/run-window";
 import { TILT_MAX_FACTOR, tiltFactor, tiltShapes } from "../ink/tilt";
 import { lineOfHighlight } from "../ink/straighten";
-import { ASKED_LEVEL_SLOPE, lineOfStroke, measureHand, tidyInk } from "../ink/tidy";
+import { ASKED_LEVEL_SLOPE, measureHand, tidyInk } from "../ink/tidy";
+import { inkToBeautify } from "../recognition/writer/held-word";
 import { SetStrokePoints } from "../model/tidy-commands";
 import { neatenCommandFor } from "../model/neaten-commands";
 import type { NeatenOutcome, NeatenRequest } from "./neaten";
@@ -16617,8 +16618,8 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
       : null;
     if (correct) actions.unshift(correct);
     // Beside Correct: beautify the line that word is on.
-    const beautifyLine = page && press.ink ? this.beautifyLineAction(page, press.ink) : null;
-    if (beautifyLine) actions.splice(correct ? 1 : 0, 0, beautifyLine);
+    const beautifyWord = page && press.ink ? this.beautifyWordAction(page, press.ink) : null;
+    if (beautifyWord) actions.splice(correct ? 1 : 0, 0, beautifyWord);
     actions.push(
       {
         id: "text-here",
@@ -19572,15 +19573,21 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
    * only tidied. The frame shows it is working; leaving the selection, or
    * any edit meanwhile, ends the work with nothing changed.
    */
-  private async beautifySelection(): Promise<void> {
+  private async beautifySelection(word?: string): Promise<void> {
     const sel = this.liveSelection();
     const page = sel && this.doc.pages.find((candidate) => candidate.id === sel.pageId);
     // One at a time: a second, while the first asks or writes, would lose its lasso to the first.
     if (!sel || !page || this.groupDrag || this.callbacks.isLocked?.() || this.beautifying) return;
     const run = this.callbacks.onNeaten;
+    // A held word is rewritten or left alone, never tidied with its line.
+    const untouched = (): void => {
+      if (word === undefined) return this.tidySelection();
+      this.clearSelection();
+      new Notice(t("surface.notice.wordNotBeautified"));
+    };
     // No writer on this device (or none to be had): tidy at once.
     if (!run || this.callbacks.canNeaten?.() === false) {
-      this.tidySelection();
+      untouched();
       return;
     }
     const latest = this.history.latest;
@@ -19624,6 +19631,7 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
         asking: () => {
           asked = true;
         },
+        word,
       });
     } finally {
       this.selectionFrameEl.removeClass("is-working");
@@ -19638,7 +19646,7 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
         : null;
     // Nothing rewritten: the lines are tidied, as Tidy alone did.
     if (!command) {
-      this.tidySelection();
+      untouched();
       return;
     }
     this.clearSelection();
@@ -19707,36 +19715,27 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
   }
 
   /**
-   * The press menu's Beautify, beside Correct: the line the held word is on.
-   * Null when the ink is on no line of running text (`lineOfStroke`).
+   * The press menu's Beautify, beside Correct: only the held word is
+   * rewritten, a word alone included (design rulings, 2026-11-26).
    */
-  private beautifyLineAction(page: Page, ink: Stroke): SelectionAction | null {
+  private beautifyWordAction(page: Page, ink: Stroke): SelectionAction | null {
     if (ink.shape || ink.tool !== "pen" || isMirror(ink) || this.callbacks.isLocked?.())
       return null;
-    const ids = lineOfStroke(
-      page.strokes.filter((stroke) => !isMirror(stroke)),
-      ink.id,
-      ASKED_LEVEL_SLOPE,
-    );
-    if (!ids) return null;
     return {
-      id: "beautify-line",
+      id: "beautify-word",
       icon: "brush-cleaning",
-      label: t("surface.selectionBar.beautifyLine"),
+      label: t("surface.selectionBar.beautifyWord"),
       group: "press",
       // A symbol in the bar, beside Correct, so the bar keeps to its three words.
       bar: true,
       menu: "none",
       run: () => {
-        // The line is selected and beautified as a lasso of it would be; its frame shows the work.
-        const line = new Set(ids);
+        const own = page.strokes.filter((stroke) => !isMirror(stroke));
+        const strokes = inkToBeautify(own, ink.id);
+        // The word's line is selected while it works: its frame shows the work.
         this.clearSelection();
-        this.select(page.id, {
-          strokes: page.strokes.filter((stroke) => line.has(stroke.id)),
-          images: [],
-          textBoxes: [],
-        });
-        void this.beautifySelection();
+        this.select(page.id, { strokes, images: [], textBoxes: [] });
+        void this.beautifySelection(ink.id);
       },
     };
   }

@@ -304,6 +304,8 @@ export const surface = {
   "surface.notice.clipboardUnreadable": "FineNotes: couldn't read the clipboard here.",
   "surface.notice.clipboardHidden":
     "FineNotes: this device won't hand the clipboard's picture to FineNotes. Add it with Insert image › Photos.",
+  "surface.notice.wordNotBeautified":
+    "Couldn't write this word more neatly; it stays as you wrote it.",
   "surface.notice.nothingToBeautify":
     "Nothing to beautify: already neat, or not a line of writing.",
   "surface.notice.imageLocked": "FineNotes: image locked. To unlock it, hold the lasso on it.",
@@ -339,7 +341,7 @@ export const surface = {
   "surface.selectionBar.editTable": "Edit table",
   "surface.selectionBar.copyStyle": "Copy style",
   "surface.selectionBar.beautify": "Beautify",
-  "surface.selectionBar.beautifyLine": "Beautify this line",
+  "surface.selectionBar.beautifyWord": "Beautify this word",
   "surface.selectionBar.text": "Text",
   "surface.selectionBar.handwriting": "Handwriting",
   "surface.selectionBar.copyText": "Copy text",

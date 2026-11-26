@@ -5,8 +5,10 @@ import { placeLines } from "../../../src/recognition/writer/layout";
 import { ROW, type Rows } from "../../../src/recognition/writer/rows";
 import {
   LEAST_X_PER_PEN,
+  inkFoot,
   inkXHeight,
   leastXHeight,
+  writtenFoot,
   writtenXHeight,
 } from "../../../src/recognition/writer/x-height";
 import { writerLine, writtenLine, ys } from "./fixture";
@@ -71,6 +73,43 @@ describe("writtenXHeight", () => {
       [0.1, -1.0, 2],
     ]);
     expect(writtenXHeight(two.r, two.char, "aet")).toBeCloseTo(0.45, 5);
+  });
+});
+
+describe("inkFoot and writtenFoot (where the letters stand)", () => {
+  it("is the median bottom of the letters that stand on the line, never a g's or an f's", () => {
+    const strokes = [
+      upright(0, 100, 110), // a
+      upright(5, 98, 112), // e
+      upright(9, 80, 110), // t
+      upright(12, 100, 140), // g
+      upright(15, 80, 150), // f, going under the line
+      upright(18, 100, 140), // n and y in one stroke
+    ];
+    const chars = [
+      { char: "a", strokes: [0] },
+      { char: "e", strokes: [1] },
+      { char: "t", strokes: [2] },
+      { char: "g", strokes: [3] },
+      { char: "f", strokes: [4] },
+      { char: "n", strokes: [5] },
+      { char: "y", strokes: [5] },
+    ];
+    expect(inkFoot(strokes, chars)).toBe(110);
+    expect(inkFoot([upright(0, 0, 30)], [{ char: "g", strokes: [0] }])).toBeNull();
+  });
+
+  it("finds the written word's foot, leaving out the curves of a descender", () => {
+    // "ag": the a from 0 up and back, the g from 0 down to -0.6 and back.
+    const { r, char } = rows([
+      [0.1, 0.4, 0],
+      [0.1, -0.4, 0],
+      [0.1, -0.6, 1],
+      [0.1, 0.6, 1],
+    ]);
+    expect(writtenFoot(r, char, "ag")).toBeCloseTo(0, 5);
+    expect(writtenFoot(r, char, "gg")).toBeNull();
+    expect(writtenFoot(r, char.subarray(1), "ag")).toBeNull();
   });
 });
 
