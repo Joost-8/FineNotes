@@ -200,10 +200,17 @@ export interface LineChoice {
  * The words Beautify could ask about: not sure enough to write, with a letter or digit
  * (more than one: a lone word keeps the writer's ink, so a card goes to a real word), and ink.
  */
-export function unsureCandidates(lines: readonly LineChoice[]): Question[] {
+export function unsureCandidates(
+  lines: readonly LineChoice[],
+  /** `lone`: single letters and digits too ("Beautify this word" on one: the writer pointed at it). */
+  options: { lone?: boolean } = {},
+): Question[] {
   return lines.flatMap((line, li) =>
     line.read.flatMap((w, word) =>
-      !line.rewrite[word] && /[\p{L}\p{N}]/u.test(w) && !isLone(w) && line.words[word]?.length
+      !line.rewrite[word] &&
+      /[\p{L}\p{N}]/u.test(w) &&
+      (options.lone || !isLone(w)) &&
+      line.words[word]?.length
         ? [{ line: li, word, sure: line.sure[word] ?? 0 }]
         : [],
     ),

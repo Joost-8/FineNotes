@@ -539,7 +539,9 @@ export class NeatenService {
     let job = jobs[at.line];
     // Asked about only when Grape is not sure of it, and never about another word.
     const word = at.word;
-    const question = pickQuestions(unsureCandidates([job]).filter((q) => q.word === word))[0];
+    const question = pickQuestions(
+      unsureCandidates([job], { lone: true }).filter((q) => q.word === word),
+    )[0];
     if (question && request.ask) {
       request.asking?.();
       const answered = await request.ask([job.words[at.word]]);

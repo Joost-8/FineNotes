@@ -332,4 +332,15 @@ describe("unsureCandidates: a lone word takes no card", () => {
     };
     expect(pickQuestions(unsureCandidates([line]))).toEqual([{ line: 0, word: 1, sure: 0.4 }]);
   });
+
+  it("still offers the lone letter when the writer pointed at it (Beautify this word)", () => {
+    const line = {
+      read: ["a", "simple"],
+      words: [["a"], ["b"]],
+      rewrite: [false, false],
+      sure: [0.2, 0.4],
+    };
+    const asked = unsureCandidates([line], { lone: true }).filter((q) => q.word === 0);
+    expect(pickQuestions(asked)).toEqual([{ line: 0, word: 0, sure: 0.2 }]);
+  });
 });
