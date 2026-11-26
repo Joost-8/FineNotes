@@ -446,13 +446,14 @@ export class NeatenService {
         },
       });
     }
-    // The level line stands clear of the page's other pen ink (not that of lines placed with it).
-    const inPlacing = new Set(placing.flatMap((p) => p.strokes.map((s) => s.id)));
-    const foreign = request.strokes.filter(
-      (s) => s.tool === "pen" && !s.shape && !inPlacing.has(s.id),
-    );
+    // The level line stands clear of the page's other pen ink, that of lines placed with it too.
+    const pen = request.strokes.filter((s) => s.tool === "pen" && !s.shape);
     const placed = placeLines(
-      placing.map((p) => ({ ...p, clear: clearanceFor(p.strokes, foreign, profile.xHeight) })),
+      placing.map((p) => {
+        const own = new Set(p.strokes.map((s) => s.id));
+        const foreign = pen.filter((s) => !own.has(s.id));
+        return { ...p, clear: clearanceFor(p.strokes, foreign, profile.xHeight) };
+      }),
       profile,
       request.pageWidth,
     );

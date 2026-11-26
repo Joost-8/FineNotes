@@ -85,6 +85,16 @@ describe("clearanceOf", () => {
     expect(clearanceOf(line, [box(310, 330, 0, 50)], 100, 20).above).toBe(50);
     expect(clearanceOf(line, [box(330, 350, 0, 50)], 100, 20).above).toBeNull();
   });
+  it("counts ink that dips into the line's x-height band (the band is 80 to 100)", () => {
+    // The line above, its foot 4 into the band; the line below, its top 6 into it.
+    expect(clearanceOf(line, [box(150, 180, 50, 84)], 100, 20).above).toBe(84);
+    expect(clearanceOf(line, [box(150, 180, 94, 130)], 100, 20).below).toBe(94);
+    // Ink across the band's middle is the line's own height: neither side.
+    expect(clearanceOf(line, [box(150, 180, 60, 96)], 100, 20)).toEqual({
+      above: null,
+      below: null,
+    });
+  });
 });
 
 describe("clearBaseline", () => {
@@ -150,7 +160,7 @@ describe("Beautify on a climbing line", () => {
 
   it("shares the shortage between the line above and the line below, and stays clear of both", () => {
     // Written big (40 px tall for his 27), the band (41 px) is taller than the room between the
-    // boxes of the two lines (34 px): the boxes overlap by 3.3 px on each side, equally.
+    // boxes of the two lines (34 px): the boxes overlap on each side, equally.
     const above = writtenTop - (clear?.above as number);
     const below = (clear?.below as number) - writtenFoot;
     expect(Math.abs(above - below)).toBeLessThan(0.5);
@@ -185,6 +195,33 @@ describe("Beautify on a climbing line", () => {
       const now = against(edit.added[i].pts, edit.added[stem.i].pts);
       expect(Math.abs(now - was)).toBeLessThan(1.5);
     }
+  });
+
+  it("holds when the lasso also took the lines around it (Tidy levels those, not this one)", () => {
+    // With the line only left out of Tidy's `only`, Tidy grouped it with the selected line
+    // below and moved it again: the written words up to 9.8 px, "captain" 18 px under them.
+    const wide = neatenEdit(strokes, [placed], hand, null, new Set(strokes.map((s) => s.id)));
+    wide.added.forEach((s, i) => {
+      s.pts.forEach((v, k) => expect(Math.abs(v - placed.added[i].pts[k])).toBeLessThan(0.01));
+    });
+    const feet = median(
+      wide.added.filter((_, i) => placed.added[i].word <= 1).map((s) => bottom(s.pts)),
+    );
+    const kept = median(
+      real.words[2].map((id) => bottom(wide.moved.get(id) ?? line.find((s) => s.id === id)!.pts)),
+    );
+    expect(Math.abs(kept - feet)).toBeLessThan(3);
+  });
+
+  it("sees the line above when its ink dips into the band at the line's middle", () => {
+    // s14, of the line above, 8 px lower: its foot is inside the x-height band taken at the
+    // line's middle, and was not counted at all. (Seen, the room is still smaller than the
+    // written words: the shortage is shared, the ink is not cleared.)
+    const rest = others.map((s) =>
+      s.id === "s14" ? { ...s, pts: s.pts.map((v, i) => (i % 3 === 1 ? v + 8 : v)) } : s,
+    );
+    const foot = bottom(rest.find((s) => s.id === "s14")!.pts);
+    expect(clearanceFor(line, rest, hand.xHeight)?.above).toBeCloseTo(foot, 6);
   });
 
   it("still puts the kept word inside the page", () => {

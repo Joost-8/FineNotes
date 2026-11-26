@@ -112,8 +112,11 @@ export const CLEAR_PAD = 0.25;
  * What is above and below a line. `line` is the line's own box, `others` the boxes of ink
  * that is not part of it (nor of another line being placed), `baseline` the line's baseline
  * under its middle, `xHeight` the hand's. Only ink within the line's x-range, padded by an
- * x-height each side, counts. Above: the lowest bottom edge among boxes whose bottom is over
- * the line's x-height band. Below: the highest top edge among boxes under the baseline.
+ * x-height each side, counts. The line's body is its x-height band; a box is above when it
+ * ends over the band's middle and reaches clearly over the band, below when it starts under
+ * that middle and reaches clearly under the baseline. So ink that dips into the band still
+ * counts (under the low end of a climbing line the line above sits lower than the band at
+ * its middle), and a mark lying in the band (a full stop the line did not take) does not.
  */
 export function clearanceOf(
   line: InkBox,
@@ -125,8 +128,11 @@ export function clearanceOf(
   let below: number | null = null;
   for (const b of others) {
     if (b.x1 < line.x0 - xHeight || b.x0 > line.x1 + xHeight) continue;
-    if (b.y1 <= baseline - xHeight) above = above === null ? b.y1 : Math.max(above, b.y1);
-    else if (b.y0 >= baseline) below = below === null ? b.y0 : Math.min(below, b.y0);
+    const mid = baseline - 0.5 * xHeight;
+    if (b.y1 <= mid && b.y0 < baseline - 1.25 * xHeight)
+      above = above === null ? b.y1 : Math.max(above, b.y1);
+    else if (b.y0 >= mid && b.y1 > baseline + 0.25 * xHeight)
+      below = below === null ? b.y0 : Math.min(below, b.y0);
   }
   return { above, below };
 }

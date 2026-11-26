@@ -78,7 +78,13 @@ export function neatenEdit<S extends PageInk>(
   }
   if (ruled) added.forEach((_, i) => only.add(tag(i)));
   for (const id of selected) if (!removed.has(id) && !laid.has(id)) only.add(id);
-  const tidied = tidyInk(working, { profile, rules, only, maxLevelSlope: ASKED_LEVEL_SLOPE });
+  // Tidy does not see a placed line at all: left out of `only` but still on the page, it was
+  // grouped with a selected neighbour that Tidy does level, and moved with it (a lasso over
+  // the climbing line and the line under it, the reviewer's case, 26 November).
+  const seen = ruled
+    ? working
+    : working.filter((s) => !laid.has(s.id) && !s.id.startsWith("\u0000neaten"));
+  const tidied = tidyInk(seen, { profile, rules, only, maxLevelSlope: ASKED_LEVEL_SLOPE });
   const moved = new Map<string, number[]>();
   for (const s of working) {
     if (s.id.startsWith("\u0000neaten")) continue;
