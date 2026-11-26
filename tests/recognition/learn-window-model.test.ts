@@ -4,6 +4,7 @@ import {
   learnMaterial,
   learnWindow,
   sheetButton,
+  sheetJustFilled,
 } from "../../src/recognition/hwr/learn-window-model";
 import type { PracticeSheet } from "../../src/recognition/hwr/learned-model";
 
@@ -129,5 +130,12 @@ describe("what the other places say", () => {
   it("outlines the sheet's button with a count until there is enough", () => {
     expect(sheetButton(4, 0)).toEqual({ count: "4 / 10", ready: false });
     expect(sheetButton(8, 2)).toEqual({ count: "8 lines", ready: true });
+  });
+
+  it("asks about sharing only when the last line goes down, not when a full sheet opens", () => {
+    expect(sheetJustFilled(false, true)).toBe(true);
+    expect(sheetJustFilled(null, true)).toBe(false);
+    expect(sheetJustFilled(true, true)).toBe(false);
+    expect(sheetJustFilled(false, false)).toBe(false);
   });
 });

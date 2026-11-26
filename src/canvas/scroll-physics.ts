@@ -280,6 +280,40 @@ export class KineticScroller {
     return this.animating;
   }
 
+  /**
+   * How far a {@link snapTo} or a {@link glideTo} still has to carry the
+   * content, px. `null` when nothing is carrying it to a place: at rest,
+   * under a finger, or on a fling, whose end is not known until it stops.
+   */
+  get remaining(): number | null {
+    if (!this.animating || this.drag) return null;
+    if (this.glide) return Math.hypot(this.glide.toX - this.x, this.glide.toY - this.y);
+    if (this.targetX === null && this.targetY === null) return null;
+    // An axis without a target counts only once it is still and in range:
+    // a fling on it may yet take the view anywhere.
+    const free = (target: number | null, p: number, v: number, min: number, max: number): boolean =>
+      target === null && (Math.abs(v) >= REST_SPEED || p < min || p > max);
+    if (free(this.targetX, this.x, this.vx, this.minX, this.maxX)) return null;
+    if (free(this.targetY, this.y, this.vy, this.minY, this.maxY)) return null;
+    return Math.hypot(
+      this.targetX === null ? 0 : this.targetX - this.x,
+      this.targetY === null ? 0 : this.targetY - this.y,
+    );
+  }
+
+  /**
+   * How fast the content is moving, px/ms: a glide's speed too, which
+   * {@link velocity} does not carry (a glide is read off the clock).
+   */
+  get speed(): number {
+    const glide = this.glide;
+    if (!glide) return Math.hypot(this.vx, this.vy);
+    // The slope of `easeOutCubic` where the last step left it.
+    const q = 1 - clamp((this.lastStepT - glide.t0) / glide.duration, 0, 1);
+    const length = Math.hypot(glide.toX - glide.fromX, glide.toY - glide.fromY);
+    return (3 * q * q * length) / glide.duration;
+  }
+
   get axisLock(): AxisLock {
     return this.drag?.lock ?? "undecided";
   }

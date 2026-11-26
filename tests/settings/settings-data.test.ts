@@ -80,6 +80,7 @@ const FRESH_INSTALL = {
     tables: true,
     graphs: true,
   },
+  beautifyNeatness: 0.5,
   lassoTouches: true,
   highlighterAlpha: 0.4,
   paperWidth: 1024,
@@ -170,6 +171,9 @@ const FRESH_INSTALL = {
   showNewNotebookInExplorer: true,
   folderNotebooks: true,
   pageAppearance: "light",
+  handwriteBlocks: "note",
+  handwriteBlocksChosen: false,
+  handwriteNotebook: "",
   invertPdfPages: true,
   ocrScannedPdfs: true,
   ocrModel: "fast",
@@ -179,6 +183,7 @@ const FRESH_INSTALL = {
   exportPlainPaper: false,
   exportFormat: "pdf",
   exportMargins: "all",
+  exportNames: {},
 
   savedPens: [
     { type: "ball", color: "#1971c2", size: 2, id: "pen1" },
@@ -262,6 +267,7 @@ const USED_VAULT = {
     tables: false,
     graphs: false,
   },
+  beautifyNeatness: 0.75,
   lassoTouches: false,
   highlighterAlpha: 0.55,
   paperWidth: 1400,
@@ -355,6 +361,9 @@ const USED_VAULT = {
   holdFitWidth: true,
   pencilTilt: true,
   pageAppearance: "system",
+  handwriteBlocks: "one",
+  handwriteBlocksChosen: true,
+  handwriteNotebook: "Notes/All handwriting.notebook.md",
   invertPdfPages: false,
   ocrScannedPdfs: false,
   ocrModel: "accurate",
@@ -364,6 +373,9 @@ const USED_VAULT = {
   exportPlainPaper: true,
   exportFormat: "png",
   exportMargins: "inked",
+  exportNames: {
+    "Tutoring/Anna.notebook.md": { name: "Anna algebra", file: "Tutoring/Anna algebra.pdf" },
+  },
 
   savedPens: [{ type: "brush", color: "#336699", size: 4.5 }],
   // Undo among the tools, the calculator in More tools, the hand and the mic hidden.

@@ -25,6 +25,7 @@ import {
   type CorrectionsFile,
   type ReadWord,
   addCorrection,
+  shownAnswers,
   answeredOn,
   emptyCorrections,
   flagWords,
@@ -36,7 +37,10 @@ import {
   serializeCorrections,
 } from "../recognition/hwr/corrections";
 import { type LexiconSuggestion, SUGGEST_MARGIN, replaceCore } from "../recognition/hwr/lexicon";
+import { offersSpelling } from "../recognition/hwr/spelling-offer";
 import type { Stroke } from "../model/document";
+import type { PageLanguage } from "../recognition/hwr/page-language";
+import type { PackWords } from "./language-packs";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { onEnterKey } from "./enter-key";
 import { WordPopover, type WordPopoverRow } from "./word-popover";
@@ -66,6 +70,18 @@ export interface CheckedWord {
   strokes: readonly Stroke[];
   /** The list words its ink fits best (lexicon.ts), when they were worked out. */
   suggestion?: LexiconSuggestion | null;
+  /** The page's language (page-language.ts); English when absent. */
+  language?: PageLanguage;
+}
+
+/** Writing a checked word in the writer's own hand (`write-in-hand.ts`), when the writer can. */
+export interface WriteWordInHand {
+  /** After an answer: offer to write `text` in place of the word's ink. */
+  offer(text: string): void;
+  /** Write `text` in place of the word's ink now. */
+  write(text: string): void;
+  /** Whether the model can write `text` (every letter one it has). */
+  writes(text: string): boolean;
 }
 
 export class WordCheck {
@@ -76,6 +92,8 @@ export class WordCheck {
   private loading: Promise<void> | null = null;
   /** Said once a session: there is no word list, so nothing is underlined. */
   private toldNoList = false;
+  /** Language packs' word lists, as `flags` last read them, for the card's Should be. */
+  private readonly packLists = new Map<PageLanguage, ReadonlySet<string>>();
   /** Told after each answer is saved, with how many answers there are now. */
   answered: (count: number) => void = () => {};
 
@@ -84,6 +102,9 @@ export class WordCheck {
     private readonly pluginDir: () => string,
     /** The bundled word list's text (models/words.txt). */
     private readonly bundled: () => Promise<string | null> = bundledWords,
+    /** A language pack's word list (language-packs.ts), when it is here. */
+    private readonly packs: (language: PageLanguage) => Promise<PackWords | null> = async () =>
+      null,
   ) {}
 
   /** Read the word list and the corrections, once (`reload` to read them again). */
@@ -165,9 +186,30 @@ export class WordCheck {
     return this.corrections.corrections.map((c) => c.at);
   }
 
-  /** The words of a reading to underline on page `pageId` of `note`. */
-  async flags(note: string, pageId: string, words: readonly ReadWord[]): Promise<ReadWord[]> {
+  /**
+   * The words of a reading to underline on page `pageId` of `note`. A page
+   * in another language (page-language.ts) is checked against its language
+   * pack's list, when the pack is here and may underline; else nothing is
+   * underlined there (the English list would mark most of its words).
+   */
+  async flags(
+    note: string,
+    pageId: string,
+    words: readonly ReadWord[],
+    language: PageLanguage = "en",
+  ): Promise<ReadWord[]> {
     await this.load();
+    if (language !== "en") {
+      const pack = await this.packs(language);
+      if (pack) this.packLists.set(language, pack.words);
+      if (!pack?.underline) return [];
+      return flagWords(
+        words,
+        pack.words,
+        ignoredWords(this.corrections),
+        answeredOn(this.corrections, note, pageId),
+      );
+    }
     if (!this.words || this.words.size === 0) {
       if (!this.toldNoList) {
         this.toldNoList = true;
@@ -181,6 +223,31 @@ export class WordCheck {
       ignoredWords(this.corrections),
       answeredOn(this.corrections, note, pageId),
     );
+  }
+
+  /** The answers given on page `pageId` of `note`: what each answered word is, by its strokes (Neaten). */
+  async answersOn(
+    note: string,
+    pageId: string,
+  ): Promise<{ kind: CorrectionKind; text: string; ids: string[] }[]> {
+    await this.load();
+    return this.corrections.corrections
+      .filter((c) => c.note === note && c.page === pageId)
+      .map((c) => ({
+        // A word written wrong is written as meant: the line says what the text says.
+        kind: c.meant ? "misread" : c.kind,
+        text: c.meant ?? c.text,
+        ids: c.strokes.map((s) => s.id),
+      }));
+  }
+
+  /**
+   * What each answered word on page `pageId` of `note` shows instead of its
+   * reading, by stroke key (`shownAnswers`), from the answers read so far;
+   * empty before the first `load`. For the text search keeps.
+   */
+  shownOn(note: string, pageId: string): Map<string, string> {
+    return shownAnswers(this.corrections, note, pageId);
   }
 
   /** The word list, for suggestions (lexicon.ts); null without one. */
@@ -203,8 +270,15 @@ export class WordCheck {
    *   under `SUGGEST_MARGIN`), it is probably a misread: the best list words
    *   come first, as chips under the reading, then Type what it says, It
    *   says "…", and Add to dictionary.
-   * - Otherwise the ink really shows this word: It says "…" (with the
-   *   closest list spelling under it), Add to dictionary, then Type.
+   * - Otherwise the ink really shows this word: It says "…", then Should
+   *   be "…" when a list word is close (the writer wrote it wrong: the text
+   *   shows that word, and the ink is written again in the writer's hand
+   *   when it can be), Add to dictionary, then Type.
+   *
+   * Which kind of correction an answer is, Grape's misread or the writer's
+   * own mistake, is never guessed: the ink fits both about as well
+   * (RESEARCH-LOG 2026-11-25). The answer picked says it, and Type what it
+   * says asks with its two buttons.
    *
    * `done` runs after an answer is saved, to take the underline away;
    * `closed` whenever the card closes, answered or not.
@@ -219,21 +293,53 @@ export class WordCheck {
     done: () => void,
     closed: () => void = () => {},
     asked = false,
+    hand?: WriteWordInHand,
   ): WordPopover {
     const read = word.word.text;
     const found = word.suggestion;
     const misread = !!found && found.words.length > 0 && found.margin < SUGGEST_MARGIN;
+    // A word answered as misread is offered in the writer's hand, as the answer says it.
     const reply = (kind: CorrectionKind, text: string) =>
-      void this.answer(word, kind, text).then(done);
+      void this.answer(word, kind, text).then(() => {
+        done();
+        if (hand && kind === "misread") hand.offer(text);
+      });
+    // Written wrong: the text shows `text`; the label stays the reading, what the ink says (corrections.ts).
+    const meant = (text: string, write: boolean) =>
+      void this.answer(word, "mistake", read, undefined, text).then(() => {
+        done();
+        if (!hand) return;
+        if (write) hand.write(text);
+        else hand.offer(text);
+      });
+    // The ink really says the reading, and a list word is close: the writer may have meant it.
+    const closest = !misread && found?.words[0] ? replaceCore(read, found.words[0]) : null;
+    const inHand = !!hand && !!closest && hand.writes(closest);
+    // Only when it is very likely a misspelling (spelling-offer.ts): never for a listed word
+    // ("on", "Tuesday"), a short one, a code or maths ("B-214", "O(log"); Joost, 2026-11-25.
+    const listed = this.listedFor(word.language ?? "en");
+    const spelled: WordPopoverRow[] =
+      closest && listed && offersSpelling(read, closest, listed, (word.language ?? "en") === "en")
+        ? [
+            {
+              icon: "spell-check",
+              label: t("ai.word.shouldBe", { word: closest }),
+              sub: inHand ? t("ai.word.inYourHand") : undefined,
+              run: () => meant(closest, inHand),
+            },
+          ]
+        : [];
     const correct: WordPopoverRow = {
       icon: "pencil",
       label: t("ai.word.type"),
-      run: () => new WordCorrectionModal(this.app, read, (text) => reply("misread", text)).open(),
+      run: () =>
+        new WordCorrectionModal(this.app, read, (text, wrong) =>
+          wrong ? meant(text, false) : reply("misread", text),
+        ).open(),
     };
     const wrote: WordPopoverRow = {
       icon: "check",
       label: t("ai.word.itSays", { word: read }),
-      sub: !misread && found?.words[0] ? t("ai.word.closest", { word: found.words[0] }) : undefined,
       run: () => reply("mistake", read),
     };
     // Stored as "ignore", the kind's name since the first corrections files.
@@ -249,30 +355,52 @@ export class WordCheck {
         read,
         chips: misread ? found.words : [],
         onChip: (w) => reply("misread", replaceCore(read, w)),
-        rows:
-          misread || asked
-            ? [correct, wrote, ...(asked && this.unflagged(read) ? [] : [add])]
-            : [wrote, add, correct],
+        rows: misread
+          ? [correct, wrote, ...(asked && this.unflagged(read) ? [] : [add])]
+          : asked
+            ? [correct, wrote, ...spelled, ...(this.unflagged(read) ? [] : [add])]
+            : [wrote, ...spelled, add, correct],
       },
       closed,
     );
   }
 
-  /** Whether a word as read is one `flags` never underlines: listed, answered as right, or no plain word. */
-  private unflagged(read: string): boolean {
-    const word = plainWord(read);
-    if (!word) return true;
-    return this.words?.has(word) === true || ignoredWords(this.corrections).has(word);
+  /**
+   * Whether a word (lower case) is in `language`'s list or answered as
+   * right; null when that list is not known (another language whose pack's
+   * list `flags` has not read), so nothing can be judged by it.
+   */
+  private listedFor(language: PageLanguage): ((word: string) => boolean) | null {
+    const list = language === "en" ? this.words : this.packLists.get(language);
+    if (!list) return null;
+    const ignored = ignoredWords(this.corrections);
+    return (word) => list.has(word) || ignored.has(word);
   }
 
-  /** Record an answer given elsewhere (a lassoed title corrected in its dialog). */
+  /** Whether a word as read is one `flags` never underlines: listed, answered as right, or no plain word. */
+  private unflagged(read: string, language: PageLanguage = "en"): boolean {
+    const word = plainWord(read);
+    if (!word) return true;
+    if (ignoredWords(this.corrections).has(word)) return true;
+    if (language === "en") return this.words?.has(word) === true;
+    // Another language: its pack's list, as `flags` last read it; none known, nothing to judge by.
+    const list = this.packLists.get(language);
+    return !list || list.has(word);
+  }
+
+  /**
+   * Record an answer given elsewhere (a lassoed title corrected in its
+   * dialog, Beautify asking about a word). `text` is what the ink says;
+   * `meant`, on a "mistake" only, what the writer meant to write.
+   */
   record(
     word: CheckedWord,
     kind: CorrectionKind,
     text: string,
     source?: Correction["source"],
+    meant?: string,
   ): Promise<void> {
-    return this.answer(word, kind, text, source);
+    return this.answer(word, kind, text, source, kind === "mistake" ? meant : undefined);
   }
 
   private async answer(
@@ -280,6 +408,7 @@ export class WordCheck {
     kind: CorrectionKind,
     text: string,
     source?: Correction["source"],
+    meant?: string,
   ): Promise<void> {
     const strokes = word.strokes.map((s) => ({
       id: s.id,
@@ -290,6 +419,7 @@ export class WordCheck {
       kind,
       read: word.word.text,
       text,
+      ...(meant && meant !== text ? { meant } : {}),
       note: word.note,
       page: word.pageId,
       strokes,
@@ -306,14 +436,21 @@ export class WordCheck {
   }
 }
 
-/** "What does it say?": one field, prefilled with the reading. */
+/**
+ * "Correct “…”": one field, prefilled with the reading, and two buttons
+ * that say which is wrong: Grape misread it (Enter, as before: the typed
+ * word is what the ink says), or I wrote it wrong (`wrong`: the typed word
+ * is what the writer meant; the text shows it, and the ink is labelled with
+ * the reading, which the writer says is what they wrote). The buttons stay
+ * above the iPad's keyboard with the field.
+ */
 class WordCorrectionModal extends Modal {
   private readonly keyboard: DialogKeyboard;
 
   constructor(
     app: App,
     private readonly read: string,
-    private readonly submit: (text: string) => void,
+    private readonly submit: (text: string, wrong: boolean) => void,
   ) {
     super(app);
     this.keyboard = new DialogKeyboard(this.modalEl);
@@ -321,13 +458,9 @@ class WordCorrectionModal extends Modal {
 
   override onOpen(): void {
     this.modalEl.addClass("goodobsidian-dialog");
-    this.titleEl.setText(t("ai.word.title"));
+    this.titleEl.setText(t("ai.word.correctTitle", { word: this.read }));
     const body = this.contentEl;
     body.addClass("goodobsidian-ask");
-    body.createDiv({
-      cls: "goodobsidian-ask-note",
-      text: t("ai.word.note"),
-    });
     const row = body.createDiv({ cls: "goodobsidian-contents-field-row" });
     const field = row.createEl("input", {
       cls: "goodobsidian-contents-field",
@@ -335,16 +468,21 @@ class WordCorrectionModal extends Modal {
       attr: { "aria-label": t("ai.word.field"), autocapitalize: "none", spellcheck: "false" },
     });
     field.value = this.read;
-    this.keyboard.watch(field, row);
-    const save = row.createEl("button", { cls: "mod-cta", text: t("common.save") });
-    const done = () => {
+    const buttons = body.createDiv({ cls: "modal-button-container" });
+    this.keyboard.watch(field, row, buttons);
+    const done = (wrong: boolean) => {
       const text = field.value.trim();
       if (!text) return;
       this.close();
-      if (text !== this.read) this.submit(text);
+      if (text !== this.read) this.submit(text, wrong);
     };
-    save.addEventListener("click", done);
-    onEnterKey(field, done);
+    buttons
+      .createEl("button", { text: t("ai.word.wroteWrong") })
+      .addEventListener("click", () => done(true));
+    buttons
+      .createEl("button", { cls: "mod-cta", text: t("ai.word.misreadIt") })
+      .addEventListener("click", () => done(false));
+    onEnterKey(field, () => done(false));
     window.setTimeout(() => {
       field.focus();
       field.select();

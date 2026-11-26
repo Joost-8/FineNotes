@@ -23,11 +23,62 @@ const ENOUGH = 12;
 const SHARE = 0.1;
 /** No budget is cut below this, ms: a tile still has to be made sometime. */
 export const MIN_BUDGET_MS = 2;
+/**
+ * Gaps from this to {@link NEAR_MOST} times the short end are single frames.
+ * The top is just under twice the short end: a frame that started nearly
+ * half a frame late leaves a gap of little over half a frame, and a top of
+ * one and a half times that left the ordinary frames out, so the display
+ * read twice as fast as it is (240 Hz at 120, found in review).
+ */
+const NEAR_LEAST = 0.75;
+const NEAR_MOST = 1.9;
+/** A gap under this share of a frame is a stray reading, not a frame. */
+const STRAY = 0.45;
+
+/**
+ * The display's frame length from the gaps between frames, ms.
+ *
+ * A frame is shown on one of the display's own ticks, so a gap is a whole
+ * number of them, give or take how late each of its two frames started. The
+ * short end of the gaps says which gaps were one tick: a missed frame makes
+ * a gap longer, never shorter, and a tenth of them means one odd reading
+ * decides nothing. But the short end itself is not the tick. A frame that
+ * starts late is followed by a gap that much shorter, and an iPad Pro whose
+ * frames often started a millisecond late read 143 Hz at 120 (FineNotes#201),
+ * so the overlay counted late frames as missed.
+ *
+ * So the short end only finds the single-tick gaps; their middle says about
+ * how long a tick is; and the answer is the time all the gaps took over the
+ * ticks they spanned, where each frame's lateness is added to one gap and
+ * taken from the next and so falls out.
+ */
+export function frameLength(gaps: readonly number[]): number {
+  const sorted = [...gaps].sort((a, b) => a - b);
+  const short = sorted[Math.floor(SHARE * (sorted.length - 1))];
+  const single = sorted.filter((g) => g >= NEAR_LEAST * short && g <= NEAR_MOST * short);
+  const about = single[Math.floor((single.length - 1) / 2)] ?? short;
+  let time = 0;
+  let ticks = 0;
+  for (const gap of sorted) {
+    if (gap < STRAY * about) continue;
+    time += gap;
+    ticks += Math.max(1, Math.round(gap / about));
+  }
+  return ticks > 0 ? time / ticks : short;
+}
+
+/** The short end of the gaps: the tenth of them from the shortest, ms. */
+export function shortEnd(gaps: readonly number[]): number {
+  const sorted = [...gaps].sort((a, b) => a - b);
+  return sorted[Math.floor(SHARE * (sorted.length - 1))];
+}
 
 export class FramePace {
   private readonly gaps: number[] = [];
   private last = Number.NaN;
   private length = DEFAULT_FRAME_MS;
+  /** What the budgets are sized by: see {@link budget}. */
+  private short = DEFAULT_FRAME_MS;
 
   /**
    * A frame ran at `t` (the frame callback's time, ms). `follows` says it
@@ -41,11 +92,8 @@ export class FramePace {
     this.gaps.push(gap);
     if (this.gaps.length > WINDOW) this.gaps.shift();
     if (this.gaps.length < ENOUGH) return;
-    // The display's own frame is the short end of the gaps: a missed frame
-    // makes a gap longer, never shorter. A tenth of them, so one odd reading
-    // decides nothing.
-    const sorted = [...this.gaps].sort((a, b) => a - b);
-    this.length = sorted[Math.floor(SHARE * (sorted.length - 1))];
+    this.length = frameLength(this.gaps);
+    this.short = shortEnd(this.gaps);
   }
 
   /** The display's frame length, ms. */
@@ -61,9 +109,17 @@ export class FramePace {
   /**
    * A budget of `at60` ms in a 60 Hz frame, as the same share of this
    * display's frame; never more than `at60`, never under {@link MIN_BUDGET_MS}.
+   *
+   * Sized by the short end of the gaps, as it has been since the budgets were
+   * tuned on devices, not by {@link frameMs}: the short end reads a frame a
+   * little short wherever frames start late (16.0 ms for 16.6 on an iPad Air),
+   * so going over to the true length would lengthen every budget there by a
+   * few per cent. Measured on that iPad, pinching into a 1,114-page PDF: 3, 5
+   * and 6 frames over 34 ms with the longer budgets, 4, 4 and 4 with these.
+   * Changing what a frame may spend is its own decision, with its own numbers.
    */
   budget(at60: number): number {
-    const scaled = (at60 * this.length) / DEFAULT_FRAME_MS;
+    const scaled = (at60 * this.short) / DEFAULT_FRAME_MS;
     return Math.min(at60, Math.max(Math.min(at60, MIN_BUDGET_MS), scaled));
   }
 }

@@ -83,7 +83,15 @@ export class CalcCard {
   private content: CalcCardContent | null = null;
   private actions: CalcCardActions | null = null;
 
-  constructor(parent: HTMLElement) {
+  /**
+   * `onAsking` runs with the index of the doubt "Which did you write?" is
+   * about while that view is open, and with -1 when it closes, so the page
+   * can mark that character's ink.
+   */
+  constructor(
+    parent: HTMLElement,
+    private readonly onAsking: (doubt: number) => void = () => undefined,
+  ) {
     this.el = parent.createDiv({ cls: "goodobsidian-calc-card is-hidden" });
     // Presses on the card stay on the card: none reaches the page.
     this.el.addEventListener("pointerdown", (event) => event.stopPropagation());
@@ -173,6 +181,7 @@ export class CalcCard {
   private showMain(): void {
     this.fixView.addClass("is-hidden");
     this.main.removeClass("is-hidden");
+    this.onAsking(-1);
   }
 
   /** The runner-ups of doubt `index`: what was read first (chosen), then the others, then ✎. */
@@ -199,6 +208,7 @@ export class CalcCard {
     });
     this.main.addClass("is-hidden");
     this.fixView.removeClass("is-hidden");
+    this.onAsking(index);
   }
 
   /** A choice for doubt `index`: another character changes the reading; the one read confirms it. Either way the doubt goes. */
@@ -223,6 +233,7 @@ export class CalcCard {
     this.el.addClass("is-hidden");
     this.content = null;
     this.actions = null;
+    this.onAsking(-1);
   }
 
   /**

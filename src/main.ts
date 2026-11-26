@@ -21,7 +21,12 @@ import { FileExplorerNotebookButton } from "./view/file-explorer-notebook-button
 import { ExplorerFolderNotebooks } from "./view/explorer-folder-notebooks";
 import type { SharingFeature } from "./view/sharing-feature";
 import { loadSharing } from "./view/sharing-load";
-import { WordCheck } from "./view/word-check";
+import { WordCheck, bundledWords } from "./view/word-check";
+import { LanguagePacks } from "./view/language-packs";
+import { NeatenService } from "./view/neaten";
+import type { NeatnessControl } from "./view/neatness-row";
+import { neatnessOf } from "./recognition/writer/neatness";
+import { WriteInHand } from "./view/write-in-hand";
 import {
   followPairRename,
   isNotebookOwnFolder,
@@ -206,6 +211,8 @@ import {
   parseNudges,
   recordUse,
 } from "./model/nudges";
+import { inlineEditorHost, registerHandwriteHere } from "./view/handwrite-here";
+import { cleanHandwriteSettings } from "./model/handwrite-blocks";
 import { InkView } from "./view/ink-view";
 import { starsOf } from "./model/favorites";
 import {
@@ -232,6 +239,7 @@ import {
   movePaths,
   moveStyles,
 } from "./model/library-style";
+import { exportNamesOf, movePdfNames } from "./export/export-name";
 import { prepareImageBytes } from "./view/image-import";
 import { LibraryView, unstackTabsOf } from "./view/library-view";
 import { MARKDOWN_VIEW_TYPE, ViewRouter, isInkNote, showAs } from "./view/view-routing";
@@ -378,6 +386,8 @@ const LAST_PEN_SAVE_MS = 600;
 
 /** How long after the layout is ready a bundled Grape is written to disk: off the startup path. */
 const GRAPE_BRIDGE_DELAY_MS = 8000;
+/** How long after startup the writer's readiness is first looked at (it reads the practice sheets). */
+const WARM_WRITER_MS = 10_000;
 
 /** How long after the layout is ready the daily update check runs: off the startup path. */
 const UPDATE_CHECK_DELAY_MS = 20_000;
@@ -437,6 +447,10 @@ export default class GoodObsidianPlugin extends Plugin {
   override settings!: GoodObsidianSettings;
   /** `![[Notebook#page=3]]` previews in notes; repainted when the page appearance changes. */
   private pageEmbeds: PageEmbeds | null = null;
+
+  activateInlineEmbed(file: TFile, pageId: string): void {
+    this.pageEmbeds?.activateInline(file, pageId);
+  }
   /** Transcription engines by id. Manual always; the cloud one is added on load. */
   readonly providers = createProviderRegistry();
   /** Where API keys live: Obsidian's keychain when it has one (see key-store.ts). */
@@ -499,6 +513,8 @@ export default class GoodObsidianPlugin extends Plugin {
 
   /** Grape, downloaded on first use, or written from the bundle (grape-files.ts). */
   readonly grape = new GrapeFiles(this.models);
+  /** Grape's language packs on this device (language-packs.ts). */
+  readonly languagePacks = new LanguagePacks(this.app, () => this.pluginDir, this.models);
   /** Whether a newer FineNotes is out: the dot on the gear (update-notice.ts). */
   readonly updates = new UpdateNotice({
     current: this.manifest.version,
@@ -533,6 +549,8 @@ export default class GoodObsidianPlugin extends Plugin {
           : "",
     }),
     () => this.grape.source(),
+    () => this.languagePacks.ready(),
+    (language) => this.languagePacks.seen(language),
   );
 
   /**
@@ -547,7 +565,27 @@ export default class GoodObsidianPlugin extends Plugin {
   readonly learner = new HandwritingLearner(() => this.learningHost());
 
   /** Checking words read on the device, and the answers to learn from. */
-  readonly wordCheck = new WordCheck(this.app, () => this.pluginDir);
+  readonly wordCheck = new WordCheck(
+    this.app,
+    () => this.pluginDir,
+    bundledWords,
+    (language) => this.languagePacks.words(language),
+  );
+
+  /** Neaten: selected handwriting rewritten in the writer's own hand (view/neaten.ts). */
+  readonly neaten = new NeatenService({
+    app: this.app,
+    models: this.models,
+    handwriting: this.handwriting,
+    lexicon: () => this.wordCheck.lexicon(),
+    learningHost: () => this.learningHost(),
+    answers: (note, pageId) => this.wordCheck.answersOn(note, pageId),
+    pauseOcr: () => this.ocr.pause(),
+    neatness: () => neatnessOf(this.settings.beautifyNeatness),
+  });
+
+  /** Known text (a corrected word, a text box, an answer) written in the writer's hand. */
+  readonly writeInHand = new WriteInHand(this.neaten);
 
   /** "Help improve Grape", in a build that has it (`view/sharing-load.ts`); else null. */
   sharing: SharingFeature | null = null;
@@ -831,6 +869,7 @@ export default class GoodObsidianPlugin extends Plugin {
       }),
     );
     this.routeInkNotes();
+    registerHandwriteHere(this);
     // `![[Physics.notebook#page=3]]` in any note shows that page (page-embed.ts).
     this.pageEmbeds = this.addChild(
       new PageEmbeds({
@@ -840,6 +879,7 @@ export default class GoodObsidianPlugin extends Plugin {
         usePressure: () => this.settings.pressureWidth,
         highlighterAlpha: () => this.settings.highlighterAlpha,
         paper: () => shownPaperTheme(this.settings, document.body.hasClass("theme-dark")),
+        ...inlineEditorHost(this),
       }),
     );
     this.registerEvent(
@@ -873,6 +913,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.register(() => {
       this.learner.dispose();
       this.handwriting.dispose();
+      this.neaten.dispose();
       this.speech.dispose();
       this.translator.dispose();
       this.ocr.dispose();
@@ -880,6 +921,12 @@ export default class GoodObsidianPlugin extends Plugin {
     });
     // Translation models already downloaded show in Settings › Models on this device.
     this.app.workspace.onLayoutReady(() => void this.translator.registerStored());
+    // Whether known text can be written in the writer's hand, looked at once after startup, so
+    // the first menu after a launch already offers it (write-in-hand.ts).
+    this.app.workspace.onLayoutReady(() => {
+      const timer = window.setTimeout(() => this.writeInHand.warm(), WARM_WRITER_MS);
+      this.register(() => window.clearTimeout(timer));
+    });
     const ocrStatus = new OcrStatus(this.ocr);
     this.register(() => ocrStatus.dispose());
     // A release that still bundles Grape writes it to the handwriting folder,
@@ -1323,6 +1370,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
     loadSnapSettings(this.settings, saved ?? {});
     this.settings.laserDefaultColor = laserDefaultColorOf(this.settings.laserDefaultColor);
+    Object.assign(this.settings, cleanHandwriteSettings(this.settings));
     // A record of its own: the key store mutates it, and the default's must
     // stay empty.
     const keys = saved?.apiKeys;
@@ -1517,7 +1565,10 @@ export default class GoodObsidianPlugin extends Plugin {
    * whatever holds it in memory lets go, and loads it again when next needed.
    */
   modelReleased(id: string): void {
-    if (id === "grape" || id === "grape-2") this.handwriting.dispose();
+    // A removed language pack leaves the worker too: the next read starts one without it.
+    if (id === "grape" || id === "grape-2" || this.languagePacks.released(id)) {
+      this.handwriting.dispose();
+    }
     if (id.startsWith("whisper-")) this.speech.release();
     if (OCR_TIERS.some((t) => t.asset.id === id)) this.ocr.releaseModel();
   }
@@ -2707,6 +2758,18 @@ export default class GoodObsidianPlugin extends Plugin {
     for (const view of this.openNotebooks()) view.setFingerDrawing(on);
   }
 
+  /** Beautify's neatness slider at the AI menu's end, while Beautify can write in the hand; null when it only tidies. */
+  beautifyNeatness(): NeatnessControl | null {
+    if (!this.neaten.writesInHand()) return null;
+    return {
+      get: () => this.settings.beautifyNeatness,
+      set: (neatness) => {
+        this.settings.beautifyNeatness = neatnessOf(neatness);
+        void this.saveSettings();
+      },
+    };
+  }
+
   /** Remember the lasso's type and what it picks up, for the next session. */
   saveLasso(mode: LassoMode, filter: LassoFilter): void {
     this.settings.lassoMode = mode;
@@ -3737,13 +3800,18 @@ export default class GoodObsidianPlugin extends Plugin {
     const nextStars = follow(stars);
     const nextHidden = follow(hidden);
     const nextStyles = to === undefined ? dropStyles(styles, from) : moveStyles(styles, from, to);
+    const names = exportNamesOf(this.settings.exportNames);
+    const nextNames = movePdfNames(names, from, to);
     const same = (a: string[], b: string[]): boolean =>
       a.length === b.length && a.every((p, i) => p === b[i]);
     const stylesChanged = JSON.stringify(nextStyles) !== JSON.stringify(styles);
-    if (same(nextStars, stars) && same(nextHidden, hidden) && !stylesChanged) return;
+    const namesChanged = JSON.stringify(nextNames) !== JSON.stringify(names);
+    if (same(nextStars, stars) && same(nextHidden, hidden) && !stylesChanged && !namesChanged)
+      return;
     this.settings.libraryStars = nextStars;
     this.settings.libraryHidden = nextHidden;
     this.settings.libraryFolders = nextStyles;
+    this.settings.exportNames = { ...nextNames };
     void this.saveSettings();
   }
 

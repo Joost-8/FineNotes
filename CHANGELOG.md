@@ -29,6 +29,86 @@ extracted from the matching section of this file by `release.yml`.
   on a Boox, a faster refresh mode for Obsidian in the E-Ink Center helps
   most.
 
+- **Handwrite here** (PR #312, thanks @bendi087): in a Markdown note, the command puts a
+  handwriting block at the cursor and opens it for the Pencil in place; the blocks are pages of
+  one notebook per note and show in reading view and exported PDFs.
+- **Ask AI knows the PDFs in your tabs.** The AI button now works on a PDF's
+  tab: Ask opens over the slide, and "explain this slide" means the one in
+  view (or the one you read last before going back to the notes). It can
+  read the other pages of any tab, and looks at slides that are mostly
+  pictures. Anything it writes goes into the notes.
+- **Export: a PDF name of your own (#318).** The Export dialog has a name
+  field for the PDF. Type a name and the next export replaces the file the
+  last one wrote under it (the button says Replace), so a link to it, or a copy synced to a
+  drive, always shows the newest version; the notebook remembers the name for
+  next time. A file FineNotes did not write is never replaced. Left empty,
+  every export makes a new file, as before.
+
+- **Corrections tell Grape's misreads from your own mistakes.** On the word
+  card, **Should be “…”** (offered only for a word that is very likely
+  misspelled, never for a listed word, a number, a code or maths) says you
+  wrote the word wrong: the page's text
+  (what search finds) shows the word you meant, while Grape (and Help
+  improve Grape) keep the ink labelled with what you really wrote, never
+  the word you meant. **Type what it says…** now asks which it was:
+  **Grape misread it** teaches Grape the word you typed, **I wrote it
+  wrong** fixes the text the same way as Should be. Every
+  answer now changes what search finds on the page, not only what Grape
+  learns. Editing a lassoed title (Add to contents, Link to…) no longer
+  teaches Grape unless you chose **Correct**.
+- **Grape reads Dutch, German, French, Spanish, Portuguese and Italian.**
+  A page written in one of them is recognised by its words, and the first
+  time, FineNotes offers that language's pack (Grape in Nederlands,
+  Deutsch, …: 1 to 2 MB, once; listed in Settings › Models). With it the
+  page is read in that language, which cuts the words misread there to
+  about a third. On French, Spanish and
+  Italian pages, words the pack does not know are underlined, and the word
+  card suggests the language's own words everywhere. Without its pack, a
+  page in another language is read without Grape's English model and is not
+  underlined. Accented letters are still read without their accents.
+- **Beautify handwriting.** Lasso some lines and choose **Beautify** in the ⋯
+  menu, or hold a handwritten word and tap the brush beside **Correct** to
+  beautify its line. Your words are written again, neater, in your own hand,
+  where yours were, by Dostoyev (handwriting writer model, a
+  one-time download, run on your device); every line is set level (on the
+  paper's rules when it has them), wandering baselines are straightened,
+  margins aligned and shaky strokes smoothed. Writing in your hand needs your
+  practice sheets (at least 10 copied lines); without them Beautify only
+  tidies. Formulas and tables are left alone. One undo puts it all back. How
+  neat it writes is a slider at the end of the AI menu, from most like your
+  neat it writes is a slider in the Lasso tool's popover, from most like your
+  ink to neatest.
+- **Write it in your handwriting.** Once Beautify can write in your hand:
+  after you correct a word on the word card, the card offers to write the
+  word again in your hand in place of the old ink, on its line and at its
+  size (the rest of the line moves to fit); a word you really wrote that way
+  gets **Should be “…”** with the closest spelling, which writes it in your
+  hand too. A text box,
+  pasted or typed, turns into your handwriting with the lasso's **Turn into ›
+  Handwriting**: wrapped to the page's margins, on the rules of ruled paper,
+  each line written afresh so it never looks stamped, never over pictures,
+  boxes or ink already on the page; this works on an empty page too.
+  Calculation notes write a plain number answer (digits, `.` `,` `-` `%` `$`)
+  after your "=" in your hand, once Grape reads it back exactly; fractions
+  and powers stay in the drawn figures. All of it follows Beautify's
+  neatness slider.
+  ink to neatest. When Grape is unsure of a word, Beautify first opens the
+  word card on it (as **Correct** does): answer it and that word is written
+  too, and Grape learns from it; close the card and the word stays as you
+  wrote it.
+- **Beautify writes straight.** The words it writes in your hand are set flat
+  on the line, and their letters stand on it and lean the same way, with your
+  letter shapes kept: nothing is redrawn. The neatness slider now sets how far
+  the letters are straightened, so its "neatest" end is still your hand. Of
+  two tries that read equally well, Beautify keeps the more even one. It
+  writes with Dostoyev 2.1, the same model started from less noise, which
+  reads better and writes more evenly.
+  ink to neatest. For the word Grape is least sure of on each line, at most,
+  Beautify first opens the word card (as **Correct** does): answer it and that
+  word is written too, and Grape learns from it; close the card and the word
+  stays as you wrote it. A word whose new writing does not read back as itself
+  stays as you wrote it too, level with the line, and nothing is pushed past
+  the page's edge.
 - **Insert space on boards, and on paper without lines**
   ([discussion #276](https://github.com/Joost-8/FineNotes/discussions/276)).
   With the lasso on **By line**, press anywhere on a board and drag down: everything
@@ -66,6 +146,16 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- **Quick handwriting keeps its letters (#275).** A letter started soon
+  after the last one could lose its first strokes or come out as a line,
+  most of all on handwriting practice sheets and with the page sidebar
+  open: every lift of the pen set off work (re-reading the other practice
+  sheets, repainting thumbnails) that landed inside the next letter. That
+  work now waits until the pen rests.
+- **Finishing a practice sheet asks once whether you would share it** to
+  help improve Grape, as meant since Help improve Grape arrived: the
+  question never came, because the sheet's count was reset after every
+  stroke.
 - **Select all in the page sidebar works across the whole button.** The
   title next to it was drawn over its right half and took those taps.
 - **Pinching a selected picture no longer raises an error** in the
@@ -80,6 +170,17 @@ extracted from the matching section of this file by `release.yml`.
   handwriting sheet ("Five" came out "Fi~"). Smoothing now moves each point
   no further than the rounding did, so straight lines stay steady and letters
   keep their shape.
+- **Turning several pages quickly stays smooth on pages with writing**
+  ([#201](https://github.com/Joost-8/FineNotes/issues/201)). The next page
+  was only prepared once a turn had come fully to rest, half a second after
+  the swipe, so a second swipe soon after met a page whose ink was still
+  being drawn. It is now prepared while the turn settles, and a page's ink
+  is prepared a little each frame instead of all in one. In a long notebook
+  the next page was often not prepared at all once a dozen pages had been
+  read; it is now, and the pages just read stay ready for turning back.
+- **The Input debug overlay reads a 120 Hz screen as 120.** An iPad Pro
+  whose frames often started a millisecond late was shown as a 143 Hz
+  screen, and the overlay counted late frames as missed.
 
 ### Fixed
 

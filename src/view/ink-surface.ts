@@ -372,11 +372,16 @@ import {
 } from "../ink/stroke-builder";
 import { stabilizationOf } from "../model/pen-stabilization";
 import { InkTracer } from "../ink/freehand";
+import { coasting } from "../canvas/coast";
 import { FramePace } from "../canvas/frame-pace";
 import { FrameRun } from "../canvas/frame-run";
 import { type RunBox, type RunMark, boundsSince, unionBox } from "../ink/run-window";
 import { TILT_MAX_FACTOR, tiltFactor, tiltShapes } from "../ink/tilt";
 import { lineOfHighlight } from "../ink/straighten";
+import { ASKED_LEVEL_SLOPE, lineOfStroke, measureHand, tidyInk } from "../ink/tidy";
+import { SetStrokePoints } from "../model/tidy-commands";
+import { neatenCommandFor } from "../model/neaten-commands";
+import type { NeatenOutcome, NeatenRequest } from "./neaten";
 import { LINE_LEVEL_RISE, levelLine, levelTurn } from "../ink/level-line";
 import { explainShape, recognizeAtZoom, styleOfShape } from "../ink/shape-recognizer";
 import { SNAP_RADIUS_PX, ShapeSnapper, penForPoint } from "../ink/shape-snap";
@@ -778,6 +783,8 @@ import { SizeWait, backingScale } from "./surface-size";
 import { StrokeIndex } from "./stroke-index";
 import { REST_MS, ViewRest } from "./view-rest";
 import { IdSequence, strokeIdsOf, textBoxIdsOf } from "./id-sequence";
+import { INLINE_GROW_REACH_PX, inGrowBand } from "./inline-surface-model";
+import { flashPageRing } from "./page-flash";
 import { newSession, type SurfaceSession, type SurfaceSessionOptions } from "./surface-session";
 import { SnippetDrag, bindSnippetGrip } from "./snippet-drag";
 import { SlideDots } from "./slide-dots";
@@ -1053,6 +1060,13 @@ export interface InkSurfaceCallbacks {
    * anything may have changed, anywhere.
    */
   onChange: (pages?: readonly string[]) => void;
+  /** Reserve room below the live ink on a dedicated embedded page. */
+  growInlinePage?: (y: number, buffer: number) => boolean;
+  /**
+   * A finger on the page is the host's to scroll with (a "Handwrite here"
+   * block in pen-only mode): its touches are neither cancelled nor stopped.
+   */
+  fingerScrollsHost?: () => boolean;
   /** Something the host may display changed (stroke count, zoom, current page). */
   onStatus?: () => void;
   /** The Zoom box opened from a marquee or closed with its ×: the toolbar's switch follows. */
@@ -1297,6 +1311,10 @@ export interface InkSurfaceCallbacks {
    * asks what it says, then calls `turnInkIntoText` with the answer.
    */
   onTurnIntoText?: (index: number, strokeIds: string[]) => void;
+  /** Turn into › Handwriting on a lone text box: the host writes its text in the writer's hand. */
+  onWriteInHand?: (pageId: string, boxId: string) => Promise<void>;
+  /** Whether this text box can be turned into the writer's hand on this device (write-in-hand.ts). */
+  canWriteInHand?: (box: TextBoxElement) => boolean;
   /** Open a link's target: a finger tap on linked ink, or Open link on its selection. */
   onOpenLink?: (target: string) => void;
   /** A comment's marker was tapped (`anchor` is the marker). */
@@ -1320,6 +1338,10 @@ export interface InkSurfaceCallbacks {
    * an underlined word does (`wordInk` places it under the word).
    */
   onCorrectWord?: (index: number, strokeIds: string[]) => void;
+  /** Neaten the selected handwriting (view/neaten.ts); the surface applies a "done". */
+  onNeaten?: (request: NeatenRequest) => Promise<NeatenOutcome>;
+  /** Whether Neaten is offered (its model can be had on this device). */
+  canNeaten?: () => boolean;
   /** Whether handwriting can be read here, so "Correct" is offered. */
   canCorrectWords?: () => boolean;
   /**
@@ -3527,6 +3549,7 @@ export class InkSurface {
         if (cancelsStylusTouch(event.type, event.changedTouches)) event.preventDefault();
         return;
       }
+      if (this.callbacks.fingerScrollsHost?.() === true) return;
       if (onTextBox(event.target)) return;
       // The lasso's menu scrolls by itself when it is taller than the view
       // (the custom colour picker): a finger there must not be cancelled.
@@ -4187,6 +4210,11 @@ export class InkSurface {
     }
   }
 
+  /** A new stroke id from the surface's own sequence, for strokes a host command adds. */
+  newStrokeId(): string {
+    return this.strokeIds.next();
+  }
+
   applyCommand(command: Command): void {
     this.endExplore(true);
     this.dropSelection();
@@ -4319,7 +4347,8 @@ export class InkSurface {
   showCalcNote(note: CalcNoteSpec): void {
     this.calcGlow ??= new CalcGlow(this.paperEl, (doubt) => this.openCalcCard(doubt));
     if (!this.calcCard) {
-      this.calcCard = new CalcCard(this.paperEl);
+      // While the card asks "Which did you write?", that character is highlighted on the page.
+      this.calcCard = new CalcCard(this.paperEl, (doubt) => this.calcGlow?.ask(doubt));
       // A press anywhere else while the card is open only closes the card:
       // the sum keeps glowing, and the press neither writes nor scrolls.
       this.surfaceEl.addEventListener(
@@ -5809,7 +5838,12 @@ export class InkSurface {
     this.joined = joined;
     if (rejoined) this.strokeIndex?.rebuild(this.doc.pages);
     // A board among the pages (discussion #160) is left out of their column.
-    this.pageLayout = layoutNotebook(this.doc.pages, { direction, joined });
+    const locked = this.inlineWidthLocked;
+    this.pageLayout = layoutNotebook(this.doc.pages, {
+      direction,
+      joined,
+      ...(locked ? { marginX: 0, marginY: 0 } : {}),
+    });
     renderer.setLayout(this.pageLayout);
     // Fit the page stack to the available width, but never magnify past 1:1 —
     // on a wide desktop pane an upscaled page looks like a zoom bug, and the
@@ -5818,10 +5852,14 @@ export class InkSurface {
     // point of the whole design.
     // A row fits one page (and its margins) to the pane, not the whole row.
     const fit = this.pageLayout.fitWidth;
-    this.baseScale = fit > 0 ? Math.min(1, cssW / fit) : 1;
+    this.baseScale = fit > 0 ? (locked ? cssW / fit : Math.min(1, cssW / fit)) : 1;
     // The options row opening or closing is no new pane: the page keeps its
     // size, as for the keyboard, and only moves (`followTopShift` below).
     this.updateZoomFloor(cssH, topShift !== 0);
+    if (locked) {
+      this.userZoom = 1;
+      this.scroller.setPosition(0, 0);
+    }
     // A panel opening beside a page that is zoomed in keeps the page the size
     // it was, instead of shrinking it with the pane (a notebook of wide
     // slides and narrow pages fits so small that the sidebar halved it).
@@ -6375,6 +6413,37 @@ export class InkSurface {
    */
   private freePageEdges = false;
 
+  private inlineWidthLocked = false;
+
+  setInlineWidthLocked(locked: boolean): void {
+    if (this.inlineWidthLocked === locked) return;
+    this.inlineWidthLocked = locked;
+    this.scroller.cancel();
+    this.pinch = null;
+    this.zoomAnim = null;
+    this.userZoom = 1;
+    this.scroller.setPosition(0, 0);
+    this.layout();
+  }
+
+  /** Re-render a resized or re-styled inline page without stretching its cached tile. */
+  refreshInlinePage(pageId: string): void {
+    this.renderer?.invalidatePage(pageId);
+    this.layout();
+    if (this.builder) this.drawWet();
+    this.requestFrame();
+  }
+
+  /** Briefly pulses an accent outline around `pageIndex` (or its drawn ink) after jumping from an embed. */
+  flashPage(pageIndex: number): void {
+    this.syncViewport();
+    const box = this.pageLayout.boxes[pageIndex];
+    const page = this.doc.pages[pageIndex];
+    if (!box || !page) return;
+    const view = { scale: this.scale, offsetX: this.offsetX, scrollY: this.viewport.scrollY };
+    flashPageRing(this.surfaceEl, this.win, box, page, view);
+  }
+
   /** The setting "Lock fit to width", read at each layout (`ScrollExtent.holdX`). */
   holdFitWidth: () => boolean = () => false;
 
@@ -6630,6 +6699,8 @@ export class InkSurface {
           ? SHARPEN_FRAME_BUDGET_MS
           : this.pace.budget(REST_FRAME_BUDGET_MS),
     );
+    // Before the frame is timed: the overlay's `peak=` counts this work too.
+    if (moving) this.prefetchCoasting(complete, zooming || settling || carrying);
     if (this.debug) this.trackFrame(t, started);
     if (moving || !complete) {
       // The next frame is the display's next: the time between them is a frame.
@@ -6828,6 +6899,26 @@ export class InkSurface {
     });
   }
 
+  /**
+   * A turn in its last px (`coast.ts`): this frame makes the next pages' tiles,
+   * which waited until the spring had stopped and so were missing when one
+   * turn followed another (FineNotes#201).
+   */
+  private prefetchCoasting(complete: boolean, zooming: boolean): void {
+    if (!this.renderer || this.renderer.isTransient) return;
+    const held = this.pinch !== null || this.pressing;
+    const { remaining, speed } = this.scroller;
+    const still = { complete, held, zooming: zooming || this.zoomTransient };
+    // The cheap questions first: this runs on every moving frame.
+    if (!coasting({ remaining, speed, pdf: this.fixedPages, ...still })) return;
+    const pages = this.pagesToTurnTo();
+    // Every page the prefetch would make tiles of, as the renderer itself picks them.
+    const near = this.renderer.prefetchPages(this.doc.pages.length, pages);
+    if (near.some((i) => this.doc.pages[i]?.backdrop.kind === "pdf")) return;
+    const budget = this.pace.budget(PREFETCH_BUDGET_MS);
+    this.renderer.prefetch(this.doc, this.inkPressure, budget, pages, true);
+  }
+
   /** The last turn went back a page: the pages before this one are made first. */
   private turnedBack = false;
 
@@ -6876,6 +6967,7 @@ export class InkSurface {
    * value past the limits, everything else clamps first.
    */
   private applyZoom(nextZoom: number, anchorX: number, anchorY: number): void {
+    if (this.inlineWidthLocked) return;
     let before = this.toLayout(anchorX, anchorY);
     // A row's pages slide together as it zooms in (`syncRowGap`): keep the
     // point of the page under the fingers fixed, not the layout point.
@@ -6948,6 +7040,7 @@ export class InkSurface {
   }
 
   private onWheel(event: WheelEvent): void {
+    if (this.inlineWidthLocked) return;
     event.preventDefault();
     this.releaseBoardHold();
     const unit = event.deltaMode === 1 ? WHEEL_LINE_PX : event.deltaMode === 2 ? this.cssH : 1;
@@ -9295,6 +9388,7 @@ export class InkSurface {
         this.scroller.cancel();
         return;
       }
+      if (this.inlineWidthLocked) return;
       this.zoomAnim = null;
       this.rowSettle = null;
       this.pinch = { raw: this.userZoom, centerX, centerY };
@@ -11475,6 +11569,19 @@ export class InkSurface {
     cancel: (box) => this.inkCancel(box),
   };
 
+  private extendInlineInk(box: PageBox, sample: PointerSample): PageBox {
+    if (!this.inlineWidthLocked || !this.callbacks.growInlinePage) return box;
+    const at = this.toPage(box, sample);
+    const buffer = INLINE_GROW_REACH_PX / this.unitScale;
+    if (!inGrowBand(at, box, buffer) || !this.callbacks.growInlinePage(at.y, buffer)) return box;
+    this.renderer?.invalidatePage(box.id);
+    this.layout();
+    const grown = this.pageLayout.boxes[box.index] ?? box;
+    this.activePage = grown;
+    if (this.builder) this.drawWet();
+    return grown;
+  }
+
   private inkDown(box: PageBox, at: Pt, sample: PointerSample): void {
     const mode = this.toolState.tool === "shape" ? shapeModeFor(this.toolState) : "auto";
     if (mode !== "auto") {
@@ -11492,6 +11599,7 @@ export class InkSurface {
     builder.add({ ...sample, ...at });
     this.strokeInput = sample.pointerType ?? "";
     this.builder = builder;
+    box = this.extendInlineInk(box, sample);
     this.snap = null;
     this.diagHold = { fired: false, verdict: "" };
     this.restartHold(at);
@@ -11613,6 +11721,7 @@ export class InkSurface {
       this.scheduleWet();
       return;
     }
+    for (const sample of samples) box = this.extendInlineInk(box, sample);
     // Keeping a sample is cheap and happens at once; outlining the stroke is
     // not, so it waits for the next frame (`scheduleWet`), once however many
     // moves came in meanwhile.
@@ -11643,6 +11752,7 @@ export class InkSurface {
       return;
     }
     this.cancelCircleHold();
+    box = this.extendInlineInk(box, sample);
     this.finishStroke(box, { ...sample, ...this.toPage(box, sample) });
   }
 
@@ -15174,6 +15284,9 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     this.syncSelectionOverlay();
   }
 
+  /** A Beautify is asking or writing on this surface (`beautifySelection`). */
+  private beautifying = false;
+
   /**
    * The selection, as far as it is still on its page. Undo, a reload or a
    * host command can take elements away; what is gone is dropped here, and
@@ -15873,9 +15986,43 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
       ? this.translateAction(sel.pageId, heading, highlighted, { fromPdf: true })
       : this.translateAction(sel.pageId, heading, boxText, { textBox: loneBox });
     if (translate) actions.push(translate);
+    // A lone text box in the writer's hand, first under Turn into (write-in-hand.ts).
+    const toHand = this.callbacks.onWriteInHand;
+    if (
+      loneBox &&
+      boxText &&
+      toHand &&
+      !this.callbacks.isLocked?.() &&
+      this.callbacks.canWriteInHand?.(loneBox)
+    ) {
+      actions.push({
+        id: "to-hand",
+        icon: "signature",
+        label: t("surface.selectionBar.handwriting"),
+        group: "turn",
+        submenu: TURN_INTO,
+        // The box stays selected and its frame pulses while the writer works, as Beautify's does.
+        run: () => {
+          this.selectionFrameEl.addClass("is-working");
+          void toHand(sel.pageId, loneBox.id).finally(() =>
+            this.selectionFrameEl.removeClass("is-working"),
+          );
+        },
+      });
+    }
     // The word check's card, for any word, underlined or not.
     const correct = this.correctWordAction(index, sel.strokes);
     if (menu.handwriting && correct) actions.push(correct);
+    // Beautify: the words it can rewritten in the writer's hand, every line tidied (design rulings).
+    if (menu.handwriting && sel.strokes.some((stroke) => stroke.tool === "pen" && !stroke.shape)) {
+      actions.push({
+        id: "beautify",
+        icon: "brush-cleaning",
+        label: t("surface.selectionBar.beautify"),
+        group: "edit",
+        run: () => void this.beautifySelection(),
+      });
+    }
     if (menu.handwriting && heading && index >= 0 && this.callbacks.onAddSection) {
       const add = this.callbacks.onAddSection;
       actions.push({
@@ -16458,6 +16605,9 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
       ? this.correctWordAction(index, [press.ink], { group: "press", ...inBar })
       : null;
     if (correct) actions.unshift(correct);
+    // Beside Correct: beautify the line that word is on.
+    const beautifyLine = page && press.ink ? this.beautifyLineAction(page, press.ink) : null;
+    if (beautifyLine) actions.splice(correct ? 1 : 0, 0, beautifyLine);
     actions.push(
       {
         id: "text-here",
@@ -19401,6 +19551,183 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     this.syncTextBoxes();
     this.syncSelectionOverlay();
     this.changed([sel.pageId]);
+  }
+
+  /**
+   * Beautify the selection (design rulings, 2026-11-24): the words the
+   * writer model can, rewritten in the writer's own hand (view/neaten.ts),
+   * and every line tidied, as one undo step. Where nothing can be rewritten
+   * (no model or practice sheet here, no word read surely) the lines are
+   * only tidied. The frame shows it is working; leaving the selection, or
+   * any edit meanwhile, ends the work with nothing changed.
+   */
+  private async beautifySelection(): Promise<void> {
+    const sel = this.liveSelection();
+    const page = sel && this.doc.pages.find((candidate) => candidate.id === sel.pageId);
+    // One at a time: a second, while the first asks or writes, would lose its lasso to the first.
+    if (!sel || !page || this.groupDrag || this.callbacks.isLocked?.() || this.beautifying) return;
+    const run = this.callbacks.onNeaten;
+    // No writer on this device (or none to be had): tidy at once.
+    if (!run || this.callbacks.canNeaten?.() === false) {
+      this.tidySelection();
+      return;
+    }
+    const latest = this.history.latest;
+    const chosen = new Set(sel.strokes);
+    // `liveSelection` makes a new object each time: compare what is selected, not the object.
+    // Once Beautify asks about words, a tap that closes a card (and the selection) skips that
+    // word; only an edit stops it.
+    let asked = false;
+    // Another notebook in this view, or this one read again from disk, is never written to.
+    const doc = this.doc;
+    const stop = (): boolean => {
+      if (
+        this.doc !== doc ||
+        !doc.pages.includes(page) ||
+        this.history.latest !== latest ||
+        this.groupDrag !== null ||
+        this.callbacks.isLocked?.() === true
+      )
+        return true;
+      if (asked) return false;
+      const now = this.selection;
+      return (
+        !now ||
+        now.pageId !== sel.pageId ||
+        now.strokes.length !== chosen.size ||
+        !now.strokes.every((stroke) => chosen.has(stroke))
+      );
+    };
+    const strokes = page.strokes.filter((stroke) => !isMirror(stroke));
+    this.selectionFrameEl.addClass("is-working");
+    this.beautifying = true;
+    let outcome: NeatenOutcome;
+    try {
+      outcome = await run({
+        pageId: page.id,
+        strokes,
+        selected: new Set(sel.strokes.map((stroke) => stroke.id)),
+        rules: writingLines(page.backdrop, page.geometry),
+        pageWidth: page.geometry.width,
+        stop,
+        asking: () => {
+          asked = true;
+        },
+      });
+    } finally {
+      this.selectionFrameEl.removeClass("is-working");
+      this.beautifying = false;
+    }
+    if (outcome.kind === "stopped" || stop()) return;
+    const command =
+      outcome.kind === "done"
+        ? neatenCommandFor(page.id, strokes, outcome.edit, outcome.style, () =>
+            this.strokeIds.next(),
+          )
+        : null;
+    // Nothing rewritten: the lines are tidied, as Tidy alone did.
+    if (!command) {
+      this.tidySelection();
+      return;
+    }
+    this.clearSelection();
+    this.history.push(this.doc, command);
+    this.strokeIndex.refreshPages(this.doc.pages, [page.id]);
+    this.renderer?.invalidatePage(page.id);
+    this.renderDry();
+    this.changed([page.id]);
+  }
+
+  /**
+   * Tidy the selected handwriting (`ink/tidy.ts`): nothing is read and nothing
+   * is redrawn, the strokes are only moved, so no word can change. The hand
+   * it tidies toward is measured from the whole page, and on ruled paper the
+   * lines are set on the rules. One undo step; the selection stays.
+   */
+  private tidySelection(): void {
+    const sel = this.liveSelection();
+    if (!sel || this.groupDrag || this.callbacks.isLocked?.()) return;
+    if (!this.tidyStrokes(sel.pageId, sel.strokes)) return;
+    // The loop was drawn round the ink as it stood; the frame now follows the tidied ink.
+    this.selectionOutline = null;
+    this.syncSelectionOverlay();
+  }
+
+  /**
+   * Tidy the lines holding these strokes toward the hand measured from the
+   * whole page (`tidySelection`, and the press menu's Tidy for a held word's
+   * line). The rest of the page's ink is given too, held where it is, so a
+   * tidied line keeps clear of its neighbours and an underline or highlight
+   * on it follows. Mirrors of joined pages are left to their owners. One undo
+   * step. Tidy the user asked for: steeper lines are levelled than an
+   * automatic tidy would (design rulings, 2026-11-24). When nothing moves far
+   * enough to be seen, nothing changes and a notice says so. False then.
+   */
+  private tidyStrokes(pageId: string, strokes: readonly Stroke[]): boolean {
+    const page = this.doc.pages.find((candidate) => candidate.id === pageId);
+    const box = this.boxForPage(pageId);
+    if (!page || !box) return false;
+    const own = page.strokes.filter((stroke) => !isMirror(stroke));
+    const result = tidyInk(own, {
+      profile: measureHand(own),
+      rules: writingLines(page.backdrop, page.geometry),
+      only: new Set(strokes.filter((stroke) => !isMirror(stroke)).map((stroke) => stroke.id)),
+      maxLevelSlope: ASKED_LEVEL_SLOPE,
+    });
+    const changes = own.flatMap((stroke) => {
+      const pts = result.pts.get(stroke.id);
+      return pts ? [{ stroke, pts }] : [];
+    });
+    if (changes.length === 0 || !result.seen) {
+      new Notice(t("surface.notice.nothingToBeautify"));
+      return false;
+    }
+    const moved = changes.map((change) => change.stroke);
+    const before = moved.map(strokeBounds).reduce<Bounds | null>(unionBounds, null);
+    this.history.push(this.doc, new SetStrokePoints(pageId, changes));
+    // The index files a stroke where it stood; a tidied line moved.
+    this.strokeIndex.refreshPages(this.doc.pages, [pageId]);
+    const after = moved.map(strokeBounds).reduce<Bounds | null>(unionBounds, null);
+    const region = unionBounds(before, after);
+    if (region) this.renderer?.invalidateRegion(box.index, region);
+    this.renderDry();
+    this.changed([pageId]);
+    return true;
+  }
+
+  /**
+   * The press menu's Beautify, beside Correct: the line the held word is on.
+   * Null when the ink is on no line of running text (`lineOfStroke`).
+   */
+  private beautifyLineAction(page: Page, ink: Stroke): SelectionAction | null {
+    if (ink.shape || ink.tool !== "pen" || isMirror(ink) || this.callbacks.isLocked?.())
+      return null;
+    const ids = lineOfStroke(
+      page.strokes.filter((stroke) => !isMirror(stroke)),
+      ink.id,
+      ASKED_LEVEL_SLOPE,
+    );
+    if (!ids) return null;
+    return {
+      id: "beautify-line",
+      icon: "brush-cleaning",
+      label: t("surface.selectionBar.beautifyLine"),
+      group: "press",
+      // A symbol in the bar, beside Correct, so the bar keeps to its three words.
+      bar: true,
+      menu: "none",
+      run: () => {
+        // The line is selected and beautified as a lasso of it would be; its frame shows the work.
+        const line = new Set(ids);
+        this.clearSelection();
+        this.select(page.id, {
+          strokes: page.strokes.filter((stroke) => line.has(stroke.id)),
+          images: [],
+          textBoxes: [],
+        });
+        void this.beautifySelection();
+      },
+    };
   }
 
   /** Abandon a selection drag without committing it (a reload, an undo, a tool change). */

@@ -23,6 +23,8 @@ import {
   type ModelAsset,
   type ModelFile,
   type OlderFile,
+  compareVersions,
+  filesOfVersion,
   isBusy,
   nextRange,
   storedVersions,
@@ -490,11 +492,17 @@ export class AssetStore {
     await deps.rename(temp, name);
   }
 
-  /** Other versions of the main file: superseded once the current model is in. */
+  /**
+   * Older versions, with their files: superseded once the current model is
+   * in. A newer version (another device's newer build, by sync) stays: it
+   * is that device's, and removing it would send it downloading again.
+   */
   private async removeOlder(): Promise<void> {
     const names = await this.names();
     for (const other of storedVersions(this.asset, names).others) {
-      await this.deps.remove(other.file).catch(() => {});
+      if (compareVersions(other.version, this.asset.version) > 0) continue;
+      for (const name of filesOfVersion(this.asset, names, other))
+        await this.deps.remove(name).catch(() => {});
     }
   }
 
@@ -507,7 +515,8 @@ export class AssetStore {
     for (const file of this.asset.files)
       if (names.has(file.name) && !shared.has(file.name)) await this.deps.remove(file.name);
     for (const other of storedVersions(this.asset, [...names]).others)
-      await this.deps.remove(other.file).catch(() => {});
+      for (const name of filesOfVersion(this.asset, [...names], other))
+        await this.deps.remove(name).catch(() => {});
     this.dropPartial();
     this.emit({ type: "removed" });
   }

@@ -547,6 +547,9 @@ describe("the rows", () => {
         "Show notebook folders as notebooks",
         "toggle:folderNotebooks",
       ],
+      ["notes", "Ink inside Markdown notes", "Where Handwrite here saves", "render"],
+      ["notes", "Ink inside Markdown notes", "Notebook for every sketch", "render"],
+      ["notes", "Ink inside Markdown notes", "How to embed a notebook", "render"],
       ...SHORTCUT_ROWS.map(([heading, name, what]) => ["shortcuts", heading, name, what]),
       ...READING_ROWS.map(([name, what]) => ["reading", "Your handwriting", name, what]),
       ...MODEL_ROWS.map(([name, what]) => ["reading", MODELS, name, what]),
@@ -1838,13 +1841,14 @@ describe("the section list", () => {
   const states = (items: InstanceType<typeof FakeEl>[]) =>
     items.map((item) => item.find("goodobsidian-nav-state")?.textContent);
 
-  it("shows the eight sections, General first on a fresh install", () => {
+  it("shows the nine sections, General first on a fresh install", () => {
     const { tab } = makeTab(makePlugin());
     const { items } = list(tab);
     expect(items.map((item) => item.find("goodobsidian-nav-name")?.text)).toEqual([
       "General",
       "Writing",
       "Pages",
+      "Embeds in notes",
       "Shortcuts",
       "Reading and voice",
       "AI",
@@ -1853,7 +1857,7 @@ describe("the section list", () => {
     ]);
     expect(items.map((item) => item.attrs["aria-current"])).toEqual([
       "true",
-      ...Array.from({ length: 7 }, () => undefined),
+      ...Array.from({ length: 8 }, () => undefined),
     ]);
     expect((tab.containerEl as unknown as InstanceType<typeof FakeEl>).attrs["data-section"]).toBe(
       "general",
@@ -1868,6 +1872,7 @@ describe("the section list", () => {
       "English",
       "Highlighter · 4.1 mm",
       "Light · 900 px",
+      "Notebook per note",
       "",
       "VoiceHandwriting",
       "AI not set up",
@@ -1877,14 +1882,14 @@ describe("the section list", () => {
     expect(items[1].find("goodobsidian-status-swatch")?.style.backgroundColor).toBe(
       plugin.settings.defaultColor,
     );
-    expect(items[4].findAll("goodobsidian-status-part").map((p) => [...p.classes])).toEqual([
+    expect(items[5].findAll("goodobsidian-status-part").map((p) => [...p.classes])).toEqual([
       ["goodobsidian-status-part", "is-ready"],
       ["goodobsidian-status-part", "is-ready"],
     ]);
     await tab.setControlValue("defaultSize", "8");
     expect(states(items)[1]).toBe("Highlighter · 6.6 mm");
     plugin.shortcuts.set("edit.undo", { type: "key", key: "u", mods: [] }, "press");
-    expect(states(list(makeTab(plugin).tab).items)[3]).toBe("1 changed");
+    expect(states(list(makeTab(plugin).tab).items)[4]).toBe("1 changed");
   });
 
   it("shows a tapped section, remembers it, and opens it over the list on a narrow pane", () => {
@@ -2290,5 +2295,38 @@ describe("the learned handwriting model", () => {
     expect(plugin.files.get(MODEL)).toBe("old");
     expect(plugin.files.get(PREVIOUS)).toBe("new");
     expect(plugin.settings.grape2Model).toBe(older);
+  });
+});
+
+describe("Embeds in notes (PR #312)", () => {
+  it("is a section the stylesheet shows, as every section must be", () => {
+    const css = readFileSync(join(__dirname, "../../styles.css"), "utf8").replace(/\s+/g, " ");
+    for (const section of SETTINGS_SECTIONS) {
+      expect(css, section).toContain(
+        `[data-section="${section}"] > .setting-group.goodobsidian-sec-${section}`,
+      );
+    }
+  });
+
+  it("holds the handwriting rows, which read and write the same keys", async () => {
+    const plugin = makePlugin({ settingsOpen: ["notes"], handwriteBlocks: "ask" });
+    const { tab } = makeTab(plugin);
+    const notes = inSection(rows(tab), "notes").map((r) => r.def.name);
+    expect(notes).toEqual([
+      "Where Handwrite here saves",
+      "Notebook for every sketch",
+      "How to embed a notebook",
+    ]);
+    const row = renderRow(named(rows(tab), "Where Handwrite here saves"));
+    expect(row.dropdowns[0].value).toBe("ask");
+    expect(Object.keys(row.dropdowns[0].options)).toEqual(["note", "ask", "one"]);
+    await row.dropdowns[0].pick("one");
+    expect(plugin.settings.handwriteBlocks).toBe("one");
+    expect(plugin.settings.handwriteBlocksChosen).toBe(true);
+    // The second row only while every sketch goes to one notebook.
+    const second = named(rows(tab), "Notebook for every sketch");
+    expect(typeof second.visible === "function" && second.visible()).toBe(true);
+    plugin.settings.handwriteBlocks = "note";
+    expect(typeof second.visible === "function" && second.visible()).toBe(false);
   });
 });
