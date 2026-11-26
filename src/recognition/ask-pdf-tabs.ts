@@ -233,6 +233,16 @@ export function withReadingNotes(
   });
 }
 
+/**
+ * What a question's reading note is kept under: its chat (a new or loaded
+ * chat has another), its place among the chat's questions and its text.
+ * The session rebuilds its turn objects for each request, so identity
+ * cannot be the key.
+ */
+export function questionKey(chat: number, index: number, text: string): string {
+  return `${chat}\n${index}\n${text}`;
+}
+
 /** Whether another tab has `tab`'s label. */
 function sameLabel(tabs: readonly AskPdfTab[], tab: AskPdfTab): boolean {
   return tabs.some((other) => other !== tab && other.label === tab.label);

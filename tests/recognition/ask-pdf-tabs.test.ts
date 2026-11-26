@@ -11,6 +11,7 @@ import {
   pdfTabText,
   pdfTabsPrompt,
   READING_TEXT_CHARS,
+  questionKey,
   readingNote,
   unknownTabText,
   withReadingNotes,
@@ -216,6 +217,14 @@ describe("reading notes", () => {
     expect(sent[0]?.text).toBe("[note]\nexplain this slide");
     expect(sent[2]).toBe(turns[2]);
     expect(turns[0]?.text).toBe("explain this slide");
+  });
+
+  it("keeps the same question of another chat apart (a new chat takes its own slide)", () => {
+    expect(questionKey(1, 0, "explain this slide")).not.toBe(
+      questionKey(2, 0, "explain this slide"),
+    );
+    expect(questionKey(1, 0, "why?")).not.toBe(questionKey(1, 1, "why?"));
+    expect(questionKey(1, 0, "why?")).toBe(questionKey(1, 0, "why?"));
   });
 
   it("never goes on an answer", () => {
