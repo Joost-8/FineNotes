@@ -6828,12 +6828,13 @@ export class InkSurface {
     if (!this.renderer || this.renderer.isTransient) return;
     const held = this.pinch !== null || this.pressing;
     const { remaining, speed } = this.scroller;
+    const still = { complete, held, zooming: zooming || this.zoomTransient };
+    // The cheap questions first: this runs on every moving frame.
+    if (!coasting({ remaining, speed, pdf: this.fixedPages, ...still })) return;
     const pages = this.pagesToTurnTo();
     // Every page the prefetch would make tiles of, as the renderer itself picks them.
     const near = this.renderer.prefetchPages(this.doc.pages.length, pages);
-    const pdf = this.fixedPages || near.some((i) => this.doc.pages[i]?.backdrop.kind === "pdf");
-    const still = { complete, held, pdf, zooming: zooming || this.zoomTransient };
-    if (!coasting({ remaining, speed, ...still })) return;
+    if (near.some((i) => this.doc.pages[i]?.backdrop.kind === "pdf")) return;
     const budget = this.pace.budget(PREFETCH_BUDGET_MS);
     this.renderer.prefetch(this.doc, this.inkPressure, budget, pages, true);
   }

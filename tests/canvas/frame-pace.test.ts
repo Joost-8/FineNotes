@@ -140,10 +140,22 @@ describe("FramePace with frames that start late", () => {
     expect(pace.hz).toBeCloseTo(60, 0);
   });
 
-  it("budgets by the real frame: 3 ms of a 6 ms budget at 120 Hz, not 2.5", () => {
+  it("leaves the budgets on the short end of the gaps, as they were tuned", () => {
     const pace = new FramePace();
     feed(pace, repeat([T, T + 1.4, T - 1.4], 60));
-    expect(pace.budget(6)).toBeCloseTo(3, 1);
+    // The rate is read right, and what a frame may spend has not changed:
+    // 6 ms x (8.33 - 1.4) / 16.67, as before the rate was corrected.
+    expect(pace.hz).toBeCloseTo(120, 0);
+    expect(pace.budget(6)).toBeCloseTo((6 * (T - 1.4)) / (1000 / 60), 2);
+    expect(pace.budget(6)).toBeLessThan(2.6);
+  });
+
+  it("a 60 Hz tablet whose frames start late keeps its budgets too", () => {
+    const pace = new FramePace();
+    // An iPad Air read 16.0 ms at the short end of a 16.6 ms frame.
+    feed(pace, repeat([16.6, 17.2, 16.0, 16.6, 16.6, 17.2, 16.0, 16.6, 16.6, 16.6], 60));
+    expect(pace.frameMs).toBeCloseTo(16.6, 1);
+    expect(pace.budget(6)).toBeCloseTo((6 * 16.0) / (1000 / 60), 2);
   });
 });
 
@@ -156,7 +168,6 @@ describe("FramePace with frames that start almost half a frame late", () => {
     const pace = new FramePace();
     feed(pace, repeat([T + 3.8, T - 3.8, T, T, T, T, T, T, T, T], 60));
     expect(pace.hz).toBeCloseTo(120, 0);
-    expect(pace.budget(6)).toBeCloseTo(3, 1);
   });
 
   it("reads 120 Hz when two frames in ten start 3.8 ms late", () => {

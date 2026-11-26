@@ -45,7 +45,7 @@ const STRAY = 0.45;
  * decides nothing. But the short end itself is not the tick. A frame that
  * starts late is followed by a gap that much shorter, and an iPad Pro whose
  * frames often started a millisecond late read 143 Hz at 120 (FineNotes#201),
- * which cut every budget by a seventh and counted late frames as missed.
+ * so the overlay counted late frames as missed.
  *
  * So the short end only finds the single-tick gaps; their middle says about
  * how long a tick is; and the answer is the time all the gaps took over the
@@ -67,10 +67,18 @@ export function frameLength(gaps: readonly number[]): number {
   return ticks > 0 ? time / ticks : short;
 }
 
+/** The short end of the gaps: the tenth of them from the shortest, ms. */
+export function shortEnd(gaps: readonly number[]): number {
+  const sorted = [...gaps].sort((a, b) => a - b);
+  return sorted[Math.floor(SHARE * (sorted.length - 1))];
+}
+
 export class FramePace {
   private readonly gaps: number[] = [];
   private last = Number.NaN;
   private length = DEFAULT_FRAME_MS;
+  /** What the budgets are sized by: see {@link budget}. */
+  private short = DEFAULT_FRAME_MS;
 
   /**
    * A frame ran at `t` (the frame callback's time, ms). `follows` says it
@@ -85,6 +93,7 @@ export class FramePace {
     if (this.gaps.length > WINDOW) this.gaps.shift();
     if (this.gaps.length < ENOUGH) return;
     this.length = frameLength(this.gaps);
+    this.short = shortEnd(this.gaps);
   }
 
   /** The display's frame length, ms. */
@@ -100,9 +109,17 @@ export class FramePace {
   /**
    * A budget of `at60` ms in a 60 Hz frame, as the same share of this
    * display's frame; never more than `at60`, never under {@link MIN_BUDGET_MS}.
+   *
+   * Sized by the short end of the gaps, as it has been since the budgets were
+   * tuned on devices, not by {@link frameMs}: the short end reads a frame a
+   * little short wherever frames start late (16.0 ms for 16.6 on an iPad Air),
+   * so going over to the true length would lengthen every budget there by a
+   * few per cent. Measured on that iPad, pinching into a 1,114-page PDF: 3, 5
+   * and 6 frames over 34 ms with the longer budgets, 4, 4 and 4 with these.
+   * Changing what a frame may spend is its own decision, with its own numbers.
    */
   budget(at60: number): number {
-    const scaled = (at60 * this.length) / DEFAULT_FRAME_MS;
+    const scaled = (at60 * this.short) / DEFAULT_FRAME_MS;
     return Math.min(at60, Math.max(Math.min(at60, MIN_BUDGET_MS), scaled));
   }
 }
