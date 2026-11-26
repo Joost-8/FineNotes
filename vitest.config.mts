@@ -156,6 +156,7 @@ export default defineConfig({
         "src/view/pointer-hud.ts",
         "src/view/surface-size.ts",
         "src/view/write-hold.ts",
+        "src/view/quiet-work.ts",
         "src/view/pdf-worker-text.ts",
         "src/view/background-save.ts",
         "src/view/view-rest.ts",

@@ -228,6 +228,7 @@ import {
 } from "../model/snippet";
 import { RenameModal } from "./rename-modal";
 import { WriteHold } from "./write-hold";
+import { QuietWork } from "./quiet-work";
 import { PEN_OPTIONS_RETURN_MS, returnsAfterLift, tucksOnWrite } from "./tool-return";
 import { VaultBackdropRenderer } from "./backdrop-renderer";
 import { VaultImageCache } from "./image-cache";
@@ -927,6 +928,8 @@ export class InkView extends TextFileView {
   private missedReported = false;
   /** Saves and PDF rasterising wait while the pen writes (write-hold.ts). */
   private readonly writeHold = new WriteHold();
+  /** Bookkeeping a lift sets off, done once the pen rests (#275). */
+  private readonly quietWork = new QuietWork();
   private quietTimer = 0;
   /** "Until the pen lifts": brings back the pen's options once the pen has rested. */
   private optionsReturnTimer = 0;
@@ -1870,6 +1873,7 @@ export class InkView extends TextFileView {
    */
   private penQuiet(): void {
     this.quietTimer = 0;
+    this.quietWork.flush();
     this.pdfCache?.setHeld(false);
     this.pdfText?.setHeld(false);
     if (!this.writeHold.savePending) return;
@@ -1983,6 +1987,7 @@ export class InkView extends TextFileView {
     this.wordPopover = null;
     window.clearTimeout(this.quietTimer);
     this.quietTimer = 0;
+    this.quietWork.clear();
     window.clearTimeout(this.devicePagesTimer);
     this.devicePagesTimer = 0;
     window.clearTimeout(this.optionsReturnTimer);
@@ -5148,9 +5153,20 @@ export class InkView extends TextFileView {
         onEditGraph: (pageId, graph) => this.editGraph(pageId, graph),
         onEquation: (pageId, at, equation) => this.openEquation(pageId, at, equation),
         onChange: (pages) => {
-          if (this.surface) this.sidebar?.setDocument(this.surface.document);
-          // Undoing or redoing "Convert to notebook" flips `single`.
-          this.syncSingle();
+          // The panel's thumbnails follow once the pen rests: painted between
+          // two quick letters, they cost the second one its first samples (#275).
+          const writing = this.writeHold.writing(performance.now());
+          // Held for the pen: once it has rested, the panel paints at once,
+          // not after another debounce that would land in the next letter.
+          this.quietWork.run("sidebar", writing, () => {
+            if (this.surface) this.sidebar?.setDocument(this.surface.document, writing);
+          });
+          // A line copied or erased on a practice sheet: its Learn button
+          // counts it, once the pen rests.
+          if (this.isPractice) this.quietWork.run("learn", writing, () => this.syncLearnButton());
+          // Undoing or redoing "Convert to notebook" flips `single`. Only
+          // then: it re-reads every practice sheet, and lays out the panel (#275).
+          if (this.chromeKey() !== this.syncedChrome) this.syncSingle();
           // …and undo can take a recording off the note, or bring one back.
           this.audio?.syncChrome();
           this.scheduleAutoTranscription(pages ?? []);
@@ -5290,8 +5306,6 @@ export class InkView extends TextFileView {
         onSuggestedLink: (index, strokeIds, target) => this.linkInk(index, strokeIds, null, target),
         onHistoryChange: (canUndo, canRedo) => {
           this.toolbar?.setHistoryState(canUndo, canRedo);
-          // A line copied or erased on a practice sheet: its Learn button counts it.
-          this.syncLearnButton();
         },
         onAddPageRequested: (afterIndex) => this.addPage(afterIndex, true),
         // Pulled past the last page: a blank page on the last page's paper,
@@ -6518,7 +6532,15 @@ export class InkView extends TextFileView {
    * replaced or changed, because one leaf can load a single page and then a
    * notebook, and "Convert to notebook" (or its undo) flips it in place.
    */
+  /** What {@link syncSingle} depends on, as last synced; an edit re-syncs only when it changed. */
+  private syncedChrome = "";
+
+  private chromeKey(): string {
+    return `${this.isSinglePage}|${this.isBoard}|${this.isPractice}|${this.onPdfTab}|${this.guard.locked}`;
+  }
+
   private syncSingle(): void {
+    this.syncedChrome = this.chromeKey();
     const single = this.isSinglePage;
     const practice = this.isPractice;
     this.toolbar?.setAddPageVisible(!single && !practice);
