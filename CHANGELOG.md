@@ -24,7 +24,7 @@ extracted from the matching section of this file by `release.yml`.
 ### Added
 
 - **Help improve Grape: share new items automatically.** The consent has a
-  box (unticked) to send later practice lines and corrections as they are
+  box (ticked unless you untick it) to send later practice lines and corrections as they are
   made; it is also under ⋯ in settings. Without it, FineNotes reminds you
   every 20 new items instead of waiting for you to open settings.
 - **Companion PDF** ([#310](https://github.com/Joost-8/FineNotes/pull/310), thanks @bendi087): a notebook can keep a PDF of itself up to date, made when it closes, when it has been left for another tab for a while, or with Update now (FineNotes rewrites this PDF: marks made in it elsewhere are not kept); turn it on in the notebook's settings, or after exporting the whole notebook as a PDF.

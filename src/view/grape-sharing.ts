@@ -257,7 +257,10 @@ export class GrapeSharing implements SharingFeature {
     });
     help.addEventListener("click", (event) => {
       close(event);
-      if (this.ledger) void this.send(agree(this.ledger, Date.now(), randomBytes), pending, []);
+      // Help is the consent's default: later items go automatically too (its terms say so).
+      if (this.ledger) {
+        void this.send(agree(this.ledger, Date.now(), randomBytes, true), pending, []);
+      }
     });
   }
 
@@ -412,8 +415,9 @@ export class GrapeSharing implements SharingFeature {
         this.host,
         pending,
         changes,
-        // Ticked only for someone who chose it and has not stopped since.
-        ledger.consent !== null && ledger.auto.on,
+        // Ticked by default (Joost, 2026-11-27); unticked only for someone
+        // still sharing who turned it off.
+        !(ledger.consent !== null && ledger.auto.at > 0 && !ledger.auto.on),
         (auto) => {
           acted = true;
           void this.saveLedger(agreed(auto))
@@ -703,8 +707,8 @@ export function drawRemindCard(
 /**
  * Asking once: what sharing is, in plain words, and one choice. Share is the
  * agreement, and Review first shows every item before anything goes (Joost,
- * 2026-11-16). One box, unticked: whether later items go by themselves or
- * wait for Share (Joost, 2026-11-26).
+ * 2026-11-16). One box, ticked by default: whether later items go by
+ * themselves or wait for Share (Joost, 2026-11-26 and 11-27).
  */
 export class SharingConsentModal extends Modal {
   private auto: boolean;

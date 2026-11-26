@@ -37,10 +37,11 @@ first**, which shows every item, its ink drawn as it will be sent and the
 text under it, and lets you keep any of them; a kept item is never offered
 again. Later items (new practice lines, corrections and equations) are sent
 when you press **Share N new** in settings, or after reviewing them from its
-⋯ menu. If you tick **Share new items automatically** when you agree (or
-choose it later under ⋯), later items are sent as they are made, without
-being shown first; untick it under ⋯ at any time. Otherwise FineNotes
-reminds you every 20 new items, and sends nothing until you press Share.
+⋯ menu. **Share new items automatically** is ticked when you agree, unless
+you untick it (in the consent, or later under ⋯): while it is on, later
+items are sent as they are made, without being shown first. The **Help**
+button on the invite agrees with it on. With it off, FineNotes reminds you
+every 20 new items, and sends nothing until you press Share.
 
 **Each item holds:** the pen strokes (their shape, pressure and timing),
 moved so they start at the top left, so where on a page you wrote is not
