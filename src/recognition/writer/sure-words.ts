@@ -207,6 +207,23 @@ export function unsureCandidates(lines: readonly LineChoice[]): Question[] {
 }
 
 /**
+ * Words the writer has answered about before, on any page (personal-words.ts),
+ * are sure enough not to be asked about again: `sure` with 1 for each word of
+ * `read` whose core is one of `answered` (lower case). Whether it is written
+ * still goes by the usual bars and the read-back.
+ */
+export function sureOfAnswered(
+  read: readonly string[],
+  sure: readonly number[],
+  answered: ReadonlySet<string>,
+): number[] {
+  return sure.map((s, i) => {
+    const word = plainWord(wordCore(read[i] ?? ""));
+    return word !== null && answered.has(word) ? 1 : s;
+  });
+}
+
+/**
  * After the questions: which words of a line are written. A word asked about
  * and not answered stays the writer's ink; an answered one is sure by now;
  * every other word with ink is written as read, and the read-back keeps one

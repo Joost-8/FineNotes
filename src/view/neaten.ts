@@ -73,6 +73,7 @@ import {
   applyAnswers,
   joinPunctuation,
   pickQuestions,
+  sureOfAnswered,
   sureWords,
   unsureCandidates,
   writeUnasked,
@@ -100,7 +101,12 @@ export interface NeatenHost {
   models: ModelRegistry;
   handwriting: HandwritingReader;
   /** The word list, as the reader gets it; null without one. */
-  lexicon(): { version: number; words: () => string[] } | null;
+  lexicon(): {
+    version: number;
+    words: () => string[];
+    /** The writer's own answered words (personal-words.ts), lower case. */
+    answered?: () => ReadonlySet<string>;
+  } | null;
   /** The writer's answers about words on a page (corrections.json). */
   answers(note: string, pageId: string): Promise<WordAnswer[]>;
   learningHost(): LearningHost;
@@ -346,14 +352,17 @@ export class NeatenService {
     const profile = measureHand(request.strokes.filter((s) => s.tool === "pen" && !s.shape));
     if (lines.length === 0 || !profile) return { kind: "tidy" };
     const lexicon = this.host.lexicon();
+    // The list holds the writer's answered words too (personal-words.ts), from every page.
     const listed = lexicon ? new Set(lexicon.words().map((w) => w.toLowerCase())) : null;
     const readings = await this.host.handwriting.readForNeaten(lines, lexicon);
     const jobsWith = async () => {
       const answers = request.note ? await this.host.answers(request.note, request.pageId) : [];
+      // Read again after the questions: the answers just given are in it.
+      const everAnswered = this.host.lexicon()?.answered?.() ?? new Set<string>();
       return lines.flatMap((strokes, li) => {
         // For a held word only its own letters must be ones the model has (`workWord`).
         const lineWritable = request.word === undefined ? writable : () => true;
-        const job = this.jobOf(strokes, readings[li], lineWritable, listed, answers);
+        const job = this.jobOf(strokes, readings[li], lineWritable, listed, answers, everAnswered);
         return job ? [job] : [];
       });
     };
@@ -460,6 +469,7 @@ export class NeatenService {
     writable: (ch: string) => boolean,
     listed: ReadonlySet<string> | null,
     answers: readonly WordAnswer[],
+    everAnswered: ReadonlySet<string> = new Set(),
   ): NeatenJob | null {
     if (!reading || !reading.wordStrokes || !reading.chars) return null;
     const read = wordsOf(reading.text);
@@ -484,8 +494,12 @@ export class NeatenService {
       answered.known,
       inList,
     );
-    const sure = wordSureness(text, reading.greedy, reading.chars, inList).map((s, i) =>
-      answered.known.has(i) ? 1 : s,
+    const sure = sureOfAnswered(
+      answered.words,
+      wordSureness(text, reading.greedy, reading.chars, inList).map((s, i) =>
+        answered.known.has(i) ? 1 : s,
+      ),
+      everAnswered,
     );
     const joined = joinPunctuation({ words: answered.words, ink, rewrite, sure });
     return {
