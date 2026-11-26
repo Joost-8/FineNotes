@@ -5201,10 +5201,6 @@ input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
   color: var(--text-muted);
 }
 
-.goodobsidian-template-card.is-selected {
-  border-color: var(--interactive-accent);
-}
-
 .goodobsidian-template-card.is-selected .goodobsidian-template-name {
   color: var(--interactive-accent);
 }
