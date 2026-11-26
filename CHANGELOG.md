@@ -146,6 +146,14 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- **S Pen side button on tablets that report no hovering**
+  ([discussion #209](https://github.com/Joost-8/FineNotes/discussions/209)).
+  On some tablets (a Galaxy Tab S10 Ultra), Obsidian passes the hovering
+  pen on to FineNotes as nothing at all, so erasing on hover cannot work
+  there. Pressing the side button in the air still arrives, and it now gets
+  FineNotes ready for the pen touching down with the button held, so that
+  holding the button and writing erases. "Copy shape diagnostics" now says
+  whether your tablet reports the hovering pen (`penSeen`).
 - **Quick handwriting keeps its letters (#275).** A letter started soon
   after the last one could lose its first strokes or come out as a line,
   most of all on handwriting practice sheets and with the page sidebar

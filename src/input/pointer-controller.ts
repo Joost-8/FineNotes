@@ -35,11 +35,16 @@
  * moves with the side button held are a stroke of their own: the eraser's,
  * reported as one with the barrel's buttons, so the surface erases as for
  * any barrel stroke. Android's WebView shows the button only in those moves.
+ *
+ * Some WebViews send no hovering moves at all (`air-button.ts`): there the
+ * side button pressed in the air is a lone `contextmenu`, which arms the
+ * selection bridge so holding it and touching down still erases.
  */
 
 import { altitudeOf } from "../ink/tilt";
 import { endsFingerDrawing, fingerDrawRole, fingerWrites } from "./finger-draw";
 import { FingerGesture, type PinchInfo } from "./finger-gesture";
+import { HoverWitness, type HoverSummary } from "./air-button";
 import { HoverErase, type HoverStep, PenLog, type PenLogEvent } from "./hover-erase";
 import { MultiFingerTap, type TapReport } from "./multi-finger-tap";
 import { type PointerRole, roleOf } from "./palm-rejection";
@@ -189,6 +194,8 @@ export interface PointerControllerCallbacks {
   onPenReturned?(): void;
   /** An erase-on-hover pass opened, ended, or ended to start afresh, for the debug HUD. */
   onHoverErase?(kind: "start" | "end" | "restart"): void;
+  /** A `contextmenu` was taken for the side button in the air, with no hover (`air-button.ts`), for the debug HUD. */
+  onAirMenu?(): void;
 }
 
 /**
@@ -254,6 +261,8 @@ export class PointerController {
   private readonly hover = new HoverErase();
   /** The pen's recent hover and button events, for the diagnostics. */
   private readonly penLog = new PenLog();
+  /** What the pen has sent: hover or none, and the side button's `contextmenu`s (`air-button.ts`). */
+  private readonly witness = new HoverWitness();
   /** Route chosen for the active selection-bridge stroke. */
   private bridgeRoute: PressRoute = "ignore";
   /** A press of the side button in the air, held back until it is a click or a stroke. */
@@ -390,6 +399,7 @@ export class PointerController {
   private down(event: PointerEvent): void {
     if (event.pointerType === "pen") {
       this.penLog.note("pointerdown", event);
+      this.witness.down();
       // The pen touched down: the hovering pass is over, before the press begins.
       this.stopHover(event);
     }
@@ -463,6 +473,7 @@ export class PointerController {
     // Always heard, so a pen touching down knows its side button is held
     // (`pressOf`); reported as a click only when a click is wanted.
     const click = this.clicks.hover(event);
+    this.witness.hover(event.timeStamp, this.clicks.barrelHeld);
     this.selectBridge.setArmed(
       true,
       event.clientX,
@@ -563,6 +574,36 @@ export class PointerController {
     this.penLog.note(type, event);
   }
 
+  /**
+   * A `contextmenu` on the page, before anything else reads it: on a WebView
+   * that sends no hovering moves, the side button pressed in the air
+   * (`air-button.ts`). Then the selection bridge is armed where it came, as
+   * the hovering moves would have armed it, so touching down with the
+   * button still held erases (FineNotes#149). Android only: the bridge is
+   * attached nowhere else.
+   */
+  airMenu(event: {
+    pointerType?: string;
+    clientX: number;
+    clientY: number;
+    timeStamp: number;
+  }): void {
+    if (this.options.stylusSelectBridge?.() === false) return;
+    const air = this.witness.menu({
+      pointerType: event.pointerType ?? "",
+      timeStamp: event.timeStamp,
+      pressing: this.stroke !== null || this.held !== null || this.selectBridge.isActive,
+    });
+    if (!air) return;
+    this.selectBridge.setArmed(true, event.clientX, event.clientY, event.timeStamp, true);
+    this.listener.onAirMenu?.();
+  }
+
+  /** What the pen has sent since the note opened (`air-button.ts`), for the diagnostics. */
+  hoverSummary(): HoverSummary {
+    return this.witness.summary();
+  }
+
   /** The pen's recent hover and button events, oldest first (`hover-erase.ts`). */
   penReport(): ReturnType<PenLog["report"]> {
     return this.penLog.report();
@@ -610,6 +651,7 @@ export class PointerController {
       this.listener.onHoverErase?.("end");
     }
     this.clicks.touched();
+    this.witness.bridgeStroke();
     const { event, press } = this.bridgePress(pt);
     const route = this.options.route?.(event, press) ?? "draw";
     this.bridgeRoute = route;

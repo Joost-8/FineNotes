@@ -3596,6 +3596,13 @@ export class InkSurface {
         return;
       }
       const type = (event as Partial<PointerEvent>).pointerType;
+      // A WebView that sends no hovering moves: this may be the side button in the air (#209).
+      this.pointerInput?.airMenu({
+        pointerType: type,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        timeStamp: event.timeStamp,
+      });
       if (type === "pen") {
         const { buttons, button, timeStamp } = event;
         const pressure = (event as Partial<PointerEvent>).pressure ?? 0;
@@ -9472,6 +9479,9 @@ export class InkSurface {
     onHoverErase: (kind) => {
       if (this.debug) this.hud.mark(`hover-erase:${kind}`);
     },
+    onAirMenu: () => {
+      if (this.debug) this.hud.mark("air-button: bridge armed");
+    },
   };
 
   /**
@@ -11958,6 +11968,7 @@ export class InkSurface {
         pointers: this.diagSums,
         sideButton: this.barrel(),
         penHover: this.pointerInput?.penReport() ?? [],
+        penSeen: this.pointerInput?.hoverSummary() ?? null,
         keys: this.keyLog.report(),
         strokes: this.diagnostics,
       },
