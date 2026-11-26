@@ -14,6 +14,10 @@ extracted from the matching section of this file by `release.yml`.
   a word alone on its line included; the lasso's Beautify still does whole
   lines.
 
+- **Beautify keeps what it could get wrong.** Beautify now leaves single
+  letters and digits, words it is unsure of, and raised exponents in your own
+  handwriting instead of risking writing a different word.
+
 - **Help improve Grape: new terms (version 3).** Before a shared item is used
   to train Grape, its label may be checked against its ink by Claude, an AI by
   Anthropic: only a picture of the ink and its text are sent, and Anthropic
