@@ -74,6 +74,7 @@ import { NoteList } from "./note-list";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { NoteExtras } from "./note-extras";
 import { type NoteExportHost, shareMenu } from "./note-export";
+import { prefersReducedMotion } from "./motion";
 import type GoodObsidianPlugin from "../main";
 
 export const ICON_TEXT_NOTE = "notepad-text";
@@ -1167,7 +1168,7 @@ export class TextNoteView extends TextFileView {
       // A synthetic pointer cannot be captured.
     }
     const content = this.contentEl;
-    const still = content.win.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const still = prefersReducedMotion(content.win);
     const view = (): DOMRect => content.getBoundingClientRect();
     // The palette folds into one round token with the tool in hand, which follows the finger.
     const token = content.createDiv({

@@ -73,6 +73,7 @@ const { DEFAULT_SETTINGS, GoodObsidianSettingTab, shortcutList } =
 const { AUTO_RECOGNITION, SETTINGS_LINE_MAX, SETTINGS_SECTIONS } =
   await import("../../src/settings-data");
 const { ShortcutStore } = await import("../../src/view/shortcut-store");
+const { EINK_STORAGE_KEY, EinkScreen } = await import("../../src/view/eink-screen");
 const { SHORTCUT_ACTIONS } = await import("../../src/model/shortcut-bindings");
 const { t, useLanguage } = await import("../../src/i18n/translate");
 const { ShortcutsModal } = await import("../../src/ui/shortcuts-modal");
@@ -140,6 +141,15 @@ function makePlugin(overrides: Partial<Settings> = {}, keys: Record<string, stri
     settings,
     calls,
     keys: { secure: true },
+    // A device that has not said it is an e-ink one: Auto leaves the E-ink screen off.
+    eink: new EinkScreen({
+      load: () => deviceStorage.get(EINK_STORAGE_KEY) ?? null,
+      save: (choice) => {
+        deviceStorage.set(EINK_STORAGE_KEY, choice);
+      },
+      bodies: () => [],
+      apply: (on) => calls.push(`eink:${on}`),
+    }),
     shortcuts: new ShortcutStore({
       loadLocalStorage: (key: string) => deviceStorage.get(key) ?? null,
       saveLocalStorage: (key: string, value: string) => {
@@ -513,6 +523,7 @@ describe("the rows", () => {
       ["writing", "Stylus", "(block)", "render"],
       ["writing", "Stylus", "Pencil tilt", "toggle:pencilTilt"],
       ["writing", "Stylus", "Cursor over the page", "dropdown:penCursor"],
+      ["writing", "Stylus", "E-ink screen", "render"],
       ["writing", "Colours", "Custom colors", "render"],
       ["pages", "Paper", "Page appearance", "dropdown:pageAppearance"],
       ["pages", "Paper", "Paper width", "render"],
@@ -632,8 +643,11 @@ describe("the rows", () => {
     const { tab } = makeTab(makePlugin({ imageVendor: "openai" }));
     for (const { def, section } of rows(tab)) {
       if (!def.name || section === "nav" || DEFAULT_PEN_NAMES.includes(def.name)) continue;
+      // A reference, not a setting: its cards take the whole row (Joost, 2026-11-26).
+      if (def.name === "How to embed a notebook") continue;
       expect(tab.markOf(def.name), def.name).toBeDefined();
     }
+    expect(tab.markOf("How to embed a notebook")).toBeUndefined();
     expect(tab.markOf("Pencil tilt")).toEqual({ art: "tilt" });
     expect(tab.markOf("Stickers folder")).toEqual({ icon: "sticker" });
   });
@@ -1166,6 +1180,35 @@ describe("control values", () => {
 });
 
 // --- Rows the tab renders itself -------------------------------------------------
+
+describe("e-ink screen", () => {
+  it("offers Auto, On and Off, says what Auto does here, and keeps the choice on this device", async () => {
+    const plugin = makePlugin();
+    const all = rows(makeTab(plugin).tab);
+    const def = named(all, "E-ink screen");
+    expect(def.visible).toBe(true);
+    const dropdown = renderRow(def).dropdowns[0];
+    expect(dropdown.options).toEqual({ auto: "Auto (off)", on: "On", off: "Off" });
+    expect(dropdown.value).toBe("auto");
+
+    await dropdown.pick("on");
+    expect(plugin.eink.choice).toBe("on");
+    expect(plugin.eink.on).toBe(true);
+    expect(plugin.calls).toContain("eink:true");
+    // Kept per device, never in the synced settings.
+    expect(plugin.calls).not.toContain("save");
+    expect(renderRow(def).dropdowns[0].value).toBe("on");
+  });
+
+  it("is not offered on an iPad or iPhone", () => {
+    Platform.isIosApp = true;
+    try {
+      expect(named(rows(makeTab(makePlugin()).tab), "E-ink screen").visible).toBe(false);
+    } finally {
+      Platform.isIosApp = false;
+    }
+  });
+});
 
 describe("paper width", () => {
   it("saves a whole number from 320 to 4096 and says in one red line why anything else is not", async () => {

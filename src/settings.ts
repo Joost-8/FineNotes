@@ -166,6 +166,7 @@ import type { StylusClickAction } from "./input/stylus-click";
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
 import { learnWindow } from "./recognition/hwr/learn-window-model";
 import { lookPaletteNames, lookPaletteOf, lookStyleNames, lookStyleOf } from "./model/look";
+import { EINK_CHOICES, type EinkChoice, parseEinkChoice } from "./model/eink";
 
 export { DEFAULT_SETTINGS, type GoodObsidianSettings, type ToolId } from "./settings-data";
 
@@ -1324,6 +1325,18 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             ),
             visible: !Platform.isMobile,
           },
+          // No iPad or iPhone has an e-ink screen; an Android tablet or a
+          // desktop's e-ink monitor may.
+          this.tile(
+            drawnRow(
+              t("settings.eink.name"),
+              t("settings.eink.line"),
+              (s) => this.drawEink(s),
+              ["eink", "e-paper", "epaper", "Boox", "Onyx", "paper screen", "ghosting", "refresh"],
+              !Platform.isIosApp,
+            ),
+            "tablet",
+          ),
         ],
       ],
       [
@@ -1769,23 +1782,21 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             // Only while "One notebook for everything" is chosen.
             visible: () => this.plugin.settings.handwriteBlocks === "one",
           },
-          this.tile(
-            drawnRow(
-              t("settings.notes.embedName"),
-              t("settings.notes.embedLine"),
-              (s) => this.drawEmbedHelp(s),
-              ["embed", "![[", "page embed", "region", "wikilink", "reading view", "transclude"],
-            ),
-            "info",
+          // No tile and no ⓘ: a reference, not a setting; its cards take the row's width.
+          drawnRow(
+            t("settings.notes.embedName"),
+            t("settings.notes.embedLine"),
+            (s) => this.drawEmbedHelp(s),
+            ["embed", "![[", "page embed", "region", "wikilink", "reading view", "transclude"],
           ),
         ],
       ],
     ]);
   }
 
-  /** The ⓘ of "How to embed a notebook": the link forms, and where Handwrite here is. */
+  /** "How to embed a notebook": a card per link form, and where Handwrite here is. */
   private drawEmbedHelp(setting: Setting): void {
-    // Open from the start: the section has the room, and this is its reference.
+    setting.settingEl.addClass("goodobsidian-embed-row");
     const panel = setting.descEl.createDiv({ cls: "goodobsidian-embed-help" });
     // A picture of each way to embed, its link as typed and what it shows (embed-pictures.ts).
     drawEmbedPictures(panel, (form) => ({
@@ -1793,16 +1804,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       meaning: t(EMBED_MEANINGS[form]),
     }));
     panel.createDiv({ text: t("settings.notes.syntaxWhere") });
-    setting.addExtraButton((button) => {
-      button
-        .setIcon("info")
-        .setTooltip(t("settings.notes.embedHelp"))
-        .onClick(() => {
-          panel.toggleClass("is-hidden", !panel.hasClass("is-hidden"));
-          button.extraSettingsEl.toggleClass("is-active", !panel.hasClass("is-hidden"));
-        });
-      button.extraSettingsEl.addClass("is-active");
-    });
   }
 
   /** The paper, where new notebooks go, and what Obsidian's file list shows. */
@@ -2682,6 +2683,25 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
         }
       },
     };
+  }
+
+  /**
+   * E-ink screen: Auto, On or Off, kept on this device (`view/eink-screen.ts`).
+   * Auto says what it does here, so a Boox shows "Auto (on)".
+   */
+  private drawEink(setting: Setting): void {
+    const eink = this.plugin.eink;
+    setting.addDropdown((d) => {
+      const names: Record<EinkChoice, string> = {
+        auto: t(eink.detected ? "settings.eink.autoOn" : "settings.eink.autoOff"),
+        on: t("common.on"),
+        off: t("common.off"),
+      };
+      for (const choice of EINK_CHOICES) d.addOption(choice, names[choice]);
+      d.selectEl.setAttribute("aria-label", t("settings.eink.name"));
+      d.setValue(eink.choice);
+      d.onChange((value) => eink.set(parseEinkChoice(value)));
+    });
   }
 
   /** The voice model's size and spoken language, side by side. */
