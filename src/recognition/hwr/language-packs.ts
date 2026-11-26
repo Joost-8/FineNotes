@@ -17,12 +17,12 @@ import type { PageLanguage } from "./page-language";
 const RELEASE = "https://github.com/Joost-8/Grape/releases/download/languages-v1.0";
 
 /**
- * Whether the packs are published at `RELEASE`. False until the release is
- * made (a public step, on Joost's word): a pack is then used only where its
- * file is already in the folder (by sync, or copied there), and nothing is
- * offered for download.
+ * Whether the packs are published at `RELEASE` (Grape's `languages-v1.0`
+ * release). When true, a page read in a language offers its pack's download
+ * and Settings › Models lists it; when false, a pack is used only where its
+ * file is already in the folder, and nothing is offered.
  */
-export const LANGUAGE_PACKS_HOSTED = false;
+export const LANGUAGE_PACKS_HOSTED = true;
 
 /** Version 1.0 of each pack: its file's size and SHA-256. */
 const PACKS: Record<Exclude<PageLanguage, "en">, { bytes: number; sha256: string }> = {
