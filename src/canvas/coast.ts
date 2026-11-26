@@ -43,6 +43,8 @@ export interface CoastFrame {
   held: boolean;
   /** The zoom is changing, or something else moves the view besides the scroller. */
   zooming: boolean;
+  /** A PDF is behind a page it would make tiles of. */
+  pdf: boolean;
 }
 
 /**
@@ -50,9 +52,16 @@ export interface CoastFrame {
  * a known place, nearly there and slow, nothing else moves it, nobody is
  * touching it, and the paint left nothing undone that the budget should go
  * to first.
+ *
+ * Never over a PDF: its pages are drawn by a worker and land when they are
+ * done, and everything about them waits for the view to rest. Measured on
+ * the iPad with a 1,114-page book kept as a tab, read slide by slide: the
+ * tiles were ready in time either way (none made mid-glide), and with this
+ * on 22-29 frames of 830 ran late against 18-26 without. Nothing to gain
+ * there, so a PDF's pages are made at rest, as before.
  */
 export function coasting(frame: CoastFrame): boolean {
-  if (frame.held || frame.zooming || !frame.complete) return false;
+  if (frame.held || frame.zooming || frame.pdf || !frame.complete) return false;
   if (frame.remaining === null || frame.remaining > COAST_PX) return false;
   return frame.speed <= COAST_SPEED;
 }

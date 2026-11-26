@@ -833,10 +833,13 @@ export class Renderer {
   /** Where a page's preview should look, if not at the whole page ({@link setPreviewWindow}). */
   private previewWindow: ((box: PageBox) => Bounds | null) | null = null;
   private readonly paths = new WeakMap<Stroke, PathEntry>();
-  /** How far {@link tracePage} has traced each page's ink (`next`), and for which strokes. */
+  /**
+   * How far {@link tracePage} has traced each page's ink (`next`), and for
+   * which strokes: how many, and the first and last of them.
+   */
   private readonly traced = new WeakMap<
     Page,
-    { strokes: readonly Stroke[]; count: number; usePressure: boolean; next: number }
+    { count: number; usePressure: boolean; next: number; first?: Stroke; tail?: Stroke }
   >();
   private shadow: ShadowSprite | null = null;
   /** What the dry layer shows, or null when it must be painted whole. */
@@ -2162,12 +2165,25 @@ export class Renderer {
     const strokes = page.strokes;
     const count = strokes.length;
     const last = this.traced.get(page);
-    const same =
-      last?.strokes === strokes && last.count === count && last.usePressure === usePressure;
-    // Carries on where the last frame's budget ended.
-    let next = same ? last.next : 0;
+    // Carries on where the last frame's budget ended. Writing gives the page
+    // a new array with a stroke more at its end: the strokes before it are
+    // the ones already traced, and a page of 2,000 is not walked again after
+    // every stroke.
+    const kept =
+      last !== undefined &&
+      last.usePressure === usePressure &&
+      count >= last.count &&
+      strokes[0] === last.first &&
+      strokes[last.count - 1] === last.tail;
+    let next = kept ? last.next : 0;
     while (next < count && now() <= deadline) this.pathEntry(strokes[next++], usePressure);
-    this.traced.set(page, { strokes, count, usePressure, next });
+    this.traced.set(page, {
+      count,
+      usePressure,
+      next,
+      first: strokes[0],
+      tail: strokes[count - 1],
+    });
     return next >= count;
   }
 

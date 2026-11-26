@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { COAST_PX, COAST_SPEED, coasting } from "../../src/canvas/coast";
 import { GLIDE_MS, KineticScroller } from "../../src/canvas/scroll-physics";
 
-const still = { complete: true, held: false, zooming: false, speed: 0 };
+const still = { complete: true, held: false, zooming: false, pdf: false, speed: 0 };
 
 describe("coasting", () => {
   it("holds within COAST_PX of a snap's end", () => {
@@ -26,6 +26,10 @@ describe("coasting", () => {
     expect(coasting({ ...still, remaining: 2, held: true })).toBe(false);
     expect(coasting({ ...still, remaining: 2, zooming: true })).toBe(false);
     expect(coasting({ ...still, remaining: 2, complete: false })).toBe(false);
+  });
+
+  it("never over a PDF: its pages are made at rest, as they always were", () => {
+    expect(coasting({ ...still, remaining: 2, pdf: true })).toBe(false);
   });
 });
 

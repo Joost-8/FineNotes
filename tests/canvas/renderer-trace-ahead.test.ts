@@ -118,6 +118,34 @@ describe("ink traced ahead of a page's first tile", () => {
     expect(traced).toBe(STROKES);
   });
 
+  it("after a stroke is added, looks only at the new one, not at the whole page again", () => {
+    const { renderer, doc } = row();
+    while (renderer.prefetch(doc, false, 1000, [1]));
+    const asked = vi.spyOn(
+      renderer as unknown as { pathEntry: (s: Stroke) => unknown },
+      "pathEntry",
+    );
+    // Writing: the page gets a new array, one stroke longer.
+    doc.pages[1].strokes = [...doc.pages[1].strokes, writing("new")[0]];
+    renderer.prefetch(doc, false, 1000, [1]);
+    const traced1 = asked.mock.calls.filter(([s]) => s.id === "new-0").length;
+    expect(traced1).toBe(1);
+    // The forty already traced were not asked for by the tracing pass.
+    expect(asked.mock.calls.filter(([s]) => s.id.startsWith("p1-")).length).toBe(0);
+  });
+
+  it("starts over when ink in the middle of the page was replaced", () => {
+    const { renderer, doc } = row();
+    while (renderer.prefetch(doc, false, 1000, [1]));
+    const strokes = [...doc.pages[1].strokes];
+    // The eraser cut the last stroke in two: its pieces take its place.
+    const [a, b] = writing("piece");
+    strokes.splice(strokes.length - 1, 1, a, b);
+    doc.pages[1].strokes = strokes;
+    renderer.prefetch(doc, false, 1000, [1]);
+    expect(traced).toBe(STROKES + 2);
+  });
+
   it("traces a page again only when its ink changed", () => {
     const { renderer, doc } = row();
     while (renderer.prefetch(doc, false, 1000, [1]));

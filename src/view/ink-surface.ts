@@ -6828,10 +6828,13 @@ export class InkSurface {
     if (!this.renderer || this.renderer.isTransient) return;
     const held = this.pinch !== null || this.pressing;
     const { remaining, speed } = this.scroller;
-    const still = { complete, held, zooming: zooming || this.zoomTransient };
+    const pages = this.pagesToTurnTo();
+    // The pages it would make tiles of: the one read, those beside it, those turned to.
+    const near = [this.pageIndex - 1, this.pageIndex, this.pageIndex + 1, ...pages];
+    const pdf = this.fixedPages || near.some((i) => this.doc.pages[i]?.backdrop.kind === "pdf");
+    const still = { complete, held, pdf, zooming: zooming || this.zoomTransient };
     if (!coasting({ remaining, speed, ...still })) return;
-    const budget = this.pace.budget(PREFETCH_BUDGET_MS);
-    this.renderer.prefetch(this.doc, this.inkPressure, budget, this.pagesToTurnTo());
+    this.renderer.prefetch(this.doc, this.inkPressure, this.pace.budget(PREFETCH_BUDGET_MS), pages);
   }
 
   /** The last turn went back a page: the pages before this one are made first. */
