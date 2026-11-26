@@ -98,7 +98,7 @@ export interface ExportPdfHost {
    */
   pdfName?: string;
   /** A PDF was saved under the name field's text: remember it ("" forgets it). */
-  setPdfName?: (typed: string) => void;
+  setPdfName?: (typed: string, file: string) => void;
   /** Open a saved file in Obsidian. */
   open: (path: string) => void;
   /**
@@ -409,6 +409,11 @@ export class ExportPdfModal extends Modal {
         );
       }
       nameField?.toggleClass("is-hidden", this.format !== "pdf");
+      if (nameField && n > 0) {
+        // The free name these pages would take: the placeholder of an empty field.
+        const free = this.host.targetFor(pages, "pdf");
+        nameField.placeholder = free.kind === "file" ? free.name.replace(/\.pdf$/i, "") : "";
+      }
       const target = n > 0 ? this.target(pages, nameField) : null;
       const replaces = target?.kind === "file" && target.replaces === true;
       go.setText(t(replaces ? "notebooks.export.replace" : "notebooks.export.go"));
@@ -445,7 +450,9 @@ export class ExportPdfModal extends Modal {
           () => this.cancelled,
           this.typed(nameField),
         );
-        if (this.format === "pdf" && nameField) this.host.setPdfName?.(nameField.value);
+        if (this.format === "pdf" && nameField && saved.paths.length === 1) {
+          this.host.setPdfName?.(nameField.value, saved.paths[0]);
+        }
         if (this.closed) return;
         this.renderDone(saved);
       } catch (error) {
@@ -478,9 +485,9 @@ export class ExportPdfModal extends Modal {
 
   /**
    * The PDF's name (FineNotes#318), when the host remembers one: empty, the
-   * export takes the free name shown as the placeholder; a typed name is
-   * used as it is and replaces a file of that name (the button then says
-   * so). `changed` runs on every keystroke, for the summary and the button.
+   * export takes the free name shown as the placeholder (kept current by
+   * `sync`); a typed name may replace the file this notebook's export wrote
+   * under it (the button then says so). `changed` runs on every keystroke.
    */
   private nameField(parent: HTMLElement, changed: () => void): HTMLInputElement | null {
     if (this.host.pdfName === undefined || this.host.formats === false) return null;
@@ -495,13 +502,7 @@ export class ExportPdfModal extends Modal {
       },
     });
     field.value = this.host.pdfName;
-    const placeholder = (): void => {
-      const target = this.host.targetFor(this.pages(), "pdf");
-      field.placeholder = target.kind === "file" ? target.name.replace(/\.pdf$/i, "") : "";
-    };
-    placeholder();
     field.addEventListener("input", changed);
-    field.addEventListener("focus", placeholder);
     onEnterKey(field, () => field.blur());
     this.keyboard.watch(field, field);
     return field;

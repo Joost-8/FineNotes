@@ -649,7 +649,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.companionPdfs.register(
       this,
       () => this.openNotebooks().map((view) => view.companion),
-      (path) => exportNamesOf(this.settings.exportNames)[path],
+      (path) => exportNamesOf(this.settings.exportNames)[path]?.name,
     );
     this.addCommand({
       id: "update-companion-pdf",

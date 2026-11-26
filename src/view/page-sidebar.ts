@@ -1181,12 +1181,17 @@ export class PageSidebar {
     this.invalidate();
   }
 
-  /** The document (or its page list) changed. Cheap: repaint is debounced. */
-  setDocument(doc: InkDocument): void {
+  /**
+   * The document (or its page list) changed. Cheap: repaint is debounced,
+   * or done `now` (a change held while the pen wrote, given once it rests:
+   * #275).
+   */
+  setDocument(doc: InkDocument, now = false): void {
     this.doc = doc;
     if (!this.open) return;
     window.clearTimeout(this.refreshTimer);
-    this.refreshTimer = window.setTimeout(() => this.sync(), REFRESH_DEBOUNCE_MS);
+    if (now) this.sync();
+    else this.refreshTimer = window.setTimeout(() => this.sync(), REFRESH_DEBOUNCE_MS);
   }
 
   /**
@@ -1195,6 +1200,8 @@ export class PageSidebar {
    * leaf can show a single page and then a notebook.
    */
   setSingle(single: boolean, fixed = false): void {
+    // Called on every edit until #275: nothing changed, nothing to lay out or paint.
+    if (this.single === (single || fixed) && this.fixed === fixed) return;
     this.single = single || fixed;
     this.fixed = fixed;
     if (this.single) this.setOverview(false);

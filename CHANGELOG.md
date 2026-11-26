@@ -25,6 +25,17 @@ extracted from the matching section of this file by `release.yml`.
   name (the button says Replace), so a link to it, or a copy synced to a
   drive, always shows the newest version; the notebook remembers the name for
   next time. Left empty, every export makes a new file, as before.
+- **Ask AI knows the PDFs in your tabs.** The AI button now works on a PDF's
+  tab: Ask opens over the slide, and "explain this slide" means the one in
+  view (or the one you read last before going back to the notes). It can
+  read the other pages of any tab, and looks at slides that are mostly
+  pictures. Anything it writes goes into the notes.
+- **Export: a PDF name of your own (#318).** The Export dialog has a name
+  field for the PDF. Type a name and the next export replaces the file the
+  last one wrote under it (the button says Replace), so a link to it, or a copy synced to a
+  drive, always shows the newest version; the notebook remembers the name for
+  next time. A file FineNotes did not write is never replaced. Left empty,
+  every export makes a new file, as before.
 
 - **Corrections tell Grape's misreads from your own mistakes.** On the word
   card, **Should be “…”** (offered only for a word that is very likely
@@ -128,6 +139,16 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- **Quick handwriting keeps its letters (#275).** A letter started soon
+  after the last one could lose its first strokes or come out as a line,
+  most of all on handwriting practice sheets and with the page sidebar
+  open: every lift of the pen set off work (re-reading the other practice
+  sheets, repainting thumbnails) that landed inside the next letter. That
+  work now waits until the pen rests.
+- **Finishing a practice sheet asks once whether you would share it** to
+  help improve Grape, as meant since Help improve Grape arrived: the
+  question never came, because the sheet's count was reset after every
+  stroke.
 - **Select all in the page sidebar works across the whole button.** The
   title next to it was drawn over its right half and took those taps.
 - **Pinching a selected picture no longer raises an error** in the
