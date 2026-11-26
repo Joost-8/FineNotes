@@ -12,7 +12,9 @@ import {
   SHARE_LICENCE,
   type ShareClient,
   type SharingLedger,
+  REMIND_EVERY,
   agree,
+  autoSends,
   buildBatches,
   consentChanges,
   correctionDrafts,
@@ -28,9 +30,12 @@ import {
   mergeLedgers,
   parseLedger,
   pendingItems,
+  reminded,
+  remindDue,
   practiceDrafts,
   requestDelete,
   serializeLedger,
+  setAuto,
   sharingOn,
   stopSharing,
   upgradeDone,
@@ -266,7 +271,7 @@ describe("consent and ledger", () => {
     expect(sharingOn(on)).toBe(true);
     expect(on.contributor).toMatch(/^c_[a-z2-7]{16}$/);
     expect(on.key?.length).toBeGreaterThanOrEqual(32);
-    expect(buildBatches(items, stopSharing(on), CLIENT)).toBeNull();
+    expect(buildBatches(items, stopSharing(on, 300), CLIENT)).toBeNull();
     // Consent to older wording does not count.
     const old = { ...on, consent: { version: CONSENT_VERSION - 1, at: 1 } };
     expect(sharingOn(old)).toBe(false);
@@ -309,14 +314,14 @@ describe("consent and ledger", () => {
     expect(
       agree({ ...onLedger(1), consent: { version: 3, at: 1 } }, 50, bytes(9)).upgradeOwed,
     ).toBe(0);
-    expect(agree(stopSharing(old), 50, bytes(9)).upgradeOwed).toBe(0);
+    expect(agree(stopSharing(old, 300), 50, bytes(9)).upgradeOwed).toBe(0);
     // A delete starts a new contributor, with nothing owed.
     expect(requestDelete(agreed, 60).upgradeOwed).toBe(0);
   });
 
   it("keeps the contributor when agreeing again", () => {
     const first = onLedger(1);
-    const again = agree(stopSharing(first), 900, bytes(99));
+    const again = agree(stopSharing(first, 300), 900, bytes(99));
     expect(again.contributor).toBe(first.contributor);
     expect(again.key).toBe(first.key);
     expect(again.consent?.at).toBe(900);
@@ -377,7 +382,7 @@ describe("consent and ledger", () => {
     const later = agree(base, 999, bytes(1));
     expect(mergeLedgers(base, later).consent?.at).toBe(999);
     expect(mergeLedgers(later, base).consent?.at).toBe(999);
-    const stopped = stopSharing(base);
+    const stopped = stopSharing(base, 300);
     expect(sharingOn(mergeLedgers(stopped, emptyLedger(base.epoch)))).toBe(false);
   });
 
@@ -459,5 +464,87 @@ describe("batches", () => {
 
   it("makes no batch when there is nothing to send", () => {
     expect(buildBatches([], onLedger(), CLIENT)).toEqual({ batches: [], tooBig: [] });
+  });
+});
+
+describe("sending by itself, and reminders", () => {
+  it("sends by itself only when the box was ticked and sharing is on", () => {
+    expect(autoSends(onLedger())).toBe(false);
+    const auto = agree(emptyLedger(100), 200, bytes(1), true);
+    expect(autoSends(auto)).toBe(true);
+    expect(auto.auto).toEqual({ on: true, at: 200 });
+    // Stopping turns it off; agreeing again without the box keeps it off.
+    const stopped = stopSharing(auto, 300);
+    expect(autoSends(stopped)).toBe(false);
+    expect(autoSends(agree(stopped, 400, bytes(1)))).toBe(false);
+    // Terms that changed stop it until agreed again.
+    expect(autoSends({ ...auto, consent: { version: CONSENT_VERSION - 1, at: 1 } })).toBe(false);
+    // A delete waiting for the server stops it too.
+    expect(autoSends({ ...auto, pendingDelete: { at: 1, contributor: "c_x", key: "k" } })).toBe(
+      false,
+    );
+  });
+
+  it("keeps the choice when agreeing again without saying, and the newer choice on merge", () => {
+    const auto = agree(emptyLedger(100), 200, bytes(1), true);
+    expect(agree(auto, 250, bytes(1)).auto).toEqual({ on: true, at: 200 });
+    const off = setAuto(auto, false, 500);
+    expect(mergeLedgers(auto, off).auto).toEqual({ on: false, at: 500 });
+    expect(mergeLedgers(off, auto).auto).toEqual({ on: false, at: 500 });
+  });
+
+  it("round-trips the choice and the reminder, and reads an old file as by hand", () => {
+    const ledger = reminded(agree(emptyLedger(100), 200, bytes(1), true), 24, 250);
+    const back = parseLedger(serializeLedger(ledger));
+    expect(back.auto).toEqual({ on: true, at: 200 });
+    expect(back.reminder).toEqual({ waiting: 24, at: 250 });
+    const old = JSON.parse(serializeLedger(onLedger())) as Record<string, unknown>;
+    delete old.auto;
+    delete old.reminder;
+    const read = parseLedger(JSON.stringify(old));
+    expect(read.auto.on).toBe(false);
+    expect(read.reminder).toEqual({ waiting: 0, at: 0 });
+    // Without a contributor there is no one to send for.
+    expect(parseLedger(JSON.stringify({ auto: { on: true, at: 5 } })).auto.on).toBe(false);
+  });
+
+  it(`reminds someone who shares by hand every ${REMIND_EVERY} new items`, () => {
+    const hand = onLedger();
+    expect(remindDue(hand, REMIND_EVERY - 1)).toBe(false);
+    expect(remindDue(hand, REMIND_EVERY)).toBe(true);
+    const once = reminded(hand, REMIND_EVERY + 3, 300);
+    expect(remindDue(once, REMIND_EVERY + 10)).toBe(false);
+    expect(remindDue(once, 2 * REMIND_EVERY + 3)).toBe(true);
+    // After a send fewer wait than at the reminder: the count starts again.
+    expect(remindDue(once, 5)).toBe(false);
+    expect(remindDue(once, REMIND_EVERY)).toBe(true);
+  });
+
+  it("never reminds when sharing is off or sends by itself", () => {
+    expect(remindDue(emptyLedger(), 500)).toBe(false);
+    expect(remindDue(agree(emptyLedger(100), 200, bytes(1), true), 500)).toBe(false);
+    expect(remindDue(stopSharing(onLedger(), 300), 500)).toBe(false);
+  });
+
+  it("merges reminders by the newer one, so a send starts the count again", () => {
+    const a = reminded(onLedger(), 40, 300);
+    const b = reminded(onLedger(), 20, 900);
+    expect(mergeLedgers(a, b).reminder).toEqual({ waiting: 20, at: 900 });
+    expect(mergeLedgers(b, a).reminder).toEqual({ waiting: 20, at: 900 });
+  });
+
+  it("reminds every 20 through saves that merge with the copy on disk (found in review)", () => {
+    // Each save merges with what is on disk, as GrapeSharing.saveLedger does.
+    let disk = onLedger();
+    let now = 1000;
+    const shown: number[] = [];
+    for (const waiting of [20, 40, 0, 10, 20, 21, 22, 25, 30, 39, 40]) {
+      now += 1000;
+      if (!remindDue(disk, waiting)) continue;
+      shown.push(waiting);
+      disk = mergeLedgers(reminded(disk, waiting, now), disk);
+    }
+    // Before the fix: 20, 40, then every count from 20 to 39 again.
+    expect(shown).toEqual([20, 40, 20, 40]);
   });
 });

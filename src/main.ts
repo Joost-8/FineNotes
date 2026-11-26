@@ -926,7 +926,10 @@ export default class GoodObsidianPlugin extends Plugin {
     );
     this.registerEvent(this.app.vault.on("delete", (file) => this.libraryPathChanged(file.path)));
     this.register(() => this.fileMoves.destroy());
-    this.wordCheck.answered = (count) => this.remindToRelearn(count);
+    this.wordCheck.answered = (count) => {
+      this.remindToRelearn(count);
+      this.sharing?.itemsAdded();
+    };
     void loadSharing({
       app: this.app,
       learning: () => this.learningHost(),
@@ -935,6 +938,7 @@ export default class GoodObsidianPlugin extends Plugin {
     }).then((sharing) => {
       this.sharing = sharing;
       sharing?.start();
+      if (sharing) this.register(() => sharing.destroy());
     });
     // The reader's and the learner's workers end with the plugin.
     this.register(() => {

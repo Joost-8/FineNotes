@@ -21,6 +21,7 @@ const TEXT = {
   "shareNew.other": "Share {count} new",
   "shareNew.one": "Share {count} new",
   review: "Review new items…",
+  auto: "Share new items automatically",
   more: "More",
   stop: "Stop sharing",
   delete: "Delete everything I shared…",
@@ -40,7 +41,7 @@ const TEXT = {
   "count.equation.one": "{count} equation",
   "consent.sentHeading": "What is sent",
   "consent.sent":
-    "For each item: the pen strokes (their shape, pressure and timing) and the text they say. With them: FineNotes' version, the Grape you read with, the kind of device, and a random number made on this device that tells your items apart from other people's. Later practice sheets, corrections and equations, sums or graphs whose reading you used are shared too, when you press Share in settings.",
+    "For each item: the pen strokes (their shape, pressure and timing) and the text they say. With them: FineNotes' version, the Grape you read with, the kind of device, and a random number made on this device that tells your items apart from other people's. Later practice sheets, corrections and equations, sums or graphs whose reading you used are shared too: by themselves while the box below is ticked (it is, unless you untick it), else when you press Share in settings.",
   "consent.neverHeading": "What is never sent",
   "consent.never":
     "Note and vault names, where on a page anything was written, the rest of your notes, words you only marked as real words (often names), your AI transcriptions, ink FineNotes wrote for you (neatened or rewritten words), your name and your email. The server does not store your IP address.",
@@ -52,8 +53,10 @@ const TEXT = {
   "consent.licence":
     "Your items stay private. They are never published as a dataset; they are only used to train and test Grape and the writer, and in Joost's research. To check that each label matches its ink, an item may be shown to Claude, an AI by Anthropic (USA): only a picture of the ink and its text, nothing that says who wrote it. Anthropic may not train on it, and deletes it within 30 days. Only Grape and the writer themselves are released, free under Apache 2.0. The writer keeps no one's handwriting and no list of contributors' styles: it takes a style only from ink it is given, on the device using it. Lines it writes in contributors' styles stay private, like your items, and may be checked by Claude in the same way.",
   "consent.control":
-    "Review first shows every item, and lets you keep any of them. Stop at any time, and delete everything you shared from the server. A Grape or writer that was already released cannot unlearn what it learned from your items; models trained after the delete never see them.",
+    "Review first shows every item, and lets you keep any of them. Items shared automatically are not shown first; turn that off in settings at any time. Stop at any time, and delete everything you shared from the server. A Grape or writer that was already released cannot unlearn what it learned from your items; models trained after the delete never see them.",
   "consent.policy": "Privacy notice",
+  "consent.auto":
+    "Share new items automatically, without asking each time. Untick it to share them yourself; FineNotes then reminds you every {count} new items.",
   "consent.cancel": "Not now",
   "consent.review": "Review first",
   "consent.share.other": "Share {count} items",
@@ -90,9 +93,14 @@ const TEXT = {
   "invite.more": "Learn more",
   "invite.help": "Help",
   "invite.terms.other":
-    "Help shares {count} labelled items, only their ink and text, to train Grape. They stay private; only Grape is released. Learn more shows them first; you can delete them any time.",
+    "Help shares {count} labelled items, only their ink and text, to train Grape, and new ones automatically after them. They stay private; only Grape is released. Learn more shows them first; in settings you can stop sharing automatically, or delete them, any time.",
   "invite.terms.one":
-    "Help shares {count} labelled item, only its ink and text, to train Grape. It stays private; only Grape is released. Learn more shows it first; you can delete it any time.",
+    "Help shares {count} labelled item, only its ink and text, to train Grape, and new ones automatically after it. It stays private; only Grape is released. Learn more shows it first; in settings you can stop sharing automatically, or delete it, any time.",
+
+  // The reminder, for someone who shares by hand, every REMIND_EVERY new items.
+  "remind.title.other": "{count} new items to share with Grape",
+  "remind.title.one": "{count} new item to share with Grape",
+  "remind.always": "Always share",
 
   "review.title.other": "Review {count} items",
   "review.title.one": "Review {count} item",
