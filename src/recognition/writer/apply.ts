@@ -62,21 +62,9 @@ export function neatenEdit<S extends PageInk>(
   ];
   // Tidy only the neatened lines; the rest of the page holds still around them.
   // Every selected line is tidied (Beautify), the rewritten ones and the rest; the page holds still around them.
-  // A placed line has just been laid on one level baseline by `placeLines`. On plain paper Tidy
-  // leaves it be: it would group it with ink of the next line and level it to that
-  // ("I'm the captain" ended 16 px under its new words, a second bar in the I, 26 November).
-  // On ruled paper Tidy still snaps it to the rules.
-  const ruled = !!rules && rules.length > 0;
-  const laid = new Set<string>();
-  if (!ruled)
-    for (const line of placed)
-      if (line.added.length > 0) for (const id of line.kept.keys()) laid.add(id);
-  const only = new Set<string>();
-  for (const line of placed) {
-    if (ruled || line.added.length === 0) for (const id of line.kept.keys()) only.add(id);
-  }
-  if (ruled) added.forEach((_, i) => only.add(tag(i)));
-  for (const id of selected) if (!removed.has(id) && !laid.has(id)) only.add(id);
+  const only = new Set<string>(added.map((_, i) => tag(i)));
+  for (const line of placed) for (const id of line.kept.keys()) only.add(id);
+  for (const id of selected) if (!removed.has(id)) only.add(id);
   const tidied = tidyInk(working, { profile, rules, only, maxLevelSlope: ASKED_LEVEL_SLOPE });
   const moved = new Map<string, number[]>();
   for (const s of working) {

@@ -38,7 +38,7 @@ import type { InkStroke } from "../recognition/hwr/features";
 import { type NeatenEdit, neatenEdit } from "../recognition/writer/apply";
 import type { WriterClient } from "../recognition/writer/client";
 import { isOutOfMemory } from "../recognition/writer/protocol";
-import { type LineToPlace, placeLines } from "../recognition/writer/layout";
+import { clearanceFor, type LineToPlace, placeLines } from "../recognition/writer/layout";
 import { proseLike } from "../recognition/writer/pool";
 import { errorRate, neatenLine, readBackRewrite } from "../recognition/writer/repair";
 import { readsAs } from "../recognition/writer/known-layout";
@@ -446,7 +446,16 @@ export class NeatenService {
         },
       });
     }
-    const placed = placeLines(placing, profile, request.pageWidth);
+    // The level line stands clear of the page's other pen ink (not that of lines placed with it).
+    const inPlacing = new Set(placing.flatMap((p) => p.strokes.map((s) => s.id)));
+    const foreign = request.strokes.filter(
+      (s) => s.tool === "pen" && !s.shape && !inPlacing.has(s.id),
+    );
+    const placed = placeLines(
+      placing.map((p) => ({ ...p, clear: clearanceFor(p.strokes, foreign, profile.xHeight) })),
+      profile,
+      request.pageWidth,
+    );
     const edit = neatenEdit(request.strokes, placed, profile, request.rules, request.selected);
     if (edit.added.length === 0) return { kind: "tidy" };
     // Each line's new strokes take the pen of the line's first stroke.

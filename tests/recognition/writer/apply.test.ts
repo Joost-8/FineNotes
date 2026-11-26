@@ -61,13 +61,8 @@ describe("neatenEdit", () => {
     const edit = neatenEdit(page, placed, profile, null);
     for (const id of top.words[1]) {
       const was = top.strokes.find((s) => s.id === id)?.pts ?? [];
-      // A kept word placeLines did not move is no longer moved by Tidy (a placed line is not
-      // tidied on plain paper); when it is moved, its points keep their count.
-      const pts = edit.moved.get(id);
-      if (pts) expect(pts).toHaveLength(was.length);
+      expect(edit.moved.get(id)).toHaveLength(was.length);
     }
-    const shifted = top.words.flat().filter((id) => placed[0].kept.get(id)?.dx);
-    for (const id of shifted) expect(edit.moved.has(id)).toBe(true);
     expect(edit.moved.has(top.words[0][0])).toBe(false);
   });
 

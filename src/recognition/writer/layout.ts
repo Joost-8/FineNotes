@@ -6,7 +6,8 @@
  * already stood level). Its size makes the rewritten words as wide, together,
  * as the writer's own were (a line with no such width falls back to Tidy's
  * x-height measure), held within 20 % of the factor the other lines got. It
- * stands at the original line's left edge on its baseline. Then its words are
+ * stands at the original line's left edge, on the height the writer's line has at its
+ * middle (moved only to clear the ink above and below it). Then its words are
  * laid out left to right with the word gap the writer left on that line; a
  * word that is not rewritten keeps the writer's own strokes, moved along the
  * line and onto its level. Nothing goes past the page's right edge: the gaps
@@ -82,6 +83,114 @@ export interface LineToPlace<S extends PageInk> {
    * the writer's x-height, or at `least` when theirs is smaller.
    */
   xHeight?: { ink: number | null; written: number | null; least: number };
+  /**
+   * The page's other ink near this line (`clearanceFor`): the y (page px, down) of the lowest
+   * ink above it and the highest below it. The level line stands where the written words
+   * clear both. Absent, or null on a side: nothing to keep clear of there.
+   */
+  clear?: Clearance;
+}
+
+/** The y of the lowest foreign ink above a line and of the highest below it (page px, y down). */
+export interface Clearance {
+  above: number | null;
+  below: number | null;
+}
+
+/** A box, page px, y down. */
+export interface InkBox {
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+}
+
+/** The room the written words keep from other ink (x-heights). */
+export const CLEAR_PAD = 0.25;
+
+/**
+ * What is above and below a line. `line` is the line's own box, `others` the boxes of ink
+ * that is not part of it (nor of another line being placed), `baseline` the line's baseline
+ * under its middle, `xHeight` the hand's. Only ink within the line's x-range, padded by an
+ * x-height each side, counts. Above: the lowest bottom edge among boxes whose bottom is over
+ * the line's x-height band. Below: the highest top edge among boxes under the baseline.
+ */
+export function clearanceOf(
+  line: InkBox,
+  others: readonly InkBox[],
+  baseline: number,
+  xHeight: number,
+): Clearance {
+  let above: number | null = null;
+  let below: number | null = null;
+  for (const b of others) {
+    if (b.x1 < line.x0 - xHeight || b.x0 > line.x1 + xHeight) continue;
+    if (b.y1 <= baseline - xHeight) above = above === null ? b.y1 : Math.max(above, b.y1);
+    else if (b.y0 >= baseline) below = below === null ? b.y0 : Math.min(below, b.y0);
+  }
+  return { above, below };
+}
+
+/** `clearanceOf` for a line's strokes and the page's other strokes (the caller leaves out those in lines being placed). */
+export function clearanceFor(
+  line: readonly PageInk[],
+  others: readonly PageInk[],
+  xHeight: number,
+): Clearance | undefined {
+  const box = (s: PageInk): InkBox | null => {
+    if (s.pts.length < 3) return null;
+    const xs = every(s.pts, 0);
+    const ys = every(s.pts, 1);
+    return {
+      x0: Math.min(...xs),
+      x1: Math.max(...xs),
+      y0: Math.min(...ys),
+      y1: Math.max(...ys),
+    };
+  };
+  const mine = line.map(box).filter((b): b is InkBox => b !== null);
+  const home = homeOf(line);
+  if (mine.length === 0 || !home) return undefined;
+  const lineBox = {
+    x0: Math.min(...mine.map((b) => b.x0)),
+    x1: Math.max(...mine.map((b) => b.x1)),
+    y0: 0,
+    y1: 0,
+  };
+  const baseline = home.slope * 0.5 * (lineBox.x0 + lineBox.x1) + home.level;
+  return clearanceOf(
+    lineBox,
+    others.map(box).filter((b): b is InkBox => b !== null),
+    baseline,
+    xHeight,
+  );
+}
+
+/**
+ * Where the level baseline `base` (the writer's own, at the middle of its line) moves to so
+ * the written band (`top` above it, `depth` below it) keeps `pad` from the ink above and
+ * below. Both sides known and one too close: the band is centred between them (when it
+ * does not fit, the shortage is shared equally). One side: just far enough. Never outside
+ * `range`, the writer's own baseline at the line's two ends.
+ */
+export function clearBaseline(
+  base: number,
+  band: { top: number; depth: number },
+  clear: Clearance,
+  pad: number,
+  range: readonly [number, number],
+): number {
+  const { above, below } = clear;
+  const tight = (y: number): boolean =>
+    (above !== null && y - band.top < above + pad) ||
+    (below !== null && y + band.depth > below - pad);
+  let y = base;
+  if (tight(y)) {
+    if (above !== null && below !== null) y = 0.5 * (above + below + band.top - band.depth);
+    else if (above !== null) y = above + pad + band.top;
+    else if (below !== null) y = below - pad - band.depth;
+  }
+  return Math.min(Math.max(range[0], range[1]), Math.max(Math.min(range[0], range[1]), y));
 }
 
 /** A line put back. */
@@ -191,13 +300,29 @@ export function placeLines<S extends PageInk>(
     const home = homeOf(line.strokes);
     const allX = line.strokes.flatMap((s) => xsOf(s.pts));
     const left = Math.min(...allX);
-    // The level line stands at the height the writer's line has at its middle: at its left
-    // end a climbing line is lowest, and the level line landed on the page's next line of ink
-    // (Beautify on "I'm the captain", 26 November).
-    const middle = 0.5 * (left + Math.max(...allX));
-    const baseY = home
+    // The level line stands at the height the writer's line has at its middle (at its left end
+    // a climbing line is lowest, and the level line landed on the page's next line of ink:
+    // Beautify on "I'm the captain", 26 November), moved only to clear the ink above and
+    // below the line (`line.clear`), and never outside the line's own climb.
+    const right = Math.max(...allX);
+    const middle = 0.5 * (left + right);
+    let baseY = home
       ? home.slope * middle + home.level
       : Math.max(...line.strokes.flatMap((s) => every(s.pts, 1)));
+    if (home && line.clear) {
+      let top = 0;
+      let depth = 0;
+      for (const s of made.filter((m) => line.rewrite[m.word]))
+        for (let i = 0; i < s.pts.length; i += 3) {
+          const rel = (s.pts[i + 1] - (fit ? fit.slope * s.pts[i] + fit.level : 0)) * f;
+          top = Math.max(top, -rel);
+          depth = Math.max(depth, rel);
+        }
+      baseY = clearBaseline(baseY, { top, depth }, line.clear, CLEAR_PAD * profile.xHeight, [
+        home.slope * left + home.level,
+        home.slope * right + home.level,
+      ]);
+    }
     // A kept word stands on the written words' level line: lifted by where the writer's own
     // line was under its middle ("B-214." stayed above a tilted line, 25 November).
     const lift = (mid: number): number => (home ? baseY - (home.slope * mid + home.level) : 0);
