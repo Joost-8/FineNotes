@@ -163,6 +163,8 @@ interface NeatenJob {
   sure: number[];
   /** Set once asked: the words the writer answered on a card. */
   answered?: boolean[];
+  /** Words the writer answered on an earlier run (`applyAnswers`). */
+  known: boolean[];
   xHeight: number | null;
   /** Grape's letters on the line, as indices into `strokes`. */
   chars: NonNullable<LineReading["chars"]>;
@@ -374,10 +376,10 @@ export class NeatenService {
       // Answered words take the writer's text from the saved answers.
       if (confirmed.length > 0) jobs = await jobsWith();
     }
-    // Every other word is written as read; the read-back below keeps one that does not read
-    // back as itself in the writer's ink.
-    // Single letters and digits, words Grape is unsure of keep the writer's
-    // ink (`own-ink.ts`); "Beautify this word" (`workWord`) is the writer asking for that word.
+    // A word not asked about is written when Grape's sureness of it is at least
+    // WRITE_UNASKED_FROM and it is more than one letter; else it keeps the writer's ink
+    // (`own-ink.ts`; "Beautify this word", `workWord`, is the writer asking for that word).
+    // The read-back below also keeps a written word that does not read back as itself.
     jobs = jobs
       .map((job) => ({ ...job, ...writeUnasked(job, asked) }))
       .map((job) => ({ ...job, rewrite: ownInkRewrite(job) }))
@@ -491,7 +493,13 @@ export class NeatenService {
     const sure = wordSureness(text, reading.greedy, reading.chars, inList).map((s, i) =>
       answered.known.has(i) ? 1 : s,
     );
-    const joined = joinPunctuation({ words: answered.words, ink, rewrite, sure });
+    const joined = joinPunctuation({
+      words: answered.words,
+      ink,
+      rewrite,
+      sure,
+      known: answered.words.map((_, i) => answered.known.has(i)),
+    });
     return {
       text: joined.words.join(" "),
       strokes,
@@ -499,6 +507,7 @@ export class NeatenService {
       read: joined.words,
       rewrite: joined.rewrite,
       sure: joined.sure ?? [],
+      known: joined.known ?? [],
       // The writer's x-height on this line, from the strokes Grape read as x-height letters.
       xHeight: inkXHeight(strokes, reading.chars),
       chars: reading.chars,

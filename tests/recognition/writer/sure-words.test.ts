@@ -321,3 +321,15 @@ describe("sureWords", () => {
     expect(sureWords("", "", [], writable)).toEqual([]);
   });
 });
+
+describe("unsureCandidates: a lone word takes no card", () => {
+  it("asks about the real word, not the lone letter that is less sure", () => {
+    const line = {
+      read: ["a", "simple"],
+      words: [["a"], ["b"]],
+      rewrite: [false, false],
+      sure: [0.2, 0.4],
+    };
+    expect(pickQuestions(unsureCandidates([line]))).toEqual([{ line: 0, word: 1, sure: 0.4 }]);
+  });
+});

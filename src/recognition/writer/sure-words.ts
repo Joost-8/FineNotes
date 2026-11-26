@@ -21,6 +21,7 @@
 
 import type { CharReading } from "../hwr/char-readings";
 import { plainWord } from "../hwr/corrections";
+import { isLone } from "./own-ink";
 import { opcodes } from "./repair";
 
 export interface SureBars {
@@ -195,11 +196,14 @@ export interface LineChoice {
   sure: readonly number[];
 }
 
-/** The words Beautify could ask about: not sure enough to write, with a letter or digit, and ink. */
+/**
+ * The words Beautify could ask about: not sure enough to write, with a letter or digit
+ * (more than one: a lone word keeps the writer's ink, so a card goes to a real word), and ink.
+ */
 export function unsureCandidates(lines: readonly LineChoice[]): Question[] {
   return lines.flatMap((line, li) =>
     line.read.flatMap((w, word) =>
-      !line.rewrite[word] && /[\p{L}\p{N}]/u.test(w) && line.words[word]?.length
+      !line.rewrite[word] && /[\p{L}\p{N}]/u.test(w) && !isLone(w) && line.words[word]?.length
         ? [{ line: li, word, sure: line.sure[word] ?? 0 }]
         : [],
     ),
@@ -209,10 +213,11 @@ export function unsureCandidates(lines: readonly LineChoice[]): Question[] {
 /**
  * After the questions: which words of a line are written. A word asked about
  * and not answered stays the writer's ink; an answered one is sure by now;
- * every other word with ink is written as read, and the read-back keeps one
- * that does not read back as itself in the writer's ink (Joost, 25 November:
- * the words not asked about are handled without a card). `asked` holds the
- * first stroke id of each word asked about.
+ * every other word with ink is marked for writing, and `own-ink.ts` then keeps
+ * the writer's ink for a lone word or one Grape's sureness of is under
+ * `WRITE_UNASKED_FROM`; the read-back keeps one that does not read back as
+ * itself (Joost, 25 November: the words not asked about get no card). `asked`
+ * holds the first stroke id of each word asked about.
  */
 export function writeUnasked(
   line: Pick<LineChoice, "words" | "rewrite">,
@@ -280,6 +285,8 @@ export interface LineWords {
   rewrite: boolean[];
   /** How sure Grape is of each word (`wordSureness`); a joined word takes its parts' least. */
   sure?: number[];
+  /** Whether the writer answered about each word (`applyAnswers`' `known`); a joined word is known if its letters are. */
+  known?: boolean[];
 }
 
 interface Part {
@@ -287,6 +294,7 @@ interface Part {
   ink: string[];
   rewrite: boolean;
   sure: number;
+  known: boolean;
 }
 
 /**
@@ -304,6 +312,7 @@ export function joinPunctuation(line: LineWords): LineWords {
       ink: line.ink[i] ?? [],
       rewrite: line.rewrite[i] ?? false,
       sure: line.sure?.[i] ?? 0,
+      known: line.known?.[i] ?? false,
     };
     const bare = !/[\p{L}\p{N}]/u.test(word);
     const last = parts[parts.length - 1];
@@ -322,6 +331,7 @@ export function joinPunctuation(line: LineWords): LineWords {
     ink: parts.map((p) => p.ink),
     rewrite: parts.map((p) => p.rewrite),
     ...(line.sure ? { sure: parts.map((p) => p.sure) } : {}),
+    ...(line.known ? { known: parts.map((p) => p.known) } : {}),
   };
 }
 
@@ -334,5 +344,6 @@ function join(a: Part, b: Part): Part {
     ink: [...a.ink, ...b.ink],
     rewrite: a.rewrite && b.rewrite,
     sure,
+    known: bare(a) ? b.known : bare(b) ? a.known : a.known && b.known,
   };
 }

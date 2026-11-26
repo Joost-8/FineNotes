@@ -6,7 +6,8 @@
  * misread word is rewritten as a different word. Measured on 1,022 labelled
  * words of donated handwriting: 26 % of one-character words and 37 % of words
  * with a sureness under 0.5 were wrong among those that would be written,
- * against 13.6 % overall. So a word keeps the writer's ink when it is
+ * against 13.6 % overall (research/handwriting-rig/gen/neaten_ledger.mts with
+ * neaten_tally.mjs, 2026-11-26). So a word keeps the writer's ink when it is
  *
  * - "lone": one letter or digit at most;
  * - "unsure": Grape's sureness of it is under `WRITE_UNASKED_FROM`.
@@ -27,15 +28,15 @@ export interface OwnInkWord {
   answered: boolean;
 }
 
-/** Letters and digits in a word. */
-function countAlnum(text: string): number {
-  return (text.match(/[\p{L}\p{N}]/gu) ?? []).length;
+/** Whether a word has at most one letter or digit ("I", "5", "(a)"). */
+export function isLone(text: string): boolean {
+  return (text.match(/[\p{L}\p{N}]/gu) ?? []).length <= 1;
 }
 
 /** Why a word keeps the writer's ink, or null when it may be written. */
 export function ownInkReason(word: OwnInkWord): OwnInkReason | null {
   if (word.answered) return null;
-  if (countAlnum(word.text) <= 1) return "lone";
+  if (isLone(word.text)) return "lone";
   if (word.sure < WRITE_UNASKED_FROM) return "unsure";
   return null;
 }
@@ -50,6 +51,8 @@ export interface OwnInkLine {
   read: readonly string[];
   sure: readonly number[];
   answered?: readonly boolean[];
+  /** Words the writer answered on an earlier run (`applyAnswers`): never kept for these reasons. */
+  known?: readonly boolean[];
   rewrite: readonly boolean[];
 }
 
@@ -58,7 +61,7 @@ export function ownInkRewrite(line: OwnInkLine): boolean[] {
   const words = line.read.map((text, i) => ({
     text,
     sure: line.sure[i] ?? 0,
-    answered: line.answered?.[i] ?? false,
+    answered: (line.known?.[i] ?? false) || (line.answered?.[i] ?? false),
   }));
   return keepOwnInk(words, line.rewrite);
 }
