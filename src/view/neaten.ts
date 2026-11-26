@@ -55,7 +55,7 @@ import {
   writtenFoot,
   writtenXHeight,
 } from "../recognition/writer/x-height";
-import { type Box, ownInkRewrite, strokeBox } from "../recognition/writer/own-ink";
+import { ownInkRewrite } from "../recognition/writer/own-ink";
 import { heldWordAt, placeWord, wordEdit } from "../recognition/writer/held-word";
 import { DEFAULT_TRIES } from "../recognition/writer/flow-meta";
 import { type WriterKind, WRITER_KINDS, kindFor } from "../recognition/writer/kinds";
@@ -376,11 +376,11 @@ export class NeatenService {
     }
     // Every other word is written as read; the read-back below keeps one that does not read
     // back as itself in the writer's ink.
-    // Single letters and digits, words Grape is unsure of and raised exponents keep the writer's
+    // Single letters and digits, words Grape is unsure of keep the writer's
     // ink (`own-ink.ts`); "Beautify this word" (`workWord`) is the writer asking for that word.
     jobs = jobs
       .map((job) => ({ ...job, ...writeUnasked(job, asked) }))
-      .map((job) => ({ ...job, rewrite: this.keepOwnInk(job) }))
+      .map((job) => ({ ...job, rewrite: ownInkRewrite(job) }))
       .filter((job) => job.rewrite.some(Boolean));
     if (jobs.length === 0) return { kind: "tidy" };
     if (request.stop()) return { kind: "stopped" };
@@ -455,20 +455,6 @@ export class NeatenService {
     if (edit.added.length === 0) return { kind: "tidy" };
     // Each line's new strokes take the pen of the line's first stroke.
     return { kind: "done", edit, style: placing.map((line) => line.strokes[0]) };
-  }
-
-  /** The line's `rewrite` without the words that keep the writer's ink; the foot line is the one placement uses. */
-  private keepOwnInk(job: NeatenJob): boolean[] {
-    const boxes = new Map<string, Box>();
-    for (const s of job.strokes) {
-      const box = strokeBox(s.pts);
-      if (box) boxes.set(s.id, box);
-    }
-    const home = measureLines(job.strokes, ASKED_LEVEL_SLOPE).sort(
-      (a, b) => b.strokes.length - a.strokes.length,
-    )[0];
-    const baseline = home ? (x: number): number => home.slope * x + home.level : null;
-    return ownInkRewrite(job, boxes, baseline);
   }
 
   /** One line's text, words, and which words to rewrite; null when the model cannot write it. */
