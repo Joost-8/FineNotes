@@ -3329,6 +3329,7 @@ body:not(.is-mobile) .goodobsidian-settings {
 .goodobsidian-settings[data-section="general"] > .setting-group.goodobsidian-sec-general,
 .goodobsidian-settings[data-section="writing"] > .setting-group.goodobsidian-sec-writing,
 .goodobsidian-settings[data-section="pages"] > .setting-group.goodobsidian-sec-pages,
+.goodobsidian-settings[data-section="notes"] > .setting-group.goodobsidian-sec-notes,
 .goodobsidian-settings[data-section="shortcuts"] > .setting-group.goodobsidian-sec-shortcuts,
 .goodobsidian-settings[data-section="reading"] > .setting-group.goodobsidian-sec-reading,
 .goodobsidian-settings[data-section="ai"] > .setting-group.goodobsidian-sec-ai,
@@ -25748,6 +25749,23 @@ button.clickable-icon.goodobsidian-ask-window-button {
     opacity: 0;
   }
 }
+/* Settings → Notebooks in notes: the ⓘ of "Embedding a notebook", the link forms. */
+.goodobsidian-embed-help {
+  margin-top: var(--size-4-2);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.6;
+  color: var(--text-muted);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.goodobsidian-embed-help code {
+  font-family: var(--font-monospace);
+  overflow-wrap: anywhere;
+}
+.goodobsidian-embed-help.is-hidden {
+  display: none;
+}
+
 /* The first Handwrite here: where blocks go, three rows and Continue. */
 .goodobsidian-hw-blocks {
   display: flex;

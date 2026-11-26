@@ -759,6 +759,7 @@ export const SETTINGS_SECTIONS = [
   "general",
   "writing",
   "pages",
+  "notes",
   "shortcuts",
   "reading",
   "ai",
