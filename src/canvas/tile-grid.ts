@@ -246,6 +246,19 @@ export class ByteLru<V> {
     return n;
   }
 
+  /**
+   * Make room for `bytes` more by removing entries the predicate accepts,
+   * the least recently used first, and no more of them than it takes.
+   * Returns whether `bytes` now fit.
+   */
+  freeWhere(predicate: (value: V, key: string) => boolean, bytes: number): boolean {
+    for (const [key, entry] of [...this.map]) {
+      if (this.fits(bytes)) break;
+      if (predicate(entry.value, key)) this.delete(key);
+    }
+    return this.fits(bytes);
+  }
+
   clear(): void {
     for (const key of [...this.map.keys()]) this.delete(key);
   }

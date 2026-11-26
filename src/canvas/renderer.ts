@@ -2028,7 +2028,8 @@ export class Renderer {
    * `whole`: pages to have ready in full, nearest first: the pages a row
    * turns to. A turn shows a whole page within a few frames, and tiles made
    * during it were most of its slow frames (FineNotes#201). For these alone
-   * room is made, from the tiles of pages neither here nor near.
+   * room is made, from the tiles of pages neither here nor near: those used
+   * longest ago, and no more of them than these pages need.
    */
   prefetch(
     doc: InkDocument,
@@ -2073,7 +2074,12 @@ export class Renderer {
         else this.buildPreview(page, box, usePressure);
       }
     }
+    // Out of room, the ring stops and the pages to turn to still get theirs:
+    // a long notebook keeps the cache within a tile of full, and ending here
+    // left those pages to be made mid-turn (FineNotes#201).
+    let ringFull = false;
     for (const box of around) {
+      if (ringFull) break;
       const page = doc.pages[box.index];
       const r = this.pageDeviceRect(box);
       const ring = tilesCovering(
@@ -2089,7 +2095,10 @@ export class Renderer {
         // A stale tile is left for the screen paint, which knows what the
         // eraser shows meanwhile; this one paints the document as it is.
         if (this.tiles.has(tileKey(page.id, level, tr.col, tr.row))) continue;
-        if (!this.tiles.fits(tr.w * tr.h * 4)) return false;
+        if (!this.tiles.fits(tr.w * tr.h * 4)) {
+          ringFull = true;
+          break;
+        }
         if (now() > deadline) return true;
         this.rasterTile(page, box, tr, level, { usePressure });
       }
@@ -2107,16 +2116,37 @@ export class Renderer {
           const near = new Set(around.map((b) => b.id));
           for (const i of whole) near.add(this.layout.boxes[i]?.id ?? "");
           // Only this document's far pages make room: another document's
-          // tiles (the notes, while a PDF's tab is read) are kept warm.
+          // tiles (the notes, while a PDF's tab is read) are kept warm. And
+          // only as much room as these pages still need, from the tiles used
+          // longest ago: the pages just read stay, for turning back to.
           const ours = new Set(doc.pages.map((p) => p.id));
-          this.tiles.deleteWhere((tile) => ours.has(tile.pageId) && !near.has(tile.pageId));
+          this.tiles.freeWhere(
+            (tile) => ours.has(tile.pageId) && !near.has(tile.pageId),
+            this.missingBytes(doc, whole, level),
+          );
         }
         if (!this.tiles.fits(tr.w * tr.h * 4)) return false;
         if (now() > deadline) return true;
         this.rasterTile(page, box, tr, level, { usePressure });
       }
     }
-    return false;
+    // The room made for those pages may hold the ring's tiles too: once more.
+    return ringFull && madeRoom;
+  }
+
+  /** The bytes of the tiles the pages `whole` lack at `level`. */
+  private missingBytes(doc: InkDocument, whole: readonly number[], level: number): number {
+    let bytes = 0;
+    for (const index of whole) {
+      const box = this.layout.boxes[index];
+      const page = doc.pages[index];
+      if (!box || !page) continue;
+      const raster = rasterSize(box.width, box.height, level);
+      for (const tr of tilesCovering(box.width, box.height, level, 0, 0, raster.w, raster.h)) {
+        if (!this.tiles.has(tileKey(page.id, level, tr.col, tr.row))) bytes += tr.w * tr.h * 4;
+      }
+    }
+    return bytes;
   }
 
   /**

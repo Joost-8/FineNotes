@@ -90,3 +90,59 @@ describe("FramePace", () => {
     expect(fast.budget(1)).toBe(1);
   });
 });
+
+/** Feed `gaps` (ms), each frame asked for by the one before. */
+function feed(pace: FramePace, gaps: readonly number[]): void {
+  let t = 0;
+  pace.note(t, false);
+  for (const gap of gaps) pace.note((t += gap), true);
+}
+
+/** `count` gaps from `pattern`, over and over. */
+function repeat(pattern: readonly number[], count: number): number[] {
+  return Array.from({ length: count }, (_, i) => pattern[i % pattern.length]);
+}
+
+describe("FramePace with frames that start late", () => {
+  const T = 1000 / 120;
+
+  // FineNotes#201: a 120 Hz iPad Pro read 143 Hz. A frame whose callback
+  // starts late is followed by a short gap, and the short end of the gaps
+  // alone is then shorter than any frame the display shows.
+  it("reads 120 Hz when a third of the frames start 1.4 ms late", () => {
+    const pace = new FramePace();
+    feed(pace, repeat([T, T + 1.4, T - 1.4], 60));
+    expect(pace.hz).toBeCloseTo(120, 0);
+  });
+
+  it("reads 120 Hz when every other frame starts late", () => {
+    const pace = new FramePace();
+    feed(pace, repeat([T + 1.2, T - 1.2], 60));
+    expect(pace.hz).toBeCloseTo(120, 0);
+  });
+
+  it("reads 120 Hz with late frames and missed ones together", () => {
+    const pace = new FramePace();
+    // A missed frame that also ran late, the short gap after it, two on time, a late pair.
+    feed(pace, repeat([2 * T + 1.3, T - 1.3, T, T, T + 1.5, T - 1.5, 2 * T, T], 60));
+    expect(pace.hz).toBeCloseTo(120, 0);
+  });
+
+  it("reads 120 Hz when one frame in six is on time and they start late", () => {
+    const pace = new FramePace();
+    feed(pace, repeat([T + 1, T - 1, 2 * T, 2 * T, 2 * T + 1, 2 * T - 1], 60));
+    expect(pace.hz).toBeCloseTo(120, 0);
+  });
+
+  it("reads 60 Hz with late frames too", () => {
+    const pace = new FramePace();
+    feed(pace, repeat([2 * T, 2 * T + 2.5, 2 * T - 2.5], 60));
+    expect(pace.hz).toBeCloseTo(60, 0);
+  });
+
+  it("budgets by the real frame: 3 ms of a 6 ms budget at 120 Hz, not 2.5", () => {
+    const pace = new FramePace();
+    feed(pace, repeat([T, T + 1.4, T - 1.4], 60));
+    expect(pace.budget(6)).toBeCloseTo(3, 1);
+  });
+});
