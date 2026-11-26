@@ -274,6 +274,25 @@ describe("AssetStore", () => {
     expect([...files.keys()].sort()).toEqual(["grape-1.0.bin", "personal.bin"]);
   });
 
+  it("removes an older version with the files named after it, and leaves a newer version alone", async () => {
+    const { deps, files } = fakes();
+    files.set("grape-0.9.bin", makeFile(1, 100));
+    // A model of several files names them after its version (the writer's graphs).
+    files.set("grape-0.9-graph.onnx", makeFile(1, 10));
+    // Another device's newer build put this here by sync: it is that device's.
+    files.set("grape-2.0.bin", makeFile(1, 100));
+    files.set("grape-2.0-graph.onnx", makeFile(1, 10));
+    files.set("personal.bin", makeFile(1, 50));
+    const store = new AssetStore(ASSET, deps);
+    expect(await store.download()).toBe(true);
+    expect([...files.keys()].sort()).toEqual([
+      "grape-1.0.bin",
+      "grape-2.0-graph.onnx",
+      "grape-2.0.bin",
+      "personal.bin",
+    ]);
+  });
+
   it("reads an older file in another format as needing the download", async () => {
     const { deps, files } = fakes();
     files.set("grape-0.5.bin", makeFile(0, 100));

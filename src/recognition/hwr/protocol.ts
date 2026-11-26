@@ -8,8 +8,10 @@
 import type { InkStroke } from "./features";
 import type { LexiconSuggestion } from "./lexicon";
 import type { PageInk } from "./lines";
+import type { PageLanguage } from "./page-language";
 import type { LineReading, PageReading } from "./recognizer";
 import type { LabelledLine } from "./tune";
+import type { Rows, TaggedLine } from "../writer/rows";
 
 /** Tags this module's messages. */
 export const HWR_TAG = "fineNotesHwr";
@@ -34,10 +36,37 @@ export type HwrRequest =
     }
   /** The word list to suggest from (`handwriting/words.txt`). */
   | { type: "lexicon"; words: string[] }
+  /**
+   * A language pack (language-pack.ts; the bytes are transferred): a page
+   * found to be in its language is read with its model and list, and its
+   * words are suggested from that list.
+   */
+  | { type: "pack"; bytes: ArrayBuffer }
   /** List words for words of a kept page (`PageReading.id`). */
   | { type: "suggest"; reading: number; items: SuggestItem[] }
-  /** Read lines given as strokes (benchmarks, tests). */
-  | { type: "lines"; lines: InkStroke[][]; useLm: boolean; chars?: boolean; math?: boolean }
+  /**
+   * Read lines given as strokes (benchmarks, tests, Neaten). `wordInk`: each
+   * word's strokes too; `reread`: words not in the word list read again
+   * against it, as a page is read (nothing without a list).
+   */
+  | {
+      type: "lines";
+      lines: InkStroke[][];
+      useLm: boolean;
+      chars?: boolean;
+      math?: boolean;
+      wordInk?: boolean;
+      reread?: boolean;
+    }
+  /** Neaten: copied lines as the writer is shown them, curve rows tied to their letters (writer/grape-rows.ts). */
+  | {
+      type: "tag";
+      lines: { text: string; strokes: InkStroke[] }[];
+      /** The curve settings the writer was trained on: nothing is tagged when the reader's differ. */
+      rows: { tol: number; norm: string };
+    }
+  /** Neaten: what the model reads in written curve rows. */
+  | { type: "rows"; rows: Rows }
   /**
    * Learn a writer's handwriting from labelled lines, starting from the model
    * in `bytes` (the general one): the tuned model file, and how both read
@@ -105,7 +134,12 @@ export type HwrResult =
   | { type: "load"; info: HwrModelInfo }
   | { type: "page"; reading: PageReading }
   | { type: "lines"; readings: LineReading[] }
+  /** One per line asked; null where the text could not be laid over the ink. */
+  | { type: "tag"; lines: (TaggedLine | null)[]; rowsMatch: boolean }
+  /** `sure`: per character of `text`, how sure the reader is of it. */
+  | { type: "rows"; text: string; sure: number[] }
   | { type: "lexicon"; size: number }
+  | { type: "pack"; language: PageLanguage; words: number }
   /**
    * One per item (null: no near list word, or no list); `results` is null
    * itself when the page is no longer kept, so the caller may read it again.

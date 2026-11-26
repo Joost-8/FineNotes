@@ -20,8 +20,9 @@
  * visible part of the grid, and freed again when scrolled far away: a
  * 200-page notebook must not hold 200 canvases on an iPad.
  *
- * The file is saved next to the notebook (never over an existing file), or
- * several pictures into a new folder there; then a single file can be
+ * The file is saved next to the notebook (over an existing file only when
+ * its name was typed, FineNotes#318), or several pictures into a new folder
+ * there; then a single file can be
  * opened in Obsidian, and any of them handed to the system share sheet.
  */
 
@@ -78,15 +79,24 @@ export interface ExportPdfHost {
   setFormat?: (format: ExportFormat) => void;
   /** Paint page `index`'s preview into `canvas`, `cssWidth` CSS px wide, as it will export. */
   paintPreview: (canvas: HTMLCanvasElement, index: number, cssWidth: number) => Promise<void>;
-  /** The file, or folder of pictures, the pages would be saved as. */
-  targetFor: (pages: readonly number[], format: ExportFormat) => ExportTarget;
+  /** The file, or folder of pictures, the pages would be saved as; `typed` is the PDF name field. */
+  targetFor: (pages: readonly number[], format: ExportFormat, typed?: string) => ExportTarget;
   /** Render and save; `onProgress` counts finished pages. Rejects with an `AbortError` when cancelled. */
   export: (
     pages: readonly number[],
     format: ExportFormat,
     onProgress: (done: number, total: number) => void,
     cancelled: () => boolean,
+    typed?: string,
   ) => Promise<ExportedFiles>;
+  /**
+   * The PDF name last typed for this notebook ("" for none): given, the
+   * dialog shows a name field while PDF is picked (FineNotes#318). A typed
+   * name replaces a file of that name; left empty, the PDF gets a free name.
+   */
+  pdfName?: string;
+  /** A PDF was saved under the name field's text: remember it ("" forgets it). */
+  setPdfName?: (typed: string, file: string) => void;
   /** Open a saved file in Obsidian. */
   open: (path: string) => void;
   /**
@@ -302,6 +312,7 @@ export class ExportPdfModal extends Modal {
     const summary = contentEl.createDiv({ cls: "goodobsidian-ask-note" });
     const status = contentEl.createDiv({ cls: "goodobsidian-ask-status" });
     const actions = contentEl.createDiv({ cls: "goodobsidian-ask-actions" });
+    const nameField = this.nameField(actions, () => sync(false));
     const formats = this.formatControl(actions, () => sync(false));
     const template = this.templateSwitch(actions);
     const tapes = this.tapesSwitch(actions);
@@ -388,13 +399,22 @@ export class ExportPdfModal extends Modal {
           exportSummary({
             pages,
             picked: this.pageScope === "custom",
-            target: this.host.targetFor(pages, this.format),
+            target: this.target(pages, nameField),
             format: this.format,
             folder: this.host.folder,
             noun: this.host.noun,
           }),
         );
       }
+      nameField?.toggleClass("is-hidden", this.format !== "pdf");
+      if (nameField && n > 0) {
+        // The free name these pages would take: the placeholder of an empty field.
+        const free = this.host.targetFor(pages, "pdf");
+        nameField.placeholder = free.kind === "file" ? free.name.replace(/\.pdf$/i, "") : "";
+      }
+      const target = n > 0 ? this.target(pages, nameField) : null;
+      const replaces = target?.kind === "file" && target.replaces === true;
+      go.setText(t(replaces ? "notebooks.export.replace" : "notebooks.export.go"));
       go.disabled = n === 0 || rangeError !== null || this.busy;
       this.keyboard.update();
     };
@@ -411,6 +431,7 @@ export class ExportPdfModal extends Modal {
       if (template) template.disabled = true;
       if (tapes) tapes.disabled = true;
       if (margins) margins.disabled = true;
+      if (nameField) nameField.disabled = true;
       status.removeClass("is-error");
       try {
         const saved = await this.host.export(
@@ -425,7 +446,11 @@ export class ExportPdfModal extends Modal {
             );
           },
           () => this.cancelled,
+          this.typed(nameField),
         );
+        if (this.format === "pdf" && nameField && saved.paths.length === 1) {
+          this.host.setPdfName?.(nameField.value, saved.paths[0]);
+        }
         if (this.closed) return;
         this.renderDone(saved);
       } catch (error) {
@@ -439,11 +464,46 @@ export class ExportPdfModal extends Modal {
         if (template) template.disabled = false;
         if (tapes) tapes.disabled = false;
         if (margins) margins.disabled = false;
+        if (nameField) nameField.disabled = false;
         sync(false);
       }
     };
     go.addEventListener("click", () => void run());
     sync(true);
+  }
+
+  /** The name field's text while PDF is picked; nothing for pictures. */
+  private typed(field: HTMLInputElement | null): string | undefined {
+    return field && this.format === "pdf" ? field.value : undefined;
+  }
+
+  private target(pages: readonly number[], field: HTMLInputElement | null): ExportTarget {
+    return this.host.targetFor(pages, this.format, this.typed(field));
+  }
+
+  /**
+   * The PDF's name (FineNotes#318), when the host remembers one: empty, the
+   * export takes the free name shown as the placeholder (kept current by
+   * `sync`); a typed name may replace the file this notebook's export wrote
+   * under it (the button then says so). `changed` runs on every keystroke.
+   */
+  private nameField(parent: HTMLElement, changed: () => void): HTMLInputElement | null {
+    if (this.host.pdfName === undefined || this.host.formats === false) return null;
+    const field = parent.createEl("input", {
+      cls: "goodobsidian-export-name",
+      type: "text",
+      attr: {
+        "aria-label": t("notebooks.export.nameLabel"),
+        autocomplete: "off",
+        spellcheck: "false",
+        enterkeyhint: "done",
+      },
+    });
+    field.value = this.host.pdfName;
+    field.addEventListener("input", changed);
+    onEnterKey(field, () => field.blur());
+    this.keyboard.watch(field, field);
+    return field;
   }
 
   /**

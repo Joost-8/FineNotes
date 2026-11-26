@@ -44,6 +44,8 @@ export const surface = {
   "surface.command.joinShapes": "Join shapes",
   "surface.command.changeShape": "Change shape",
   "surface.command.erase": "Erase",
+  "surface.command.beautify": "Beautify handwriting",
+  "surface.command.writeInHand": "Write in my handwriting",
   "surface.command.fill": "Fill",
   "surface.command.pasteStyle": "Paste style",
   "surface.command.changeFurniture": "Change header and page numbers",
@@ -302,6 +304,8 @@ export const surface = {
   "surface.notice.clipboardUnreadable": "FineNotes: couldn't read the clipboard here.",
   "surface.notice.clipboardHidden":
     "FineNotes: this device won't hand the clipboard's picture to FineNotes. Add it with Insert image › Photos.",
+  "surface.notice.nothingToBeautify":
+    "Nothing to beautify: already neat, or not a line of writing.",
   "surface.notice.imageLocked": "FineNotes: image locked. To unlock it, hold the lasso on it.",
   "surface.readout.nothingToRedo": "Nothing to redo",
   "surface.readout.nothingToUndo": "Nothing to undo",
@@ -334,7 +338,10 @@ export const surface = {
   "surface.selectionBar.explore": "Explore",
   "surface.selectionBar.editTable": "Edit table",
   "surface.selectionBar.copyStyle": "Copy style",
+  "surface.selectionBar.beautify": "Beautify",
+  "surface.selectionBar.beautifyLine": "Beautify this line",
   "surface.selectionBar.text": "Text",
+  "surface.selectionBar.handwriting": "Handwriting",
   "surface.selectionBar.copyText": "Copy text",
   "surface.selectionBar.translate": "Translate",
   "surface.selectionBar.contentsHeading": "Contents heading",
