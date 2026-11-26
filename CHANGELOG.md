@@ -19,6 +19,7 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Companion PDF** ([#310](https://github.com/Joost-8/FineNotes/pull/310), thanks @bendi087): a notebook can keep a PDF of itself up to date, made when it closes or with Update now; turn it on in the notebook's settings, or after exporting the whole notebook as a PDF.
 - **Insert space on boards, and on paper without lines**
   ([discussion #276](https://github.com/Joost-8/FineNotes/discussions/276)).
   With the lasso on **By line**, press anywhere on a board and drag down: everything

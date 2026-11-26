@@ -46,6 +46,8 @@ export class PdfComposer {
   private constructor(
     private readonly output: PDFDocument,
     private readonly readPdf: ((path: string) => Promise<ArrayBuffer>) | null,
+    /** With a Subject, the Info dictionary stays readable without inflating (companion-metadata.ts). */
+    private readonly clearInfo: boolean,
   ) {}
 
   static async create(
@@ -58,7 +60,7 @@ export class PdfComposer {
     if (subject) output.setSubject(subject);
     output.setProducer("FineNotes");
     output.setCreationDate(new Date());
-    return new PdfComposer(output, readPdf);
+    return new PdfComposer(output, readPdf, !!subject);
   }
 
   async addImage(page: PdfImagePage): Promise<void> {
@@ -160,7 +162,7 @@ export class PdfComposer {
   }
 
   save(): Promise<Uint8Array> {
-    return this.output.save();
+    return this.output.save({ useObjectStreams: !this.clearInfo });
   }
 
   private name(kind: string): string {

@@ -1,13 +1,26 @@
-/** Optional Companion PDF associations; pure model with no platform dependencies. */
+/**
+ * Companion PDFs: a PDF of a notebook that FineNotes keeps up to date.
+ * Pure: the frontmatter keys, paths, the per-device journal and the
+ * state mark. No platform dependencies.
+ *
+ * Where the truth lives:
+ * - the notebook's frontmatter (synced): whether it has a companion, where
+ *   the PDF is, and whether the PDF follows the notebook's name;
+ * - the PDF's Subject (synced): which notebook it belongs to and which
+ *   content it shows (`export/companion-metadata.ts`);
+ * - this device's journal (local storage, never synced): whether the
+ *   notebook changed since the last export, an interrupted write, the last
+ *   error, and the size and time of the PDF this device wrote, so its own
+ *   write is trusted without reading it back.
+ */
 import { INK_FILE_SUFFIXES } from "../constants";
-import { t } from "../i18n/translate";
 import type { InkDocument } from "./document";
-import { readFurniture } from "./furniture";
 import { stripInkSuffix } from "./new-notebook";
 
 export const COMPANION_ID_KEY = "finenotes-companion-id";
 export const COMPANION_PDF_KEY = "finenotes-companion-pdf";
 export const COMPANION_FOLLOW_KEY = "finenotes-companion-follow";
+const COMPANION_KEYS = [COMPANION_ID_KEY, COMPANION_PDF_KEY, COMPANION_FOLLOW_KEY] as const;
 
 export interface CompanionFrontmatterMeta {
   id: string;
@@ -15,28 +28,73 @@ export interface CompanionFrontmatterMeta {
   followName?: boolean;
 }
 
+/** Why the last update failed, as a code: the words are looked up where shown. */
+export type CompanionErrorCode =
+  "missing" | "occupied" | "source" | "export" | "write" | "frontmatter" | "path" | "duplicate";
+
+const ERROR_CODES: readonly CompanionErrorCode[] = [
+  "missing",
+  "occupied",
+  "source",
+  "export",
+  "write",
+  "frontmatter",
+  "path",
+  "duplicate",
+];
+
+/** A failure that carries its code; any other error is an export failure. */
+export class CompanionError extends Error {
+  constructor(readonly code: CompanionErrorCode) {
+    super(code);
+    this.name = "CompanionError";
+  }
+}
+
+export function companionErrorCode(error: unknown): CompanionErrorCode {
+  return error instanceof CompanionError ? error.code : "export";
+}
+
+/** A file as Obsidian last listed it: what tells this device's own write from another's. */
+export interface CompanionStat {
+  path: string;
+  mtime: number;
+  size: number;
+}
+
+/** A PDF this device looked at: its listing and what its Subject said. */
+export interface CompanionSeen extends CompanionStat {
+  /** The notebook's id in the Subject, or `null` when it names none. */
+  id: string | null;
+  hash: string | null;
+}
+
 export interface CompanionTransaction {
   target: string;
   stage: string;
   backup: string;
+  /** The stage was written in full (only then may it become the PDF). */
+  staged?: boolean;
 }
 
+/** This device's record of one companion, by the notebook's id. */
 export interface CompanionEntry {
   notebookPath: string;
   pdfPath: string;
   enabled: boolean;
   followName: boolean;
+  /** The notebook may have changed since the PDF was last checked. */
   dirty: boolean;
-  lastFingerprint?: string;
-  /** A path received in frontmatter whose PDF can arrive separately. */
-  awaitingPdf?: boolean;
-  deletedAt?: number;
-  error?: string;
+  /** The PDF this device wrote last, with the content hash it carries. */
+  written?: CompanionSeen;
+  /** The last PDF read here that this device did not write. */
+  seen?: CompanionSeen;
+  error?: CompanionErrorCode;
   transaction?: CompanionTransaction;
 }
 
-export interface CompanionStore {
-  version: 1;
+export interface CompanionJournal {
+  version: 2;
   entries: Record<string, CompanionEntry>;
 }
 
@@ -45,70 +103,109 @@ export function isCompanionNotebookPath(path: string): boolean {
   return INK_FILE_SUFFIXES.some((suffix) => lower.endsWith(suffix));
 }
 
-/**
- * A copy a sync tool made when two devices changed the same file: Syncthing's
- * `name.sync-conflict-20261125-120000-ABCDEFG.pdf`, Dropbox's and Nextcloud's
- * `name (… conflicted copy …).pdf`. It carries the same Subject identity as
- * the companion it was copied from, so it is never taken for that companion.
- */
-export function isSyncConflictCopy(path: string): boolean {
-  const name = path.split("/").pop() ?? path;
-  return (
-    /\.sync-conflict-\d{8}-\d{6}-[A-Z0-9]{7}(?:\.[^./]+)?$/i.test(name) ||
-    /\([^)]*conflicted copy[^)]*\)/i.test(name)
-  );
-}
-
 export function validCompanionId(value: unknown): value is string {
   return typeof value === "string" && /^[a-f0-9]{16}$/.test(value);
 }
 
-function frontmatterBlock(body: string): string {
-  return /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(body)?.[1] ?? "";
+export function validCompanionHash(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9]{16}$/.test(value);
+}
+
+const FRONTMATTER = /^(\uFEFF?---\r?\n)([\s\S]*?)(\r?\n---)(\r?\n|$)/;
+
+/** The frontmatter's YAML (without its fences), or `null` when the text has none. */
+export function companionFrontmatter(body: string): string | null {
+  return FRONTMATTER.exec(body)?.[2] ?? null;
 }
 
 function unquoteYamlString(raw: string): string {
   const trimmed = raw.trim();
-  if (
-    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-    (trimmed.startsWith("'") && trimmed.endsWith("'"))
-  ) {
+  if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (typeof parsed === "string") return parsed;
+    } catch {
+      /* Not JSON-compatible: taken as written between the quotes. */
+    }
     return trimmed.slice(1, -1);
+  }
+  if (trimmed.length >= 2 && trimmed.startsWith("'") && trimmed.endsWith("'")) {
+    return trimmed.slice(1, -1).replace(/''/g, "'");
   }
   return trimmed;
 }
 
 export function companionIdFromBody(body: string): string | null {
-  const front = frontmatterBlock(body);
-  const id = /^finenotes-companion-id:\s*["']?([a-f0-9]{16})["']?\s*$/m.exec(front)?.[1];
-  return id ?? null;
+  const front = companionFrontmatter(body) ?? "";
+  return /^finenotes-companion-id:\s*["']?([a-f0-9]{16})["']?\s*$/m.exec(front)?.[1] ?? null;
 }
 
-/**
- * Reads portable companion settings from a notebook's frontmatter so enabling
- * a companion PDF on one device travels cleanly to other synced devices.
- */
+/** The companion keys of a notebook's frontmatter: the same on every device. */
 export function companionMetaFromBody(body: string): CompanionFrontmatterMeta | null {
   const id = companionIdFromBody(body);
   if (!id) return null;
-  const front = frontmatterBlock(body);
+  const front = companionFrontmatter(body) ?? "";
   const meta: CompanionFrontmatterMeta = { id };
-  const pdfMatch = /^finenotes-companion-pdf:\s*(.+?)\s*$/m.exec(front)?.[1];
-  if (pdfMatch) {
-    try {
-      meta.pdfPath = companionPath(unquoteYamlString(pdfMatch));
-    } catch {
-      /* Ignore malformed frontmatter path. */
-    }
+  const pdf = /^finenotes-companion-pdf:[ \t]*(.+?)\s*$/m.exec(front)?.[1];
+  if (pdf) {
+    const path = companionPathOrNull(unquoteYamlString(pdf));
+    if (path) meta.pdfPath = path;
   }
-  const followMatch = /^finenotes-companion-follow:\s*(true|false)\s*$/im.exec(front)?.[1];
-  if (followMatch) {
-    meta.followName = followMatch.toLowerCase() === "true";
-  }
+  const follow = /^finenotes-companion-follow:\s*(true|false)\s*$/im.exec(front)?.[1];
+  if (follow) meta.followName = follow.toLowerCase() === "true";
   return meta;
 }
 
-export function companionPath(raw: string): string {
+/** What to set: a key given `null` is removed, one left out is kept. */
+export interface CompanionKeys {
+  id?: string | null;
+  pdfPath?: string | null;
+  followName?: boolean | null;
+}
+
+function keyLines(keys: CompanionKeys, current: CompanionFrontmatterMeta | null): string[] {
+  const id = keys.id === undefined ? (current?.id ?? null) : keys.id;
+  const pdf = keys.pdfPath === undefined ? (current?.pdfPath ?? null) : keys.pdfPath;
+  const follow = keys.followName === undefined ? (current?.followName ?? null) : keys.followName;
+  const lines: string[] = [];
+  if (id !== null) lines.push(`${COMPANION_ID_KEY}: ${id}`);
+  if (pdf !== null) lines.push(`${COMPANION_PDF_KEY}: ${JSON.stringify(pdf)}`);
+  if (follow !== null) lines.push(`${COMPANION_FOLLOW_KEY}: ${follow ? "true" : "false"}`);
+  return lines;
+}
+
+const OWN_LINE = /^finenotes-companion-(?:id|pdf|follow):.*$/;
+
+/**
+ * The text with the companion keys set as asked, and every other line of it
+ * as it was: only lines of the three keys are removed or added, at the end
+ * of the frontmatter. A text without frontmatter gains one when a key is set.
+ */
+export function withCompanionKeys(text: string, keys: CompanionKeys): string {
+  const current = companionMetaFromBody(text);
+  const lines = keyLines(keys, current);
+  const match = FRONTMATTER.exec(text);
+  if (!match) {
+    if (lines.length === 0) return text;
+    const bom = text.startsWith("\uFEFF") ? "\uFEFF" : "";
+    return `${bom}---\n${lines.join("\n")}\n---\n${text.slice(bom.length)}`;
+  }
+  const [whole, open, yaml, close, end] = match;
+  const eol = open.endsWith("\r\n") ? "\r\n" : "\n";
+  const kept = yaml.split(/\r?\n/).filter((line) => !OWN_LINE.test(line));
+  const body = [...kept, ...lines];
+  // A frontmatter that held only these keys goes with its fences.
+  if (body.every((line) => line.trim() === "")) return text.slice(whole.length);
+  return open + body.join(eol) + close + end + text.slice(whole.length);
+}
+
+/** A copy's text: the copy is a notebook of its own, with no companion. */
+export function withoutCompanionKeys(text: string): string {
+  if (!COMPANION_KEYS.some((key) => (companionFrontmatter(text) ?? "").includes(key))) return text;
+  return withCompanionKeys(text, { id: null, pdfPath: null, followName: null });
+}
+
+function companionPathOrNull(raw: string): string | null {
   const parts = raw
     .trim()
     .replace(/\\/g, "/")
@@ -124,121 +221,165 @@ export function companionPath(raw: string): string {
         Array.from(p).some((char) => char.charCodeAt(0) < 32),
     )
   )
-    throw new Error(t("notebooks.companion.errInvalidPath"));
+    return null;
   const path = parts.join("/");
-  if (!path.toLowerCase().endsWith(".pdf")) throw new Error(t("notebooks.companion.errNotPdf"));
+  return path.toLowerCase().endsWith(".pdf") ? path : null;
+}
+
+/** A vault path for a companion PDF, or a `path` error for one that cannot be. */
+export function companionPath(raw: string): string {
+  const path = companionPathOrNull(raw);
+  if (!path) throw new CompanionError("path");
   return path;
 }
 
-/** Clean human-readable filename matching the notebook title (no suffix tag). */
+/** The PDF's file name for a notebook: its name without the notebook suffix. */
 export function companionName(notePath: string): string {
   const name = notePath.split("/").pop()!.replace(/\.md$/i, "");
   return `${stripInkSuffix(name)}.pdf`;
 }
 
-export function defaultCompanionPath(notePath: string, exportFolder?: string): string {
-  const folder = exportFolder ?? notePath.split("/").slice(0, -1).join("/");
-  return companionPath(folder ? `${folder}/${companionName(notePath)}` : companionName(notePath));
+export function folderOf(path: string): string {
+  const at = path.lastIndexOf("/");
+  return at < 0 ? "" : path.slice(0, at);
 }
 
-export function parseCompanionStore(raw: unknown): CompanionStore {
-  const out: CompanionStore = { version: 1, entries: {} };
-  if (!raw || typeof raw !== "object") return out;
-  const source = raw as Partial<CompanionStore>;
-  if (source.version !== 1 || !source.entries || typeof source.entries !== "object") return out;
-  for (const [id, value] of Object.entries(source.entries)) {
-    if (!validCompanionId(id) || !value || typeof value !== "object") continue;
+export function fileNameOf(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1);
+}
+
+/** `folder/name`, or `name` at the vault's root. */
+export function inCompanionFolder(folder: string, name: string): string {
+  return companionPath(folder ? `${folder}/${name}` : name);
+}
+
+/**
+ * A free path for a new companion in `folder`: the notebook's name, or
+ * `Name 1.pdf`, `Name 2.pdf`… when a file is already there (a manual export,
+ * say). Compared case-insensitively, as iPadOS, macOS and Windows do.
+ */
+export function freeCompanionPath(
+  notePath: string,
+  folder: string,
+  taken: (path: string) => boolean,
+): string {
+  const base = companionName(notePath).slice(0, -".pdf".length);
+  for (let i = 0; ; i++) {
+    const path = inCompanionFolder(folder, i === 0 ? `${base}.pdf` : `${base} ${i}.pdf`);
+    if (!taken(path)) return path;
+  }
+}
+
+/** Where the PDF goes when the notebook is renamed and the PDF follows its name. */
+export function followedCompanionPath(pdfPath: string, notePath: string): string {
+  return inCompanionFolder(folderOf(pdfPath), companionName(notePath));
+}
+
+/** Whether a PDF's name is the notebook's own (it follows the name), not one the user gave it. */
+export function followsName(pdfPath: string, notePath: string): boolean {
+  return fileNameOf(pdfPath).toLowerCase() === companionName(notePath).toLowerCase();
+}
+
+/**
+ * This device's staging and backup files beside the PDF. The device id is
+ * in their names, so a stray copy synced from another device never blocks
+ * this one, and this device never takes another's half-written file. Each
+ * write's names are new (`write`), so a scratch file just deleted, which the
+ * vault may still list for a moment, is never in the way of the next.
+ */
+export function companionTransaction(
+  target: string,
+  id: string,
+  device: string,
+  write = 0,
+): CompanionTransaction {
+  const own = device.replace(/[^A-Za-z0-9]/g, "").slice(0, 16) || "device";
+  const tag = `${id}-${own}-${Math.max(0, Math.floor(write)).toString(36)}`;
+  return {
+    target,
+    stage: `${target}.fn-${tag}-pending.pdf`,
+    backup: `${target}.fn-${tag}-backup.pdf`,
+  };
+}
+
+/** Whether a path is one of FineNotes' staging or backup files. */
+export function isCompanionScratch(path: string): boolean {
+  return /\.pdf\.fn-[a-f0-9]{16}-[A-Za-z0-9]+-[a-z0-9]+-(?:pending|backup)\.pdf$/i.test(path);
+}
+
+function readStat(raw: unknown): CompanionStat | null {
+  if (!raw || typeof raw !== "object") return null;
+  const value = raw as Partial<CompanionStat>;
+  if (typeof value.path !== "string" || !companionPathOrNull(value.path)) return null;
+  if (typeof value.mtime !== "number" || !Number.isFinite(value.mtime)) return null;
+  if (typeof value.size !== "number" || !Number.isFinite(value.size)) return null;
+  return { path: value.path, mtime: value.mtime, size: value.size };
+}
+
+function readSeen(raw: unknown): CompanionSeen | undefined {
+  const stat = readStat(raw);
+  if (!stat) return undefined;
+  const value = raw as Partial<CompanionSeen>;
+  return {
+    ...stat,
+    id: validCompanionId(value.id) ? value.id : null,
+    hash: validCompanionHash(value.hash) ? value.hash : null,
+  };
+}
+
+/** The journal as kept in local storage, with anything malformed left out. */
+export function parseCompanionJournal(raw: unknown): CompanionJournal {
+  const out: CompanionJournal = { version: 2, entries: {} };
+  let source: unknown = raw;
+  if (typeof raw === "string") {
     try {
-      const notebookPath = value.notebookPath;
-      if (typeof notebookPath !== "string" || !isCompanionNotebookPath(notebookPath)) continue;
-      const entry: CompanionEntry = {
-        notebookPath,
-        pdfPath: companionPath(value.pdfPath),
-        enabled: value.enabled === true,
-        followName: value.followName !== false,
-        dirty: value.dirty !== false,
-      };
-      if (value.awaitingPdf === true) entry.awaitingPdf = true;
-      if (entry.enabled && typeof value.deletedAt === "number" && Number.isFinite(value.deletedAt))
-        entry.deletedAt = value.deletedAt;
-      if (typeof value.lastFingerprint === "string") entry.lastFingerprint = value.lastFingerprint;
-      if (typeof value.error === "string") entry.error = value.error;
-      if (
-        value.transaction &&
-        value.transaction.stage === `${value.transaction.target}.fn-${id}-pending.pdf` &&
-        value.transaction.backup === `${value.transaction.target}.fn-${id}-backup.pdf`
-      ) {
-        entry.transaction = {
-          target: companionPath(value.transaction.target),
-          stage: companionPath(value.transaction.stage),
-          backup: companionPath(value.transaction.backup),
-        };
-      }
-      out.entries[id] = entry;
+      source = JSON.parse(raw);
     } catch {
-      /* Keep malformed records out of active write targets. */
+      return out;
     }
+  }
+  if (!source || typeof source !== "object") return out;
+  const { version, entries } = source as Partial<CompanionJournal>;
+  if (version !== 2 || !entries || typeof entries !== "object") return out;
+  for (const [id, value] of Object.entries(entries)) {
+    if (!validCompanionId(id) || !value || typeof value !== "object") continue;
+    const notebookPath = value.notebookPath;
+    if (typeof notebookPath !== "string" || !isCompanionNotebookPath(notebookPath)) continue;
+    const pdfPath = typeof value.pdfPath === "string" ? companionPathOrNull(value.pdfPath) : null;
+    if (!pdfPath) continue;
+    const entry: CompanionEntry = {
+      notebookPath,
+      pdfPath,
+      enabled: value.enabled === true,
+      followName: value.followName !== false,
+      dirty: value.dirty !== false,
+    };
+    const written = readSeen(value.written);
+    if (written) entry.written = written;
+    const seen = readSeen(value.seen);
+    if (seen) entry.seen = seen;
+    if (ERROR_CODES.includes(value.error as CompanionErrorCode)) entry.error = value.error;
+    const tx = value.transaction;
+    if (
+      tx &&
+      typeof tx.target === "string" &&
+      typeof tx.stage === "string" &&
+      typeof tx.backup === "string" &&
+      isCompanionScratch(tx.stage) &&
+      isCompanionScratch(tx.backup) &&
+      tx.stage.startsWith(`${tx.target}.fn-${id}-`) &&
+      tx.backup.startsWith(`${tx.target}.fn-${id}-`) &&
+      companionPathOrNull(tx.target)
+    ) {
+      entry.transaction = { target: tx.target, stage: tx.stage, backup: tx.backup };
+      if (tx.staged === true) entry.transaction.staged = true;
+    }
+    out.entries[id] = entry;
   }
   return out;
 }
 
-export interface CompanionExportOptions {
-  highlighterAlpha: number;
-  usePressure: boolean;
-  plainPaper?: boolean;
-  withoutTapes?: boolean;
-  margins?: string;
-}
-
-export type CompanionDocument = Pick<InkDocument, "pages" | "furniture" | "endless">;
-
-function companionPagesPayload(doc: Pick<InkDocument, "pages">): unknown[] {
-  return doc.pages.map((page) => {
-    const { id: _id, bookmarked: _bookmarked, title: _title, ...visual } = page;
-    return {
-      ...visual,
-      strokes: page.strokes.map(({ id: _sid, t0: _t0, ...graphics }) => graphics),
-      images: page.images.map(({ id: _iid, ...image }) => image),
-      textBoxes: page.textBoxes.map(({ id: _tid, ...text }) => text),
-      tables: (page.tables ?? []).map(({ id: _tbid, ...table }) => table),
-      graphs: (page.graphs ?? []).map(({ id: _gid, ...graph }) => graph),
-      equations: (page.equations ?? []).map(({ id: _eid, ...eq }) => eq),
-    };
-  });
-}
-
-/**
- * Device-independent content payload (pages + referenced assets, excluding
- * per-device render settings like pressure width or highlighter alpha).
- * Hashed into the PDF Subject so stale synced PDFs are caught without causing
- * two devices with different pen settings to rewrite each other.
- */
-export function companionContentOnly(doc: CompanionDocument, resources: unknown): string {
-  return JSON.stringify({
-    pages: companionPagesPayload(doc),
-    furniture: doc.endless ? undefined : readFurniture(doc.furniture),
-    resources,
-  });
-}
-
-/**
- * Only exported graphics & export switches; navigation, audio and bookmarks are
- * excluded. Uses an exclude-list on Page so any future visual element added to
- * Page is automatically fingerprinted without touching Companion PDFs.
- */
-export function companionContent(
-  doc: CompanionDocument,
-  options: CompanionExportOptions,
-  resources: unknown,
-): string {
-  return JSON.stringify({
-    pages: companionPagesPayload(doc),
-    furniture: doc.endless ? undefined : readFurniture(doc.furniture),
-    options,
-    resources,
-  });
-}
-
+/** The files a notebook's pages are drawn from: imported PDFs and pictures. */
 export function companionResources(doc: Pick<InkDocument, "pages">): string[] {
   return [
     ...new Set(
@@ -250,250 +391,22 @@ export function companionResources(doc: Pick<InkDocument, "pages">): string[] {
   ].sort();
 }
 
-export interface CompanionSnapshot {
-  fingerprint: string;
-  contentHash?: string;
-  resources: string[];
-  export: () => Promise<Uint8Array>;
+/** What the state mark shows. */
+export type CompanionMark = "off" | "current" | "stale" | "busy" | "error";
+
+export function companionMark(
+  entry: CompanionEntry | undefined,
+  running: boolean,
+  pdfExists: boolean,
+): CompanionMark {
+  if (!entry?.enabled) return "off";
+  if (running) return "busy";
+  if (entry.error) return "error";
+  if (!pdfExists) return "stale";
+  return entry.dirty ? "stale" : "current";
 }
 
-export interface CompanionIO {
-  exists: (path: string) => boolean;
-  pdfIdentity: (path: string) => Promise<string | null>;
-  pdfContentHash?: (path: string) => Promise<string | null>;
-  pdfPaths: () => string[];
-  rename: (from: string, to: string) => Promise<void>;
-  replace: (entry: CompanionEntry, bytes: Uint8Array, id: string) => Promise<boolean | void>;
-  persist: () => Promise<void>;
-}
-
-/** Exports coalesce per identity; only a manual/close request can initiate rendering. */
-export class CompanionController {
-  private readonly running = new Map<string, Promise<void>>();
-  private readonly pending = new Map<
-    string,
-    { snapshot: () => Promise<CompanionSnapshot>; force: boolean }
-  >();
-  private readonly revisions = new Map<string, number>();
-  private readonly rendered = new Set<string>();
-  /** Targets the user chose by hand: written where chosen, never searched for, until written. */
-  private readonly chosen = new Set<string>();
-
-  constructor(
-    readonly store: CompanionStore,
-    private readonly io: CompanionIO,
-  ) {}
-
-  revision(id: string): number {
-    return this.revisions.get(id) ?? 0;
-  }
-
-  markChanged(id: string): boolean {
-    const entry = this.store.entries[id];
-    if (!entry?.enabled) return false;
-    this.revisions.set(id, this.revision(id) + 1);
-    const transitioned = !entry.dirty;
-    entry.dirty = true;
-    return transitioned;
-  }
-
-  async resolve(id: string, allowFullScan = true): Promise<string | null> {
-    const entry = this.store.entries[id];
-    if (!entry) return null;
-    const expected = entry.pdfPath;
-    const ownedTarget = this.io.exists(expected) && (await this.io.pdfIdentity(expected)) === id;
-    if (expected !== entry.pdfPath) return this.resolve(id, allowFullScan);
-    if (ownedTarget) return expected;
-    if (entry.awaitingPdf || this.chosen.has(id)) {
-      if (this.io.exists(entry.pdfPath)) throw new Error(t("notebooks.companion.errUnrelatedFile"));
-      return null;
-    }
-    const allCandidates = this.io
-      .pdfPaths()
-      .filter(
-        (path) =>
-          path !== entry.pdfPath &&
-          !/[.]pdf[.]fn-[a-f0-9]{16}-(?:pending|backup)[.]pdf$/i.test(path) &&
-          !isSyncConflictCopy(path),
-      );
-    const parentOf = (p: string): string => {
-      const i = p.lastIndexOf("/");
-      return i < 0 ? "" : p.slice(0, i);
-    };
-    const baseOf = (p: string): string => p.slice(p.lastIndexOf("/") + 1).toLowerCase();
-    const noteDir = parentOf(entry.notebookPath);
-    const pdfDir = parentOf(entry.pdfPath);
-    const expectedNames = new Set([
-      baseOf(entry.pdfPath),
-      companionName(entry.notebookPath).toLowerCase(),
-    ]);
-    const isLikely = (p: string): boolean => {
-      const dir = parentOf(p);
-      return dir === pdfDir || dir === noteDir || expectedNames.has(baseOf(p));
-    };
-    const candidates = allowFullScan
-      ? allCandidates
-      : allCandidates
-          .filter(isLikely)
-          .sort(
-            (a, b) => Number(expectedNames.has(baseOf(b))) - Number(expectedNames.has(baseOf(a))),
-          )
-          .slice(0, 16);
-    const owned: string[] = [];
-    for (const path of candidates) {
-      if ((await this.io.pdfIdentity(path)) === id) owned.push(path);
-    }
-    if (expected !== entry.pdfPath) return this.resolve(id, allowFullScan);
-    if (owned.length > 1) throw new Error(t("notebooks.companion.errMultiplePdfs"));
-    if (owned.length === 1) {
-      entry.pdfPath = owned[0];
-      await this.io.persist();
-      return owned[0];
-    }
-    if (this.io.exists(entry.pdfPath)) throw new Error(t("notebooks.companion.errUnrelatedFile"));
-    return null;
-  }
-
-  claim(id: string, path: string): void {
-    const clean = companionPath(path);
-    if (
-      Object.entries(this.store.entries).some(
-        ([other, e]) => other !== id && e.pdfPath.toLowerCase() === clean.toLowerCase(),
-      )
-    )
-      throw new Error(t("notebooks.companion.errOwnedByOther"));
-    this.store.entries[id].pdfPath = clean;
-    this.store.entries[id].dirty = true;
-    delete this.store.entries[id].awaitingPdf;
-    this.chosen.add(id);
-  }
-
-  async followNotebookName(id: string, notebookPath: string, force = false): Promise<void> {
-    const entry = this.store.entries[id];
-    if (!entry) return;
-    const changedName = entry.notebookPath.split("/").pop() !== notebookPath.split("/").pop();
-    if ((!changedName && !force) || !entry.followName) {
-      entry.notebookPath = notebookPath;
-      await this.io.persist();
-      return;
-    }
-    if (entry.awaitingPdf) {
-      entry.notebookPath = notebookPath;
-      await this.io.persist();
-      return;
-    }
-    const current = await this.resolve(id, false);
-    const folder = entry.pdfPath.split("/").slice(0, -1).join("/");
-    const next = defaultCompanionPath(notebookPath, folder);
-    if (next === entry.pdfPath) {
-      entry.notebookPath = notebookPath;
-      await this.io.persist();
-      return;
-    }
-    if (this.io.exists(next)) throw new Error(t("notebooks.companion.errFollowOccupied"));
-    if (current) await this.io.rename(current, next);
-    entry.pdfPath = next;
-    entry.notebookPath = notebookPath;
-    await this.io.persist();
-  }
-
-  async isCurrent(
-    entry: CompanionEntry,
-    target: string,
-    current: CompanionSnapshot,
-  ): Promise<boolean> {
-    if (current.contentHash && this.io.pdfContentHash) {
-      // Identity-only PDFs are refreshed once to upgrade to portable freshness.
-      return (await this.io.pdfContentHash(target)) === current.contentHash;
-    }
-    return current.fingerprint === entry.lastFingerprint;
-  }
-
-  update(id: string, snapshot: () => Promise<CompanionSnapshot>, force = false): Promise<void> {
-    if (!this.store.entries[id]?.enabled) return Promise.resolve();
-    const existing = this.running.get(id);
-    const queued = this.pending.get(id);
-    this.pending.set(id, {
-      snapshot,
-      force: this.rendered.has(id) ? false : force || queued?.force === true,
-    });
-    if (existing) return existing;
-    const run = Promise.resolve()
-      .then(async () => {
-        while (this.pending.has(id)) {
-          const request = this.pending.get(id)!;
-          this.pending.delete(id);
-          const entry = this.store.entries[id];
-          if (!entry?.enabled) break;
-          const revision = this.revision(id);
-          try {
-            const current = await request.snapshot();
-            const target = await this.resolve(id, request.force);
-            if (current.resources.includes(entry.pdfPath))
-              throw new Error(t("notebooks.companion.errSourceConflict"));
-            if (!request.force && target && (await this.isCurrent(entry, target, current))) {
-              const dirty = this.revision(id) !== revision;
-              const changed =
-                entry.dirty !== dirty ||
-                entry.error !== undefined ||
-                entry.awaitingPdf === true ||
-                entry.lastFingerprint !== current.fingerprint;
-              entry.dirty = dirty;
-              entry.lastFingerprint = current.fingerprint;
-              delete entry.error;
-              delete entry.awaitingPdf;
-              if (changed) await this.io.persist();
-              continue;
-            }
-            if (!target && (entry.lastFingerprint || entry.awaitingPdf) && !request.force)
-              throw new Error(t("notebooks.companion.errMissing"));
-            this.rendered.add(id);
-            const queuedNext = this.pending.get(id);
-            if (queuedNext) queuedNext.force = false;
-            const bytes = await current.export();
-            if (!entry.enabled || this.store.entries[id] !== entry) continue;
-            // A moved or removed target can change while the renderer yields.
-            const latestTarget = await this.resolve(id, false);
-            if (
-              !latestTarget &&
-              ((target && !this.io.exists(target)) || entry.awaitingPdf) &&
-              !request.force
-            )
-              throw new Error(t("notebooks.companion.errMissing"));
-            if (current.resources.includes(entry.pdfPath))
-              throw new Error(t("notebooks.companion.errSourceConflict"));
-            if (!entry.enabled || this.store.entries[id] !== entry) continue;
-            if ((await this.io.replace(entry, bytes, id)) === false) continue;
-            if (!entry.enabled || this.store.entries[id] !== entry) continue;
-            this.chosen.delete(id);
-            delete entry.awaitingPdf;
-            entry.lastFingerprint = current.fingerprint;
-            entry.dirty = this.pending.has(id) || this.revision(id) !== revision;
-            delete entry.error;
-            await this.io.persist();
-          } catch (error) {
-            if (!entry.enabled || this.store.entries[id] !== entry) continue;
-            entry.dirty = true;
-            entry.error = error instanceof Error ? error.message : String(error);
-            await this.io.persist();
-            if (!this.pending.has(id)) throw error;
-          }
-        }
-      })
-      .finally(() => {
-        this.running.delete(id);
-        this.pending.delete(id);
-        this.rendered.delete(id);
-      });
-    this.running.set(id, run);
-    return run;
-  }
-
-  isRunning(id: string): boolean {
-    return this.running.has(id);
-  }
-
-  wait(id: string): Promise<void> {
-    return this.running.get(id) ?? Promise.resolve();
-  }
+/** Whether a file listing is exactly one this device recorded. */
+export function sameStat(a: CompanionStat | undefined, b: CompanionStat | null): boolean {
+  return !!a && !!b && a.path === b.path && a.mtime === b.mtime && a.size === b.size;
 }

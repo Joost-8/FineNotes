@@ -89,6 +89,8 @@ export default defineConfig({
         "src/export/companion-metadata.ts",
         "src/model/companion-pdf.ts",
         "src/model/companion-write.ts",
+        "src/model/companion-hash.ts",
+        "src/model/companion-queue.ts",
         "src/model/note-export.ts",
         "src/canvas/align-snap.ts",
         "src/canvas/paper-style.ts",

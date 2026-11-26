@@ -30,6 +30,9 @@ import { formatFileSize } from "../model/notebook-info";
 import { DialogKeyboard } from "./dialog-keyboard";
 import { onEnterKey } from "./enter-key";
 import { FolderSuggestModal } from "./folder-suggest";
+import type { CompanionSettingsHost } from "./companion-session";
+import type { CompanionMark } from "../model/companion-pdf";
+import type { TextKey } from "../i18n/translate";
 import { t, tn } from "../i18n/translate";
 
 /** What the summary card shows. */
@@ -86,28 +89,18 @@ export interface NoteSettingsHost {
    * Resolves `false` when there is no cover to paint.
    */
   paintCover?: (canvas: HTMLCanvasElement, cssWidth: number) => Promise<boolean>;
-  /** Optional Companion PDF controls for FineNotes notebooks and pages. */
-  companion?: {
-    state: () => {
-      enabled: boolean;
-      followName: boolean;
-      pdfPath: string;
-      status: string;
-      dirty: boolean;
-      error?: string;
-      running: boolean;
-      pdfExists: boolean;
-    };
-    observeStatus?: (listener: () => void) => () => void;
-    configure: (patch: {
-      enabled?: boolean;
-      followName?: boolean;
-      pdfPath?: string;
-    }) => Promise<void>;
-    update: () => Promise<void>;
-    openPdf: () => void;
-  };
+  /** The notebook's Companion PDF row; absent where a notebook cannot have one. */
+  companion?: CompanionSettingsHost;
 }
+
+/** The state mark's words, for its label and tooltip. */
+const MARK_TEXT: Record<CompanionMark, TextKey> = {
+  off: "notebooks.companion.markOff",
+  current: "notebooks.companion.markCurrent",
+  stale: "notebooks.companion.markStale",
+  busy: "notebooks.companion.markBusy",
+  error: "notebooks.companion.markStale",
+};
 
 /** The summary card's cover, in CSS px. */
 const COVER_WIDTH = 64;
@@ -118,7 +111,8 @@ export class NoteSettingsModal extends Modal {
   /** The name and folder the summary card was drawn with. */
   private shown: { name: string; folder: string } | undefined;
   private renameRef: EventRef | undefined;
-  private stopCompanion?: () => void;
+  /** Stops the Companion PDF row hearing its state. */
+  private stopCompanion: (() => void) | undefined;
 
   constructor(
     app: App,
@@ -158,8 +152,6 @@ export class NoteSettingsModal extends Modal {
   }
 
   private render(): void {
-    this.stopCompanion?.();
-    this.stopCompanion = undefined;
     const { contentEl } = this;
     // Re-rendering drops the field being typed in.
     this.keyboard.end();
@@ -173,183 +165,89 @@ export class NoteSettingsModal extends Modal {
     if (!this.host.board) this.renderPages(group);
     this.renderEditing(group);
     this.renderLook(group);
-    if (this.host.companion) this.renderCompanion(contentEl);
+    this.renderCompanion(group);
     this.renderAllSettings(contentEl);
   }
 
-  private renderCompanion(parent: HTMLElement): void {
+  /**
+   * The Companion PDF: one row. Its name, a mark for its state (a dot when
+   * up to date, a ring while behind or updating, the error colour with the
+   * reason in its label when it failed), then the PDF's folder, update now,
+   * open, and the switch. The PDF takes the notebook's name; renaming the PDF
+   * in the vault gives it one of its own.
+   */
+  private renderCompanion(group: HTMLElement): void {
+    this.stopCompanion?.();
+    this.stopCompanion = undefined;
     const host = this.host.companion;
     if (!host) return;
-    const state = host.state();
-    const card = parent.createDiv({ cls: "goodobsidian-ns-group goodobsidian-ns-companion" });
     const run = async (action: () => Promise<void>): Promise<void> => {
       try {
         await action();
       } catch (error) {
         new Notice(
-          t("notebooks.companion.noticePrefix", {
+          t("notebooks.companion.notice", {
             error: error instanceof Error ? error.message : String(error),
           }),
         );
+        if (this.modalEl.isConnected) this.render();
       }
-      if (this.modalEl.isConnected) this.render();
     };
-
-    const head = new Setting(card).setDesc(t("notebooks.companion.desc"));
-    const titleWrap = head.nameEl.createDiv({ cls: "goodobsidian-ns-companion-head" });
-    titleWrap.createSpan({ text: t("notebooks.companion.title") });
-    const badge = titleWrap.createSpan({ cls: "goodobsidian-ns-companion-badge" });
-    const refreshBadge = (): void => {
-      const now = host.state();
-      badge.setText(
-        !now.enabled
-          ? t("notebooks.companion.statusOff")
-          : now.error
-            ? t("notebooks.companion.badgeError")
-            : now.running
-              ? t("notebooks.companion.statusUpdating")
-              : !now.pdfExists
-                ? t("notebooks.companion.badgeMissing")
-                : now.dirty
-                  ? t("notebooks.companion.statusNeedsUpdate")
-                  : t("notebooks.companion.statusUpToDate"),
-      );
-      const tone = !now.enabled
-        ? "is-off"
-        : now.error || !now.pdfExists
-          ? "is-error"
-          : now.running
-            ? "is-running"
-            : now.dirty
-              ? "is-dirty"
-              : "is-synced";
-      for (const cls of ["is-off", "is-error", "is-running", "is-dirty", "is-synced"])
-        badge.toggleClass(cls, cls === tone);
-    };
-    refreshBadge();
-    this.stopCompanion = host.observeStatus?.(refreshBadge);
-
-    head.addToggle((toggle) =>
-      toggle.setValue(state.enabled).onChange((on) => {
-        void run(() => host.configure({ enabled: on }));
+    const row = new Setting(group).setName(t("notebooks.companion.title"));
+    row.settingEl.addClass("goodobsidian-ns-companion");
+    const mark = row.nameEl.createSpan({ attr: { role: "img" } });
+    const controls = row.controlEl.createDiv({ cls: "goodobsidian-ns-companion-controls" });
+    const folder = controls.createEl("button", {
+      cls: "goodobsidian-ns-companion-folder",
+      attr: { type: "button", "aria-label": t("notebooks.companion.chooseFolder") },
+    });
+    setIcon(folder.createSpan({ cls: "goodobsidian-ns-companion-folder-icon" }), "folder");
+    const folderName = folder.createSpan({ cls: "goodobsidian-ns-companion-folder-name" });
+    const update = controls.createEl("button", {
+      cls: "clickable-icon goodobsidian-ns-companion-update",
+      attr: { type: "button", "aria-label": t("notebooks.companion.updateNow") },
+    });
+    setIcon(update, "refresh-cw");
+    const open = controls.createEl("button", {
+      cls: "clickable-icon goodobsidian-ns-companion-open",
+      attr: { type: "button", "aria-label": t("notebooks.companion.openPdf") },
+    });
+    setIcon(open, "external-link");
+    const first = host.state();
+    row.addToggle((toggle) =>
+      toggle.setValue(first.mark !== "off").onChange((on) => {
+        void run(() => host.setEnabled(on));
       }),
     );
-
-    if (!state.enabled) return;
-
-    // Target PDF folder (native Obsidian fuzzy folder picker) + quick Open PDF button
-    const slashIdx = state.pdfPath.lastIndexOf("/");
-    const currentFolder = slashIdx >= 0 ? state.pdfPath.slice(0, slashIdx) : "";
-    const currentFile = slashIdx >= 0 ? state.pdfPath.slice(slashIdx + 1) : state.pdfPath;
-
-    const pathRow = new Setting(card).setName(t("notebooks.companion.folder"));
-    const pathWrap = pathRow.controlEl.createDiv({ cls: "goodobsidian-ns-companion-path" });
-    const folderBtn = pathWrap.createEl("button", {
-      cls: "clickable-icon goodobsidian-ns-companion-folder",
-      attr: { type: "button", "aria-label": t("notebooks.companion.chooseFolderAria") },
-    });
-    const folderIcon = folderBtn.createSpan({ cls: "goodobsidian-ns-companion-folder-icon" });
-    setIcon(folderIcon, "folder");
-    folderBtn.createSpan({
-      cls: "goodobsidian-ns-companion-folder-label",
-      text: currentFolder || "/",
-    });
-    folderBtn.addEventListener("click", () => {
+    const paint = (): void => {
+      const state = host.state();
+      const on = state.mark !== "off";
+      mark.className = `goodobsidian-ns-companion-mark is-${state.mark}`;
+      mark.toggleClass("is-busy", state.mark === "busy");
+      mark.setAttribute("aria-label", state.error ?? t(MARK_TEXT[state.mark]));
+      mark.toggle(on);
+      folder.toggle(on);
+      update.toggle(on);
+      open.toggle(on && state.pdfExists);
+      update.disabled = state.mark === "busy";
+      folderName.setText(state.folder.split("/").pop() || "/");
+    };
+    paint();
+    this.stopCompanion = host.observe(paint);
+    host.check();
+    folder.addEventListener("click", () => {
+      const current = host.state().folder;
       new FolderSuggestModal(
         this.app,
-        (chosen) => {
-          const next = chosen ? `${chosen}/${currentFile}` : currentFile;
-          if (next !== state.pdfPath) {
-            void run(() => host.configure({ pdfPath: next }));
-          }
-        },
+        (chosen) => void run(() => host.chooseFolder(chosen)),
         t("notebooks.companion.chooseFolderPlaceholder"),
-        currentFolder,
+        current,
       ).open();
     });
-
-    if (state.pdfExists) {
-      const openBtn = pathWrap.createEl("button", {
-        cls: "clickable-icon goodobsidian-ns-companion-open",
-        attr: { type: "button", "aria-label": t("notebooks.companion.openPdfAria") },
-      });
-      setIcon(openBtn, "external-link");
-      openBtn.addEventListener("click", () => {
-        this.close();
-        host.openPdf();
-      });
-    }
-
-    // Filename mode segmented control (Follow name | Custom)
-    const nameRow = new Setting(card).setName(t("notebooks.companion.filename"));
-    const seg = nameRow.controlEl.createDiv({
-      cls: "goodobsidian-ns-segmented",
-      attr: { role: "radiogroup", "aria-label": t("notebooks.companion.filenameModeAria") },
-    });
-    for (const [follow, label] of [
-      [true, t("notebooks.companion.followName")],
-      [false, t("notebooks.companion.custom")],
-    ] as const) {
-      const btn = seg.createEl("button", {
-        cls: "goodobsidian-ns-segment clickable-icon",
-        text: label,
-        attr: {
-          type: "button",
-          role: "radio",
-          "aria-checked": String(state.followName === follow),
-        },
-      });
-      btn.toggleClass("is-active", state.followName === follow);
-      btn.addEventListener("click", () => {
-        if (state.followName !== follow) {
-          void run(() => host.configure({ followName: follow }));
-        }
-      });
-    }
-
-    if (!state.followName) {
-      const customRow = new Setting(card).setName(t("notebooks.companion.customName"));
-      const nameInput = customRow.controlEl.createEl("input", {
-        cls: "goodobsidian-ns-companion-input",
-        attr: {
-          type: "text",
-          placeholder: "Notebook.pdf",
-          spellcheck: "false",
-          "aria-label": t("notebooks.companion.customNameAria"),
-        },
-      });
-      nameInput.value = currentFile;
-      const commitName = (): void => {
-        let nextFile = nameInput.value.trim();
-        if (!nextFile) {
-          nameInput.value = currentFile;
-          return;
-        }
-        if (!nextFile.toLowerCase().endsWith(".pdf")) nextFile += ".pdf";
-        const nextPath = currentFolder ? `${currentFolder}/${nextFile}` : nextFile;
-        if (nextPath !== state.pdfPath) {
-          void run(() => host.configure({ pdfPath: nextPath, followName: false }));
-        }
-      };
-      nameInput.addEventListener("change", commitName);
-      onEnterKey(nameInput, () => nameInput.blur());
-      this.keyboard.watch(nameInput, card);
-    }
-
-    // Update now action row
-    const syncRow = new Setting(card)
-      .setName(t("notebooks.companion.syncTitle"))
-      .setDesc(state.error ? state.status : t("notebooks.companion.syncDesc"));
-    syncRow.addButton((button) => {
-      button
-        .setButtonText(
-          state.running
-            ? t("notebooks.companion.statusUpdating")
-            : t("notebooks.companion.updateNow"),
-        )
-        .setDisabled(state.running)
-        .setCta()
-        .onClick(() => void run(host.update));
+    update.addEventListener("click", () => void run(host.update));
+    open.addEventListener("click", () => {
+      this.close();
+      host.openPdf();
     });
   }
 

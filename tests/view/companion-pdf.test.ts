@@ -1,274 +1,412 @@
-import { PDFDocument } from "pdf-lib";
-import type { App, TFile } from "obsidian";
-import { Notice } from "obsidian";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { companionPdfMeta, companionPdfSubject } from "../../src/export/companion-metadata";
-import { type CompanionSnapshot, type CompanionStore } from "../../src/model/companion-pdf";
-import { blankPage, emptyDocument } from "../../src/model/document";
-import { DocumentEncoder } from "../../src/model/serialize";
-import {
-  CompanionPdfManager,
-  companionDocument,
-  companionFurniture,
-  fingerprintCompanionDoc,
-} from "../../src/view/companion-pdf";
+/**
+ * The Companion PDF manager against a vault in memory: what is read, when,
+ * and what is written. A notebook that has not changed costs nothing; this
+ * device's own PDF is never read back; another device's PDF is read once,
+ * by its Info; the vault is never searched; the notebook's frontmatter is
+ * the truth on every device.
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("obsidian", () => ({ Notice: vi.fn() }));
-vi.mock("../../src/view/image-cache", () => ({}));
-vi.mock("../../src/view/pdf-backdrop", () => ({}));
-vi.mock("../../src/view/pdf-export", () => ({}));
+vi.mock("obsidian", () => import("./fake-obsidian"));
+/** The renderer is stood in for: a PDF that is only its Subject, as our composer writes it. */
+const rendered = vi.fn(
+  async (_pages: unknown[], _sources: unknown, options: { subject?: string }) =>
+    new TextEncoder().encode(
+      `%PDF-1.7\n1 0 obj << /Subject (${options.subject ?? ""}) >> endobj\ntrailer << /Info 1 0 R >>\n%%EOF\n`,
+    ),
+);
+vi.mock("../../src/view/pdf-export", () => ({ exportPagesToPdf: rendered }));
+vi.mock("../../src/view/image-cache", () => ({
+  VaultImageCache: class {
+    destroy(): void {}
+  },
+}));
+vi.mock("../../src/view/pdf-backdrop", () => ({
+  PdfBackdropCache: class {
+    destroy(): void {}
+  },
+}));
 
-const ID = "a3f9211234567890";
-const OLD = "Notes/Notebook.pdf";
-const MOVED = "Archive/Renamed.pdf";
-const FIRST_HASH = "1111111111111111";
-const SECOND_HASH = "2222222222222222";
-const KEYS = {
-  id: "finenotes-companion-id",
-  pdf: "finenotes-companion-pdf",
-  follow: "finenotes-companion-follow",
-};
+const { TFile, notices, resetFakes } = await import("./fake-obsidian");
+const { CompanionPdfManager, captureHash } = await import("../../src/view/companion-pdf");
+const { DocumentEncoder } = await import("../../src/model/serialize");
+const { emptyDocument, blankPage } = await import("../../src/model/document");
+const { companionMetaFromBody, withCompanionKeys } = await import("../../src/model/companion-pdf");
+const { companionPdfSubject } = await import("../../src/export/companion-metadata");
 
-const options = { usePressure: true, highlighterAlpha: 0.4 };
-const snapshot = async (): Promise<CompanionSnapshot> => ({
-  fingerprint: "local-fingerprint",
-  contentHash: SECOND_HASH,
-  resources: [],
-  export: vi.fn(async () => new Uint8Array()),
-});
+type Capture = Parameters<InstanceType<typeof CompanionPdfManager>["requestExport"]>[2];
 
-async function pdf(hash?: string, id = ID): Promise<ArrayBuffer> {
-  const out = await PDFDocument.create();
-  out.addPage();
-  out.setSubject(companionPdfSubject(id, hash));
-  return (await out.save()).buffer as ArrayBuffer;
-}
+const NOTE = "School/Cell biology.notebook.md";
+const PDF = "School/Exports/Cell biology.pdf";
 
-function setup() {
-  const note = { path: "Notes/Notebook.notebook.md", basename: "Notebook.notebook" } as TFile;
-  const files = new Map<string, TFile>([[note.path, note]]);
-  const bytes = new Map<TFile, ArrayBuffer>();
-  const frontmatter: Record<string, unknown> = {
-    [KEYS.id]: ID,
-    [KEYS.pdf]: OLD,
-    [KEYS.follow]: true,
-  };
-  const body = () =>
-    "---\n" +
-    Object.entries(frontmatter)
-      .map(([key, value]) => `${key}: ${String(value)}\n`)
-      .join("") +
-    "---\n";
-  const app = {
-    vault: {
-      read: vi.fn(async () => body()),
-      cachedRead: vi.fn(async () => body()),
-      getFileByPath: (path: string) => files.get(path) ?? null,
-      getAbstractFileByPath: (path: string) => files.get(path) ?? null,
-      getFiles: () => [...files.values()],
-      readBinary: vi.fn(async (file: TFile) => bytes.get(file)!),
-      modifyBinary: vi.fn(async (file: TFile, data: ArrayBuffer) => {
-        bytes.set(file, data);
-      }),
-    },
-    fileManager: {
-      processFrontMatter: vi.fn(async (_: TFile, edit: (data: Record<string, unknown>) => void) => {
-        edit(frontmatter);
-      }),
-    },
-  };
-  let saved: CompanionStore | undefined;
-  const persist = async (store: CompanionStore) => {
-    saved = structuredClone(store);
-  };
-  const newManager = () => new CompanionPdfManager(app as unknown as App, persist);
-  const manager = newManager();
-  const put = (path: string, data: ArrayBuffer, mtime = 10) => {
-    const file = {
-      path,
-      extension: path.split(".").pop(),
-      stat: { mtime, size: data.byteLength },
-    } as TFile;
+/** Another device's PDF of this notebook, as it arrives by sync. */
+const foreignPdf = (id: string, hash: string) =>
+  new TextEncoder().encode(
+    `%PDF-1.7\n1 0 obj << /Subject (${companionPdfSubject(id, hash)}) >> endobj\ntrailer << /Info 1 0 R >>\n`,
+  );
+
+function vaultApp() {
+  let clock = 1000;
+  const files = new Map<string, InstanceType<typeof TFile>>();
+  const bytes = new Map<string, Uint8Array>();
+  const texts = new Map<string, string>();
+  const storage = new Map<string, unknown>();
+  const layoutReady: Array<() => void> = [];
+  const put = (path: string, data: Uint8Array | string) => {
+    const file = files.get(path) ?? new TFile(path);
     files.set(path, file);
-    bytes.set(file, data);
+    if (typeof data === "string") texts.set(path, data);
+    else bytes.set(path, data);
+    file.stat.size = typeof data === "string" ? data.length : data.byteLength;
+    file.stat.mtime = ++clock;
     return file;
   };
-  return {
-    app,
-    note,
-    files,
-    bytes,
-    frontmatter,
-    body,
-    manager,
-    put,
-    newManager,
-    saved: () => saved,
+  const vault = {
+    getFileByPath: (path: string) => files.get(path) ?? null,
+    getAbstractFileByPath: (path: string) => files.get(path) ?? null,
+    getFolderByPath: () => ({}),
+    createFolder: vi.fn(async () => {}),
+    getFiles: vi.fn(() => [...files.values()]),
+    readBinary: vi.fn(
+      async (file: InstanceType<typeof TFile>) => bytes.get(file.path)!.slice().buffer,
+    ),
+    createBinary: vi.fn(async (path: string, data: ArrayBuffer) => {
+      if (files.has(path)) throw new Error(`exists: ${path}`);
+      return put(path, new Uint8Array(data));
+    }),
+    modifyBinary: vi.fn(async (file: InstanceType<typeof TFile>, data: ArrayBuffer) => {
+      put(file.path, new Uint8Array(data));
+    }),
+    rename: vi.fn(async (file: InstanceType<typeof TFile>, to: string) => {
+      if (files.has(to)) throw new Error(`exists: ${to}`);
+      files.delete(file.path);
+      const data = bytes.get(file.path) ?? texts.get(file.path)!;
+      bytes.delete(file.path);
+      texts.delete(file.path);
+      const moved = new TFile(to);
+      moved.stat.mtime = file.stat.mtime;
+      moved.stat.size = file.stat.size;
+      files.set(to, moved);
+      if (typeof data === "string") texts.set(to, data);
+      else bytes.set(to, data);
+    }),
+    adapter: {
+      exists: async (path: string) => files.has(path),
+      remove: vi.fn(async (path: string) => {
+        files.delete(path);
+        bytes.delete(path);
+      }),
+    },
+    cachedRead: async (file: InstanceType<typeof TFile>) => texts.get(file.path) ?? "",
+    read: async (file: InstanceType<typeof TFile>) => texts.get(file.path) ?? "",
+    process: vi.fn(async (file: InstanceType<typeof TFile>, edit: (text: string) => string) => {
+      put(file.path, edit(texts.get(file.path) ?? ""));
+    }),
+    on: () => ({}),
   };
+  const app = {
+    vault,
+    fileManager: {
+      renameFile: vi.fn((file: InstanceType<typeof TFile>, to: string) => vault.rename(file, to)),
+      trashFile: vi.fn(async () => {}),
+    },
+    metadataCache: {
+      getFileCache: (file: InstanceType<typeof TFile>) => ({
+        frontmatter: companionMetaFromBody(texts.get(file.path) ?? "")
+          ? { "finenotes-companion-id": companionMetaFromBody(texts.get(file.path) ?? "")!.id }
+          : undefined,
+      }),
+    },
+    workspace: { onLayoutReady: (run: () => void) => layoutReady.push(run) },
+    loadLocalStorage: (key: string) => storage.get(key) ?? null,
+    saveLocalStorage: vi.fn((key: string, value: unknown) => void storage.set(key, value)),
+  };
+  return { app, vault, files, bytes, texts, storage, put, layoutReady };
 }
 
-function vaultTimers(): void {
-  vi.useFakeTimers();
+function capture(pages = 1, title = "Cell biology"): Capture {
+  const doc = emptyDocument();
+  for (let i = 1; i < pages; i++) doc.pages.push(blankPage(`p${i}`));
+  const snapshot = new DocumentEncoder().snapshot(doc);
+  return () => ({
+    title,
+    snapshot,
+    paperWidth: 1000,
+    furniture: null,
+    resources: [],
+    options: { usePressure: true, highlighterAlpha: 0.4 },
+    crop: (page) => page,
+  });
+}
+
+function setup(body = "Notes\n") {
+  const v = vaultApp();
+  const note = v.put(NOTE, body);
+  const manager = new CompanionPdfManager(v.app as never, "devA");
+  return { ...v, note, manager };
+}
+
+/** The notebook with its companion on, the PDF made once. */
+async function enabled() {
+  const s = setup();
+  const id = await s.manager.enable(s.note as never, s.texts.get(NOTE)!, "School/Exports");
+  await s.manager.requestExport(id, s.note as never, capture(), true);
+  rendered.mockClear();
+  s.vault.readBinary.mockClear();
+  return { ...s, id };
+}
+
+beforeEach(() => {
+  resetFakes();
+  rendered.mockClear();
   vi.stubGlobal("window", { setTimeout, clearTimeout });
-}
-
-afterEach(() => {
-  vi.useRealTimers();
-  vi.unstubAllGlobals();
-  vi.clearAllMocks();
 });
 
-describe("portable companion associations", () => {
-  it("waits for an authoritative new path even while an owned copy remains at the old one", async () => {
-    const s = setup();
-    s.put(OLD, await pdf(FIRST_HASH));
-    s.manager.hydrateFromBody(s.note, s.body());
-    s.frontmatter[KEYS.pdf] = MOVED;
-    const render = vi.fn(snapshot);
-    await expect(s.manager.update(ID, s.note, render, false)).rejects.toThrow("PDF missing");
-    expect(s.manager.entry(ID)?.pdfPath).toBe(MOVED);
-    expect(s.app.vault.readBinary).not.toHaveBeenCalled();
-  });
+afterEach(() => vi.unstubAllGlobals());
 
-  it("honors synced disabled frontmatter while the old PDF is still present", async () => {
-    const s = setup();
-    s.put(OLD, await pdf(FIRST_HASH));
-    s.manager.hydrateFromBody(s.note, s.body());
-    delete s.frontmatter[KEYS.pdf];
-    const render = vi.fn(snapshot);
-    await s.manager.update(ID, s.note, render, false);
-    expect(s.manager.entry(ID)?.enabled).toBe(false);
-    expect(render).not.toHaveBeenCalled();
-  });
-
-  it("blocks recreation and distinguishes a delete-first synced move by rereading the notebook", async () => {
-    vaultTimers();
-    const s = setup();
-    s.manager.hydrateFromBody(s.note, s.body());
-    s.manager.deleted(OLD);
-    const render = vi.fn(snapshot);
-    await s.manager.update(ID, s.note, render, true);
-    expect(render).not.toHaveBeenCalled();
-    s.frontmatter[KEYS.pdf] = MOVED;
-    await vi.runAllTimersAsync();
-    expect(s.manager.entry(ID)).toMatchObject({ pdfPath: MOVED, enabled: true });
-    expect(s.app.fileManager.processFrontMatter).not.toHaveBeenCalled();
-    expect(Notice).not.toHaveBeenCalled();
-  });
-
-  it("recognizes an owned PDF arriving at its new path before the notebook update", async () => {
-    const movedPdf = await pdf(FIRST_HASH);
-    vaultTimers();
-    const s = setup();
-    s.manager.hydrateFromBody(s.note, s.body());
-    s.manager.deleted(OLD);
-    s.put(MOVED, movedPdf);
-    s.manager.modified(MOVED);
-    await vi.runAllTimersAsync();
-    expect(s.manager.entry(ID)).toMatchObject({ pdfPath: MOVED, enabled: true });
-    expect(s.frontmatter[KEYS.pdf]).toBe(MOVED);
-    expect(Notice).not.toHaveBeenCalled();
-  });
-
-  it("persists the pending deletion across restart and disables a confirmed deletion", async () => {
-    vaultTimers();
-    const s = setup();
-    s.manager.hydrateFromBody(s.note, s.body());
-    s.manager.deleted(OLD);
-    s.manager.destroy();
-    const restarted = s.newManager();
-    restarted.load(s.saved());
-    await vi.runAllTimersAsync();
-    expect(restarted.entry(ID)).toMatchObject({ enabled: false, dirty: false });
-    expect(restarted.entry(ID)?.deletedAt).toBeUndefined();
-    expect(s.frontmatter).toEqual({ [KEYS.id]: ID });
-    expect(Notice).toHaveBeenCalledOnce();
-  });
-
-  it("does not clear a companion when a sync replacement arrives at the same path", async () => {
-    const replacement = await pdf(FIRST_HASH);
-    vaultTimers();
-    const s = setup();
-    s.manager.hydrateFromBody(s.note, s.body());
-    s.manager.deleted(OLD);
-    s.put(OLD, replacement);
-    await vi.runAllTimersAsync();
-    expect(s.manager.entry(ID)?.enabled).toBe(true);
-    expect(s.frontmatter[KEYS.pdf]).toBe(OLD);
-    expect(Notice).not.toHaveBeenCalled();
-  });
-});
-
-describe("companion export freshness", () => {
-  it("hashes attachment bytes, caches reads locally, and invalidates cached values on vault events", async () => {
-    const doc = emptyDocument(1024);
-    doc.pages[0].backdrop = { kind: "pdf", path: "Source.pdf", page: 0 };
-    const a = setup();
-    const b = setup();
-    const same = new Uint8Array([1, 2, 3]).buffer;
-    const original = a.put("Source.pdf", same, 100);
-    b.put("Source.pdf", same, 200);
-    const read = (s: ReturnType<typeof setup>) =>
-      fingerprintCompanionDoc(s.app as unknown as App, doc, "Notebook", options);
-    const first = await read(a);
-    expect((await read(b)).contentHash).toBe(first.contentHash);
-    expect((await read(a)).contentHash).toBe(first.contentHash);
-    expect(a.app.vault.readBinary).toHaveBeenCalledOnce();
-    a.bytes.set(original, new Uint8Array([9, 2, 3]).buffer);
-    a.manager.modified("Source.pdf");
-    expect((await read(a)).contentHash).not.toBe(first.contentHash);
-  });
-
-  it("reassesses cached companion metadata and marks an arriving legacy PDF stale", async () => {
-    const s = setup();
-    const file = s.put(OLD, await pdf(SECOND_HASH));
-    s.manager.hydrateFromBody(s.note, s.body());
-    await s.manager.assess(ID, s.note, snapshot);
-    expect(s.manager.entry(ID)?.dirty).toBe(false);
-    s.bytes.set(file, await pdf(FIRST_HASH));
-    s.manager.modified(OLD);
-    await s.manager.assess(ID, s.note, snapshot);
-    expect(s.manager.entry(ID)?.dirty).toBe(true);
-    s.put(OLD, await pdf());
-    s.manager.modified(OLD);
-    await s.manager.assess(ID, s.note, snapshot);
-    expect(s.manager.entry(ID)?.dirty).toBe(true);
-  });
-
-  it("stamps the hash from the saved export and detects when the notebook has since changed", async () => {
-    const s = setup();
-    delete s.frontmatter[KEYS.pdf];
-    const plain = await PDFDocument.create();
-    plain.addPage();
-    const exported = (await plain.save()).buffer as ArrayBuffer;
-    const file = s.put(OLD, exported);
-    await s.manager.adoptExportedPdf(
-      s.note,
-      OLD,
-      {
-        fingerprint: "old-fingerprint",
-        contentHash: FIRST_HASH,
-        resources: [],
-      },
-      exported,
-    );
-    expect(await companionPdfMeta(s.bytes.get(file)!)).toEqual({ id: ID, contentHash: FIRST_HASH });
-    await s.manager.assess(ID, s.note, snapshot);
-    expect(s.manager.entry(ID)?.dirty).toBe(true);
-  });
-
-  it("snapshots saved pages and resolves furniture on a transformed page", () => {
-    const doc = emptyDocument(1024);
-    doc.pages.push(blankPage("new-page"));
-    doc.furniture = { header: "{title} {page} of {pages}", numbers: "right" };
-    const snapshot = new DocumentEncoder().snapshot(doc);
-    doc.pages.reverse();
-    doc.furniture.header = "Other";
-    const captured = companionDocument(snapshot, 1024);
-    expect(companionFurniture(captured, "Notebook")({ ...captured.pages[0] })).toEqual({
-      header: "Notebook 1 of 2",
-      footer: "1",
-      align: "right",
+describe("turning it on", () => {
+  it("names the PDF after the notebook, keeps the keys in its frontmatter, and the journal on this device", async () => {
+    const s = await enabled();
+    expect(companionMetaFromBody(s.texts.get(NOTE)!)).toEqual({
+      id: s.id,
+      pdfPath: PDF,
+      followName: true,
     });
+    expect(s.files.has(PDF)).toBe(true);
+    expect(s.app.saveLocalStorage).toHaveBeenCalledWith(
+      "finenotes-companion-journal",
+      expect.any(String),
+    );
+    expect(s.manager.state(s.id).mark).toBe("current");
+  });
+
+  it("takes a free name beside a PDF exported by hand, never overwriting it", async () => {
+    const s = setup();
+    s.put(PDF, foreignPdf("bbbbbbbbbbbbbbbb", "0000000000000000"));
+    const before = s.bytes.get(PDF);
+    const id = await s.manager.enable(s.note as never, s.texts.get(NOTE)!, "School/Exports");
+    expect(s.manager.entry(id)?.pdfPath).toBe("School/Exports/Cell biology 1.pdf");
+    expect(s.manager.entry(id)?.followName).toBe(false);
+    await s.manager.requestExport(id, s.note as never, capture(), true);
+    expect(s.bytes.get(PDF)).toBe(before);
+    expect(s.files.has("School/Exports/Cell biology 1.pdf")).toBe(true);
+  });
+
+  it("refuses frontmatter that is not YAML, in words", async () => {
+    const s = setup("---\ntags: [a\n  oops\n---\nNotes\n");
+    await expect(
+      s.manager.enable(s.note as never, s.texts.get(NOTE)!, undefined),
+    ).rejects.toMatchObject({
+      code: "frontmatter",
+    });
+  });
+});
+
+describe("what a close costs", () => {
+  it("nothing at all for a notebook that has not changed", async () => {
+    const s = await enabled();
+    const made = vi.fn(capture());
+    await s.manager.requestExport(s.id, s.note as never, made, false);
+    expect(made).not.toHaveBeenCalled();
+    expect(s.vault.readBinary).not.toHaveBeenCalled();
+    expect(rendered).not.toHaveBeenCalled();
+  });
+
+  it("one render for a changed notebook, its own PDF trusted without being read", async () => {
+    const s = await enabled();
+    s.manager.markDirty(s.id);
+    await s.manager.requestExport(s.id, s.note as never, capture(2), false);
+    expect(rendered).toHaveBeenCalledTimes(1);
+    expect(s.vault.readBinary).not.toHaveBeenCalled();
+    expect(s.manager.state(s.id).mark).toBe("current");
+    // Its scratch files go straight out, not to the trash, and carry this device's id.
+    expect(s.app.fileManager.trashFile).not.toHaveBeenCalled();
+    const removed = s.vault.adapter.remove.mock.calls.map(([path]) => path);
+    expect(removed).toHaveLength(1);
+    expect(removed[0].startsWith(`${PDF}.fn-${s.id}-devA-`)).toBe(true);
+    expect(removed[0].endsWith("-backup.pdf")).toBe(true);
+    expect([...s.files.keys()].sort()).toEqual([PDF, NOTE].sort());
+  });
+
+  it("no render when an edit was undone: the PDF already shows it", async () => {
+    const s = await enabled();
+    s.manager.markDirty(s.id);
+    await s.manager.requestExport(s.id, s.note as never, capture(), false);
+    expect(rendered).not.toHaveBeenCalled();
+    expect(s.manager.entry(s.id)?.dirty).toBe(false);
+  });
+
+  it("never searches the vault for a PDF", async () => {
+    const s = await enabled();
+    s.files.delete(PDF);
+    s.manager.markDirty(s.id);
+    await s.manager.requestExport(s.id, s.note as never, capture(2), false);
+    expect(s.vault.getFiles).not.toHaveBeenCalled();
+    // Missing: said so, and not made again unless asked.
+    expect(s.manager.state(s.id)).toMatchObject({ mark: "error", pdfExists: false });
+    expect(rendered).not.toHaveBeenCalled();
+    await s.manager.requestExport(s.id, s.note as never, capture(2), true);
+    expect(s.files.has(PDF)).toBe(true);
+  });
+});
+
+describe("another device's PDF", () => {
+  it("is read once, by its Info, and taken as current when it shows this content", async () => {
+    const s = await enabled();
+    const hash = await captureHash(s.app as never, capture(2)());
+    s.put(PDF, foreignPdf(s.id, hash));
+    s.manager.changed(s.files.get(PDF) as never);
+    expect(s.manager.entry(s.id)?.dirty).toBe(true);
+    await s.manager.requestExport(s.id, s.note as never, capture(2), false);
+    expect(s.vault.readBinary).toHaveBeenCalledTimes(1);
+    expect(rendered).not.toHaveBeenCalled();
+    expect(s.manager.entry(s.id)?.dirty).toBe(false);
+    // Read once: asked again, it is known by its listing.
+    s.manager.markDirty(s.id);
+    await s.manager.requestExport(s.id, s.note as never, capture(2), false);
+    expect(s.vault.readBinary).toHaveBeenCalledTimes(1);
+  });
+
+  it("an older one is replaced at the next close", async () => {
+    const s = await enabled();
+    s.put(PDF, foreignPdf(s.id, "0000000000000000"));
+    s.manager.changed(s.files.get(PDF) as never);
+    await s.manager.requestExport(s.id, s.note as never, capture(), false);
+    expect(rendered).toHaveBeenCalledTimes(1);
+  });
+
+  it("a file that is not this notebook's is never replaced", async () => {
+    const s = await enabled();
+    s.put(PDF, foreignPdf("bbbbbbbbbbbbbbbb", "0000000000000000"));
+    const theirs = s.bytes.get(PDF);
+    s.manager.changed(s.files.get(PDF) as never);
+    await s.manager.requestExport(s.id, s.note as never, capture(2), true);
+    expect(s.bytes.get(PDF)).toBe(theirs);
+    expect(s.manager.state(s.id).mark).toBe("error");
+    expect(notices.at(-1)?.message).toContain("Another file is where the PDF goes");
+  });
+});
+
+describe("the frontmatter is the truth on every device", () => {
+  it("turned off elsewhere: nothing is exported here", async () => {
+    const s = await enabled();
+    s.put(NOTE, withCompanionKeys(s.texts.get(NOTE)!, { pdfPath: null, followName: null }));
+    s.manager.markDirty(s.id);
+    await s.manager.requestExport(s.id, s.note as never, capture(2), false);
+    expect(rendered).not.toHaveBeenCalled();
+    expect(s.manager.entry(s.id)?.enabled).toBe(false);
+  });
+
+  it("moved elsewhere: the new place is taken, and the PDF is awaited there", async () => {
+    const s = await enabled();
+    s.put(NOTE, withCompanionKeys(s.texts.get(NOTE)!, { pdfPath: "Archive/Cell biology.pdf" }));
+    s.manager.hydrate(s.note as never, s.texts.get(NOTE)!);
+    expect(s.manager.entry(s.id)?.pdfPath).toBe("Archive/Cell biology.pdf");
+    expect(s.manager.state(s.id).mark).toBe("stale");
+  });
+
+  it("a copy carrying the same id writes nothing until it lets go of it", async () => {
+    const s = await enabled();
+    const copy = s.put("School/Copy.notebook.md", s.texts.get(NOTE)!);
+    s.manager.hydrate(copy as never, s.texts.get("School/Copy.notebook.md")!);
+    expect(s.manager.state(s.id).mark).toBe("error");
+    await s.manager.disable(copy as never, s.id);
+    expect(companionMetaFromBody(s.texts.get("School/Copy.notebook.md")!)).toBeNull();
+    expect(companionMetaFromBody(s.texts.get(NOTE)!)?.pdfPath).toBe(PDF);
+  });
+});
+
+describe("the vault's renames and deletes", () => {
+  it("a PDF the user renames keeps its name, and the frontmatter follows it", async () => {
+    const s = await enabled();
+    await s.vault.rename(s.files.get(PDF)!, "School/Exports/Homework 3.pdf");
+    await s.manager.renamed(s.files.get("School/Exports/Homework 3.pdf") as never, PDF);
+    expect(companionMetaFromBody(s.texts.get(NOTE)!)).toMatchObject({
+      pdfPath: "School/Exports/Homework 3.pdf",
+      followName: false,
+    });
+    // Still its own write: not read back.
+    s.manager.markDirty(s.id);
+    await s.manager.requestExport(s.id, s.note as never, capture(), false);
+    expect(s.vault.readBinary).not.toHaveBeenCalled();
+  });
+
+  it("a renamed notebook takes its PDF's name with it", async () => {
+    const s = await enabled();
+    await s.vault.rename(s.note, "School/Cells.notebook.md");
+    await s.manager.renamed(s.files.get("School/Cells.notebook.md") as never, NOTE);
+    expect(s.files.has("School/Exports/Cells.pdf")).toBe(true);
+    expect(companionMetaFromBody(s.texts.get("School/Cells.notebook.md")!)?.pdfPath).toBe(
+      "School/Exports/Cells.pdf",
+    );
+  });
+
+  it("a deleted PDF is missing, not turned off: a sync may be moving it", async () => {
+    const s = await enabled();
+    const before = s.texts.get(NOTE);
+    s.files.delete(PDF);
+    s.manager.deleted(PDF);
+    expect(s.texts.get(NOTE)).toBe(before);
+    expect(s.manager.entry(s.id)?.enabled).toBe(true);
+    expect(s.manager.state(s.id)).toMatchObject({
+      mark: "error",
+      error: expect.stringContaining("missing"),
+    });
+  });
+});
+
+describe("an interrupted write", () => {
+  it("is finished once the vault is ready, from the journal in local storage", async () => {
+    const s = await enabled();
+    const entry = s.manager.entry(s.id)!;
+    const stage = `${PDF}.fn-${s.id}-devA-1-pending.pdf`;
+    const backup = `${PDF}.fn-${s.id}-devA-1-backup.pdf`;
+    entry.transaction = { target: PDF, stage, backup, staged: true };
+    await s.vault.rename(s.files.get(PDF)!, backup);
+    s.put(stage, foreignPdf(s.id, "1111111111111111"));
+    s.manager.markDirty(s.id);
+    // A new session reads the journal from local storage.
+    const next = new CompanionPdfManager(s.app as never, "devA");
+    const plugin = { app: s.app, registerEvent: vi.fn(), register: vi.fn() };
+    next.register(plugin as never, () => []);
+    expect(s.files.has(PDF)).toBe(false);
+    s.layoutReady.forEach((run) => run());
+    await vi.waitFor(() => expect(next.entry(s.id)?.transaction).toBeUndefined());
+    expect(s.files.has(PDF)).toBe(true);
+    expect(s.files.has(stage) || s.files.has(backup)).toBe(false);
+  });
+});
+
+describe("keys written through an open notebook", () => {
+  it("go into the view's own text, so its next save keeps them", async () => {
+    const s = setup();
+    const view = {
+      file: s.note,
+      penDown: false,
+      id: null,
+      uses: () => false,
+      writeKeys: vi.fn(async () => true),
+    };
+    s.manager.register({ app: s.app, registerEvent: vi.fn(), register: vi.fn() } as never, () => [
+      view as never,
+    ]);
+    await s.manager.enable(s.note as never, s.texts.get(NOTE)!, undefined);
+    expect(view.writeKeys).toHaveBeenCalledWith(
+      expect.objectContaining({ pdfPath: "School/Cell biology.pdf" }),
+    );
+    expect(s.vault.process).not.toHaveBeenCalled();
+  });
+});
+
+describe("another device's scratch files", () => {
+  it("never block this device, and are left alone", async () => {
+    const s = await enabled();
+    const stray = `${PDF}.fn-${s.id}-devB-5-pending.pdf`;
+    s.put(stray, foreignPdf(s.id, "0000000000000000"));
+    s.manager.markDirty(s.id);
+    await s.manager.requestExport(s.id, s.note as never, capture(3), false);
+    expect(rendered).toHaveBeenCalledTimes(1);
+    expect(s.files.has(stray)).toBe(true);
+    expect(s.manager.state(s.id).mark).toBe("current");
   });
 });

@@ -1,935 +1,805 @@
-/** Obsidian adapter for stable companion PDF associations and journalled writes. */
-import { type App, Notice, type TAbstractFile, type TFile } from "obsidian";
+/**
+ * Companion PDFs in the vault: the per-device journal, the one export queue
+ * every notebook shares, and the vault's renames and deletes.
+ *
+ * Cost, on purpose:
+ * - Nothing is exported in the background or while the pen is down: only
+ *   after a notebook closes (from what was saved) or when asked.
+ * - A notebook that has not changed since its PDF was checked costs nothing
+ *   at close.
+ * - A PDF this device wrote is known by its size and time; it is never read
+ *   back. Another device's PDF is read once per change, and only its
+ *   trailer and Info dictionary are looked at (`readCompanionSubject`).
+ * - The vault is never searched for a PDF: moves are followed through
+ *   Obsidian's rename events and the notebook's synced frontmatter.
+ */
+import { type App, Notice, type Plugin, type TAbstractFile, TFile, parseYaml } from "obsidian";
 import {
-  COMPANION_FOLLOW_KEY,
   COMPANION_ID_KEY,
-  COMPANION_PDF_KEY,
-  CompanionController,
-  companionContent,
-  companionContentOnly,
+  CompanionError,
+  type CompanionEntry,
+  type CompanionErrorCode,
+  type CompanionJournal,
+  type CompanionKeys,
+  type CompanionMark,
+  type CompanionSeen,
+  companionErrorCode,
+  companionFrontmatter,
   companionIdFromBody,
+  companionMark,
   companionMetaFromBody,
   companionName,
-  companionPath,
-  companionResources,
-  defaultCompanionPath,
+  companionTransaction,
+  fileNameOf,
+  folderOf,
+  followedCompanionPath,
+  followsName,
+  freeCompanionPath,
+  inCompanionFolder,
   isCompanionNotebookPath,
-  isSyncConflictCopy,
-  parseCompanionStore,
-  validCompanionId,
-  type CompanionDocument,
-  type CompanionEntry,
-  type CompanionExportOptions,
-  type CompanionSnapshot,
-  type CompanionStore,
+  isCompanionScratch,
+  parseCompanionJournal,
+  sameStat,
+  withCompanionKeys,
 } from "../model/companion-pdf";
-import type { InkDocument, Page } from "../model/document";
-import { hasBoards, isBoardPage } from "../model/board";
-import { assembleJson, readStoredDocument, type DocumentSnapshot } from "../model/serialize";
-import { furnitureText } from "../model/furniture";
-import { stripInkSuffix } from "../model/new-notebook";
-import { paperTheme } from "../canvas/backdrop";
+import { CompanionHasher } from "../model/companion-hash";
+import { CompanionQueue } from "../model/companion-queue";
 import {
   recoverCompanionWrite,
   replaceCompanionPdf,
   type CompanionWriteIO,
 } from "../model/companion-write";
-import {
-  companionPdfMeta,
-  companionPdfSubject,
-  stampCompanionPdfSubject,
-} from "../export/companion-metadata";
+import type { InkDocument, Page } from "../model/document";
+import { hasBoards, isBoardPage } from "../model/board";
+import { furnitureText } from "../model/furniture";
+import { assembleJson, readStoredDocument, type DocumentSnapshot } from "../model/serialize";
+import { paperTheme } from "../canvas/backdrop";
+import { companionPdfSubject, readCompanionSubject } from "../export/companion-metadata";
 import { exportPagesToPdf, type PdfExportSources } from "./pdf-export";
 import { PdfBackdropCache } from "./pdf-backdrop";
 import { VaultImageCache } from "./image-cache";
-import { exportMarginsOf } from "../export/export-choice";
-import { t } from "../i18n/translate";
+import { deviceIdOf } from "./device-pages-session";
+import { t, type TextKey } from "../i18n/translate";
 
-/** The canonical notebook snapshot, made from the same fragments as a save. */
-export function companionDocument(snapshot: DocumentSnapshot, paperWidth: number): InkDocument {
-  return readStoredDocument(JSON.parse(assembleJson(snapshot)), paperWidth);
+/** Where the journal is kept: this device's local storage, never data.json (it syncs). */
+const JOURNAL_KEY = "finenotes-companion-journal";
+
+const ERROR_TEXT: Record<CompanionErrorCode, TextKey> = {
+  missing: "notebooks.companion.errMissing",
+  occupied: "notebooks.companion.errOccupied",
+  source: "notebooks.companion.errSource",
+  export: "notebooks.companion.errExport",
+  write: "notebooks.companion.errWrite",
+  frontmatter: "notebooks.companion.errFrontmatter",
+  path: "notebooks.companion.errPath",
+  duplicate: "notebooks.companion.errDuplicate",
+};
+
+export function companionErrorText(code: CompanionErrorCode): string {
+  return t(ERROR_TEXT[code]);
+}
+
+/** The export switches a companion is made with: this device's, as the export dialog left them. */
+export type CompanionExportOptions = Pick<
+  PdfExportSources,
+  "usePressure" | "highlighterAlpha" | "plainPaper" | "withoutTapes" | "margins"
+>;
+
+/** A closed notebook, as it was saved: all an export needs, with nothing of the view. */
+export interface CompanionCapture {
+  title: string;
+  snapshot: DocumentSnapshot;
+  paperWidth: number;
+  /** The page furniture as read (`readFurniture`), or `undefined` for a board. */
+  furniture: unknown;
+  resources: readonly string[];
+  options: CompanionExportOptions;
+  /** A board page cropped to its drawing. */
+  crop: (page: Page) => Page;
+}
+
+/** What an open notebook view offers the manager. */
+export interface CompanionViewLink {
+  readonly file: TFile | null;
+  /** Sets the keys in the view's own note text and saves it; `false` when the view cannot write. */
+  writeKeys(keys: CompanionKeys): Promise<boolean>;
+  /** The pen is on the page. */
+  readonly penDown: boolean;
+  /** The notebook's companion id. */
+  readonly id: string | null;
+  /** Whether its pages are drawn from the file at `path`. */
+  uses(path: string): boolean;
+}
+
+export interface CompanionState {
+  mark: CompanionMark;
+  /** The last failure, in words, for the mark's label. */
+  error?: string;
+  folder: string;
+  pdfExists: boolean;
+}
+
+export async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** The content hash of a capture: what its PDF's Subject carries. */
+export function captureHash(
+  app: App,
+  capture: CompanionCapture,
+  hasher?: CompanionHasher,
+): Promise<string> {
+  return (hasher ?? new CompanionHasher(sha256Hex)).hash({
+    title: capture.title,
+    furniture: capture.furniture,
+    pages: capture.snapshot.pages,
+    resources: capture.resources.map((path) => ({
+      path,
+      size: app.vault.getFileByPath(path)?.stat.size ?? -1,
+    })),
+  });
 }
 
 export function companionRenderPages(
-  doc: CompanionDocument,
-  cropBoard: (page: Page) => Page,
+  doc: Pick<InkDocument, "pages" | "endless">,
+  crop: (page: Page) => Page,
 ): Page[] {
   return hasBoards(doc)
-    ? doc.pages.map((page) => (isBoardPage(doc, page) ? cropBoard(page) : page))
+    ? doc.pages.map((page) => (isBoardPage(doc, page) ? crop(page) : page))
     : doc.pages;
 }
 
-/** Match transformed export pages by their stable IDs, including cropped PDF margins. */
+/** Headers and page numbers for export pages, matched by page id (a cropped page is a copy). */
 export function companionFurniture(
-  doc: CompanionDocument,
+  doc: Pick<InkDocument, "pages" | "furniture" | "endless">,
   title: string,
 ): NonNullable<PdfExportSources["furniture"]> {
   const indices = new Map(doc.pages.map((page, index) => [page.id, index]));
   return (page) => furnitureText(doc, indices.get(page.id) ?? -1, title);
 }
 
-export function companionOptions(sources: PdfExportSources): CompanionExportOptions {
-  return {
-    usePressure: sources.usePressure,
-    highlighterAlpha: sources.highlighterAlpha,
-    plainPaper: sources.plainPaper === true,
-    withoutTapes: sources.withoutTapes === true,
-    margins: sources.margins,
-  };
-}
-
-export async function detachedCompanionSnapshot(params: {
-  app: App;
-  id: string;
-  title: string;
-  doc: CompanionDocument;
-  pages: Page[];
-  options: CompanionExportOptions;
-}): Promise<CompanionSnapshot> {
-  const { app, id, title, doc, pages, options } = params;
-  const { fingerprint, contentHash, resources } = await fingerprintCompanionDoc(
-    app,
-    doc,
-    title,
-    options,
-  );
-  return {
-    fingerprint,
-    contentHash,
-    resources,
-    export: async () => {
-      const images = new VaultImageCache(app);
-      const pdf = pages.some((page) => page.backdrop.kind === "pdf")
-        ? new PdfBackdropCache(app)
-        : null;
-      try {
-        return await exportPagesToPdf(
-          pages,
-          {
-            readPdf: async (path) => {
-              const file = app.vault.getFileByPath(path);
-              if (!file) throw new Error(t("notebooks.companion.errMissingSource", { path }));
-              return app.vault.readBinary(file);
-            },
-            pdf,
-            images,
-            paper: paperTheme(false),
-            usePressure: options.usePressure,
-            highlighterAlpha: options.highlighterAlpha,
-            plainPaper: options.plainPaper === true,
-            withoutTapes: options.withoutTapes === true,
-            margins: exportMarginsOf(options.margins),
-            furniture: companionFurniture(doc, title),
-          },
-          { title, subject: companionPdfSubject(id, contentHash) },
-        );
-      } finally {
-        images.destroy();
-        pdf?.destroy();
-      }
-    },
-  };
-}
-
-interface ResourceDigest {
-  file: TFile;
-  mtime: number;
-  size: number;
-  digest: Promise<string>;
-}
-
-const resourceDigests = new WeakMap<App, Map<string, ResourceDigest>>();
-
-async function digestBytes(bytes: BufferSource): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-async function resourceDigest(app: App, path: string): Promise<string> {
-  const file = app.vault.getFileByPath(path);
-  if (!file) throw new Error(t("notebooks.companion.errMissingSource", { path }));
-  const cache = resourceDigests.get(app) ?? new Map<string, ResourceDigest>();
-  resourceDigests.set(app, cache);
-  const cached = cache.get(path);
-  const { mtime, size } = file.stat;
-  if (cached?.file === file && cached.mtime === mtime && cached.size === size) return cached.digest;
-  const digest = app.vault
-    .readBinary(file)
-    .then(digestBytes)
-    .then((hash) => {
-      if (
-        cache.get(path) !== record ||
-        app.vault.getFileByPath(path) !== file ||
-        file.stat.mtime !== mtime ||
-        file.stat.size !== size
-      )
-        throw new Error(t("notebooks.companion.errChangedDuringCheck"));
-      return hash;
-    })
-    .catch((error: unknown) => {
-      if (cache.get(path) === record) cache.delete(path);
-      throw error;
-    });
-  const record = { file, mtime, size, digest };
-  cache.set(path, record);
-  return digest;
-}
-
-export async function fingerprintCompanionDoc(
+/** The PDF of a capture, rendered with caches of its own (the view's are gone). */
+async function renderCapture(
   app: App,
-  doc: CompanionDocument,
-  title: string,
-  options: CompanionExportOptions,
-): Promise<{ fingerprint: string; contentHash: string; resources: string[] }> {
-  const resources = companionResources(doc);
-  const assets = [];
-  for (const path of resources) assets.push({ path, digest: await resourceDigest(app, path) });
-  const [fingerprint, fullContentHash] = await Promise.all([
-    digestBytes(new TextEncoder().encode(companionContent(doc, options, assets) + title)),
-    digestBytes(new TextEncoder().encode(companionContentOnly(doc, assets) + title)),
-  ]);
-  return { fingerprint, contentHash: fullContentHash.slice(0, 16), resources };
+  capture: CompanionCapture,
+  subject: string,
+): Promise<Uint8Array> {
+  const doc = readStoredDocument(JSON.parse(assembleJson(capture.snapshot)), capture.paperWidth);
+  const pages = companionRenderPages(doc, capture.crop);
+  const images = new VaultImageCache(app);
+  const pdf = pages.some((page) => page.backdrop.kind === "pdf") ? new PdfBackdropCache(app) : null;
+  try {
+    return await exportPagesToPdf(
+      pages,
+      {
+        readPdf: async (path) => {
+          const file = app.vault.getFileByPath(path);
+          if (!file) throw new CompanionError("export");
+          return app.vault.readBinary(file);
+        },
+        pdf,
+        images,
+        paper: paperTheme(false),
+        ...capture.options,
+        furniture: companionFurniture(doc, capture.title),
+      },
+      { title: capture.title, subject },
+    );
+  } finally {
+    images.destroy();
+    pdf?.destroy();
+  }
 }
 
-// External sync can report a rename or replacement as separate delete and create events.
-const COMPANION_DELETE_SETTLE_MS = 5000;
+function randomId(): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) =>
+    b.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
+/** Refuses frontmatter that is not YAML, rather than writing more into it. */
+export function checkFrontmatter(text: string): void {
+  const yaml = companionFrontmatter(text);
+  if (yaml === null) return;
+  try {
+    parseYaml(yaml);
+  } catch {
+    throw new CompanionError("frontmatter");
+  }
+}
 
 export class CompanionPdfManager {
-  readonly store: CompanionStore = { version: 1, entries: {} };
-  readonly controller: CompanionController;
+  private journal: CompanionJournal;
+  readonly queue: CompanionQueue;
+  /** Paths this manager is renaming, creating or deleting: their vault events are its own. */
   private readonly internal = new Set<string>();
-  private readonly identities = new Map<
-    string,
-    { mtime: number; size: number; id: string | null; contentHash: string | null }
-  >();
-  private readonly trashing = new Set<string>();
-  private readonly pendingDeletes = new Map<
-    string,
-    {
-      path: string;
-      timer: number;
-      observed: Set<string>;
-    }
-  >();
-  private readonly recentPdfs = new Map<string, number>();
-  private readonly statusListeners = new Set<() => void>();
-  private readonly bindings = new Map<string, Promise<void>>();
-  private readonly configurations = new WeakMap<TFile, Promise<string>>();
+  private readonly revisions = new Map<string, number>();
+  private readonly listeners = new Set<() => void>();
+  private views: () => Iterable<CompanionViewLink> = () => [];
+  private penDown: () => boolean = () => false;
+  private stopped = false;
 
   constructor(
     private readonly app: App,
-    private readonly save: (store: CompanionStore) => Promise<void>,
+    private readonly device = deviceIdOf(app),
   ) {
-    this.controller = new CompanionController(this.store, {
-      exists: (path) => this.app.vault.getAbstractFileByPath(path) !== null,
-      pdfIdentity: (path) => this.identity(path),
-      pdfContentHash: (path) => this.contentHash(path),
-      pdfPaths: () =>
-        this.app.vault
-          .getFiles()
-          .filter((f) => f.extension.toLowerCase() === "pdf")
-          .map((f) => f.path),
-      rename: (from, to) => this.rename(from, to, true),
-      replace: async (entry, bytes, id) => {
-        const target = entry.pdfPath;
-        if (this.pendingDeletes.has(id)) return false;
-        return replaceCompanionPdf(entry, bytes, id, {
-          ...this.writeIO(),
-          cancelled: () => this.pendingDeletes.get(id)?.path === target,
-        });
-      },
-      persist: () => this.persist(),
+    let raw: unknown = null;
+    try {
+      raw = app.loadLocalStorage(JOURNAL_KEY);
+    } catch {
+      /* No local storage: a journal for this session only. */
+    }
+    this.journal = parseCompanionJournal(raw);
+    this.queue = new CompanionQueue({
+      paused: () => this.penDown(),
+      sleep: (ms) => new Promise((resolve) => window.setTimeout(resolve, ms)),
+      failed: (id, error) => this.failed(id, error, false),
+      changed: () => this.statusChanged(),
     });
   }
 
-  load(raw: unknown): void {
-    this.store.entries = parseCompanionStore(raw).entries;
-    for (const [id, entry] of Object.entries(this.store.entries))
-      if (entry.deletedAt !== undefined) this.scheduleDelete(id, entry, entry.deletedAt);
+  /** Hears the vault, recovers interrupted writes once the vault is indexed, stops with the plugin. */
+  register(plugin: Plugin, views: () => Iterable<CompanionViewLink>): void {
+    this.views = views;
+    this.penDown = () => [...this.views()].some((view) => view.penDown);
+    const { vault, workspace } = plugin.app;
+    plugin.registerEvent(vault.on("rename", (file, oldPath) => void this.renamed(file, oldPath)));
+    plugin.registerEvent(vault.on("delete", (file) => this.deleted(file.path)));
+    plugin.registerEvent(vault.on("modify", (file) => this.changed(file)));
+    plugin.registerEvent(vault.on("create", (file) => this.changed(file)));
+    workspace.onLayoutReady(() => void this.recoverAll());
+    plugin.register(() => this.destroy());
   }
 
-  modified(path: string): void {
-    this.identities.delete(path);
-    resourceDigests.get(this.app)?.delete(path);
-    if (this.isInternal(path)) return;
-    for (const [id, entry] of Object.entries(this.store.entries))
-      if (entry.pdfPath === path) {
-        this.controller.markChanged(id);
-        this.statusChanged();
-      }
-    if (
-      /[.]pdf$/i.test(path) &&
-      !/[.]fn-[a-f0-9]{16}-(?:pending|backup)[.]pdf$/i.test(path) &&
-      !isSyncConflictCopy(path) &&
-      this.app.vault.getFileByPath(path)
-    ) {
-      this.recentPdfs.delete(path);
-      this.recentPdfs.set(path, Date.now());
-      if (this.recentPdfs.size > 16) this.recentPdfs.delete(this.recentPdfs.keys().next().value!);
-      for (const pending of this.pendingDeletes.values()) {
-        if (pending.path !== path && pending.observed.size < 16) pending.observed.add(path);
-      }
-    }
-  }
-
-  async recoverAll(): Promise<void> {
-    for (const [id, entry] of Object.entries(this.store.entries)) {
-      if (!entry.enabled || !entry.transaction || entry.deletedAt !== undefined) continue;
-      try {
-        await this.recover(id);
-      } catch (error) {
-        entry.dirty = true;
-        entry.error = error instanceof Error ? error.message : String(error);
-        await this.persist();
-      }
-    }
-  }
-
-  persist(): Promise<void> {
-    this.statusChanged();
-    return this.save(this.store);
-  }
-
-  observeStatus(listener: () => void): () => void {
-    this.statusListeners.add(listener);
-    return () => this.statusListeners.delete(listener);
-  }
-
-  private statusChanged(): void {
-    for (const listener of this.statusListeners) listener();
+  destroy(): void {
+    this.stopped = true;
+    this.queue.stop();
+    this.listeners.clear();
   }
 
   isInternal(path: string): boolean {
-    return this.internal.has(path);
+    return this.internal.has(path) || isCompanionScratch(path);
   }
 
   entry(id: string | null): CompanionEntry | undefined {
-    return id ? this.store.entries[id] : undefined;
+    return id ? this.journal.entries[id] : undefined;
+  }
+
+  observe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private statusChanged(): void {
+    for (const listener of this.listeners) listener();
+  }
+
+  /** Writes the journal to local storage: a few hundred bytes, on this device only. */
+  private persist(): void {
+    try {
+      this.app.saveLocalStorage(JOURNAL_KEY, JSON.stringify(this.journal));
+    } catch {
+      /* Kept in memory for this session. */
+    }
+    this.statusChanged();
+  }
+
+  state(id: string | null): CompanionState {
+    const entry = this.entry(id);
+    const pdfExists = !!entry && this.app.vault.getFileByPath(entry.pdfPath) !== null;
+    const mark = companionMark(entry, !!id && this.queue.busy(id), pdfExists);
+    return {
+      mark,
+      ...(mark === "error" && entry?.error ? { error: companionErrorText(entry.error) } : {}),
+      folder: entry ? folderOf(entry.pdfPath) : "",
+      pdfExists,
+    };
+  }
+
+  private revision(id: string): number {
+    return this.revisions.get(id) ?? 0;
+  }
+
+  /** The notebook changed (an edit, or a newer copy read from disk): its PDF may be behind. */
+  markDirty(id: string | null): void {
+    const entry = this.entry(id);
+    if (!id || !entry?.enabled) return;
+    this.revisions.set(id, this.revision(id) + 1);
+    if (entry.dirty) return;
+    entry.dirty = true;
+    this.persist();
   }
 
   /**
-   * Hydrates a local store entry from portable notebook frontmatter when a
-   * notebook enabled on another device is opened for the first time here.
+   * Takes the notebook's frontmatter as the truth for whether it has a
+   * companion, where the PDF is and whether it follows the name: what
+   * another device set wins over this device's journal.
    */
-  hydrateFromBody(notebook: TFile, body: string): CompanionEntry | undefined {
+  hydrate(notebook: TFile, body: string): CompanionEntry | undefined {
     const meta = companionMetaFromBody(body);
     if (!meta || !isCompanionNotebookPath(notebook.path)) return undefined;
-    const existing = this.store.entries[meta.id];
-    if (existing) {
-      if (!meta.pdfPath) {
-        this.cancelDelete(meta.id);
-        if (existing.enabled) {
-          this.disable(existing);
-          this.persistHydration();
+    let entry = this.journal.entries[meta.id];
+    if (entry && meta.pdfPath && entry.notebookPath !== notebook.path) {
+      // Another notebook still carries this id (a copy made outside FineNotes):
+      // neither writes the PDF until one is set up again.
+      const other = this.app.vault.getFileByPath(entry.notebookPath);
+      const otherId: unknown = other
+        ? this.app.metadataCache.getFileCache(other)?.frontmatter?.[COMPANION_ID_KEY]
+        : undefined;
+      if (other && otherId === meta.id) {
+        if (entry.error !== "duplicate") {
+          entry.error = "duplicate";
+          this.persist();
         }
-        return existing;
+        return entry;
       }
-      let changed = false;
-      if (existing.pdfPath !== meta.pdfPath || !existing.enabled) {
-        this.cancelDelete(meta.id);
-        existing.pdfPath = meta.pdfPath;
-        existing.enabled = true;
-        existing.awaitingPdf = true;
-        this.controller.markChanged(meta.id);
-        delete existing.error;
-        changed = true;
-      }
-      if (meta.followName !== undefined && existing.followName !== meta.followName) {
-        existing.followName = meta.followName;
-        changed = true;
-      }
-      if (changed) this.persistHydration();
-      return existing;
     }
-    if (!meta.pdfPath) return undefined;
-    const entry: CompanionEntry = {
-      notebookPath: notebook.path,
-      pdfPath: meta.pdfPath,
-      enabled: true,
-      followName: meta.followName !== false,
-      dirty: true,
-      awaitingPdf: true,
-    };
-    this.store.entries[meta.id] = entry;
-    this.persistHydration();
+    if (!meta.pdfPath) {
+      if (entry && (entry.enabled || entry.notebookPath !== notebook.path)) {
+        entry.enabled = false;
+        entry.notebookPath = notebook.path;
+        delete entry.error;
+        this.persist();
+      }
+      return entry;
+    }
+    if (!entry) {
+      entry = {
+        notebookPath: notebook.path,
+        pdfPath: meta.pdfPath,
+        enabled: true,
+        followName: meta.followName ?? followsName(meta.pdfPath, notebook.path),
+        dirty: true,
+      };
+      this.journal.entries[meta.id] = entry;
+      this.persist();
+      return entry;
+    }
+    let changed = false;
+    if (entry.notebookPath !== notebook.path || entry.error === "duplicate") {
+      entry.notebookPath = notebook.path;
+      if (entry.error === "duplicate") delete entry.error;
+      changed = true;
+    }
+    if (entry.pdfPath !== meta.pdfPath || !entry.enabled) {
+      entry.pdfPath = meta.pdfPath;
+      entry.enabled = true;
+      entry.dirty = true;
+      delete entry.error;
+      changed = true;
+    }
+    if (meta.followName !== undefined && entry.followName !== meta.followName) {
+      entry.followName = meta.followName;
+      changed = true;
+    }
+    if (changed) this.persist();
     return entry;
   }
 
-  private persistHydration(): void {
-    void this.persist().catch((error: unknown) => this.noticeError(error));
-  }
+  // --- Reading PDFs -----------------------------------------------------------
 
-  private disable(entry: CompanionEntry): void {
-    entry.enabled = false;
-    entry.dirty = false;
-    delete entry.lastFingerprint;
-    delete entry.awaitingPdf;
-    delete entry.error;
-  }
-
-  private noticeError(error: unknown): void {
-    new Notice(
-      t("notebooks.companion.noticePrefix", {
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
-  }
-
-  status(id: string | null): string {
-    const entry = this.entry(id);
-    if (!entry?.enabled) return t("notebooks.companion.statusOff");
-    if (entry.error) return t("notebooks.companion.statusError", { error: entry.error });
-    if (id && this.controller.isRunning(id)) return t("notebooks.companion.statusUpdating");
-    if (!this.app.vault.getFileByPath(entry.pdfPath)) return t("notebooks.companion.statusMissing");
-    return entry.dirty
-      ? t("notebooks.companion.statusNeedsUpdate")
-      : t("notebooks.companion.statusUpToDate");
-  }
-
-  private async pdfMeta(path: string): Promise<{ id: string | null; contentHash: string | null }> {
+  /**
+   * What the PDF at `path` says about itself: from this device's record when
+   * the file is exactly as this device wrote or last read it, or else from
+   * its trailer and Info dictionary (one read of the file, no parsing).
+   */
+  private async pdfAt(entry: CompanionEntry, path: string): Promise<CompanionSeen | null> {
     const file = this.app.vault.getFileByPath(path);
-    if (!file) return { id: null, contentHash: null };
-    const cached = this.identities.get(path);
-    if (cached && cached.mtime === file.stat.mtime && cached.size === file.stat.size) {
-      return { id: cached.id, contentHash: cached.contentHash };
+    if (!file) return null;
+    const stat = { path, mtime: file.stat.mtime, size: file.stat.size };
+    if (sameStat(entry.written, stat)) return entry.written!;
+    if (sameStat(entry.seen, stat)) return entry.seen!;
+    const meta = readCompanionSubject(await this.app.vault.readBinary(file));
+    const seen: CompanionSeen = { ...stat, id: meta?.id ?? null, hash: meta?.contentHash ?? null };
+    if (file.stat.mtime === stat.mtime && file.stat.size === stat.size) {
+      entry.seen = seen;
+      this.persist();
     }
-    const mtime = file.stat.mtime;
-    const size = file.stat.size;
-    const meta = await companionPdfMeta(await this.app.vault.readBinary(file));
-    if (
-      this.app.vault.getFileByPath(path) !== file ||
-      file.stat.mtime !== mtime ||
-      file.stat.size !== size
-    )
-      throw new Error(t("notebooks.companion.errChangedDuringCheck"));
-    const id = meta?.id ?? null;
-    const contentHash = meta?.contentHash ?? null;
-    this.identities.set(path, { mtime, size, id, contentHash });
-    return { id, contentHash };
+    return seen;
   }
 
-  private async identity(path: string): Promise<string | null> {
-    return (await this.pdfMeta(path)).id;
-  }
-
-  private async contentHash(path: string): Promise<string | null> {
-    return (await this.pdfMeta(path)).contentHash;
+  private exists(path: string): boolean {
+    return this.app.vault.getAbstractFileByPath(path) !== null;
   }
 
   private async ensureFolder(path: string): Promise<void> {
-    const folder = path.split("/").slice(0, -1).join("/");
+    const folder = folderOf(path);
     if (!folder || this.app.vault.getFolderByPath(folder)) return;
     try {
       await this.app.vault.createFolder(folder);
     } catch {
-      if (!this.app.vault.getFolderByPath(folder))
-        throw new Error(t("notebooks.companion.errCreateFolder", { path: folder }));
+      if (!this.app.vault.getFolderByPath(folder)) throw new CompanionError("path");
     }
   }
 
-  private async rename(from: string, to: string, links: boolean): Promise<void> {
-    const file = this.app.vault.getFileByPath(from);
-    if (!file) throw new Error(t("notebooks.companion.errMissingPath", { path: from }));
-    if (this.app.vault.getAbstractFileByPath(to))
-      throw new Error(t("notebooks.companion.errTargetExists", { path: to }));
-    await this.ensureFolder(to);
-    this.identities.delete(from);
-    this.identities.delete(to);
-    const paths = [from, to].filter((path) => !this.isInternal(path));
-    paths.forEach((path) => this.internal.add(path));
+  private async internally<T>(paths: readonly string[], run: () => Promise<T>): Promise<T> {
+    const mine = paths.filter((path) => !this.internal.has(path));
+    mine.forEach((path) => this.internal.add(path));
     try {
-      if (links) await this.app.fileManager.renameFile(file, to);
-      else await this.app.vault.rename(file, to);
+      return await run();
     } finally {
-      paths.forEach((path) => this.internal.delete(path));
+      mine.forEach((path) => this.internal.delete(path));
     }
+  }
+
+  /** Moves this notebook's PDF, links and all, as the user would. */
+  private async movePdf(entry: CompanionEntry, to: string): Promise<void> {
+    const file = this.app.vault.getFileByPath(entry.pdfPath);
+    if (!file) return;
+    await this.ensureFolder(to);
+    const from = entry.pdfPath;
+    await this.internally([from, to], () => this.app.fileManager.renameFile(file, to));
+    for (const record of [entry.written, entry.seen]) if (record?.path === from) record.path = to;
   }
 
   private writeIO(): CompanionWriteIO {
     return {
-      exists: (path) => this.app.vault.getAbstractFileByPath(path) !== null,
-      identity: (path) => this.identity(path),
-      persist: () => this.persist(),
+      exists: (path) => this.exists(path),
+      owned: async (path) => {
+        const [id] = Object.entries(this.journal.entries).find(([, e]) => e.pdfPath === path) ?? [];
+        const entry = this.entry(id ?? null);
+        return !!entry && (await this.pdfAt(entry, path))?.id === id;
+      },
       create: async (path, bytes) => {
         await this.ensureFolder(path);
-        this.identities.delete(path);
         await this.app.vault.createBinary(path, bytes.slice().buffer);
       },
-      rename: (from, to) => this.rename(from, to, false),
-      remove: async (path) => {
-        const file = this.app.vault.getFileByPath(path);
-        if (!file) return;
-        this.trashing.add(path);
-        try {
-          await this.app.fileManager.trashFile(file);
-        } finally {
-          this.trashing.delete(path);
-        }
+      rename: async (from, to) => {
+        const file = this.app.vault.getFileByPath(from);
+        if (file) await this.app.vault.rename(file, to);
       },
+      // Straight out, not to the trash: these are this device's own scratch
+      // copies of a PDF, which in the trash would pile up and sync. The vault
+      // may list one for a moment after; each write's names are new (see
+      // `companionTransaction`), so that is never in the way.
+      remove: async (path) => {
+        const { adapter } = this.app.vault;
+        if (await adapter.exists(path)) await adapter.remove(path);
+      },
+      persist: () => this.persist(),
     };
   }
 
-  async recover(id: string): Promise<void> {
-    const entry = this.entry(id);
-    if (!entry?.enabled || !entry.transaction || entry.deletedAt !== undefined) return;
-    const paths = [entry.transaction.target, entry.transaction.stage, entry.transaction.backup];
-    paths.forEach((path) => this.internal.add(path));
-    try {
-      await recoverCompanionWrite(entry, id, this.writeIO());
-    } finally {
-      paths.forEach((path) => this.internal.delete(path));
-    }
-  }
-
-  bind(id: string, notebook: TFile): Promise<void> {
-    const pending = this.bindings.get(id);
-    if (pending) return pending.then(() => this.bind(id, notebook));
-    const job = this.bindOnce(id, notebook).finally(() => this.bindings.delete(id));
-    this.bindings.set(id, job);
-    return job;
-  }
-
-  private async bindOnce(id: string, notebook: TFile): Promise<void> {
-    const entry = this.entry(id);
-    if (!entry) return;
-    const old = this.app.vault.getFileByPath(entry.notebookPath);
-    if (
-      entry.notebookPath !== notebook.path &&
-      old &&
-      companionIdFromBody(await this.app.vault.cachedRead(old)) === id
-    )
-      throw new Error(t("notebooks.companion.errDuplicateNotebook"));
-    if (this.controller.isRunning(id) && entry.notebookPath === notebook.path) return;
-    await this.controller.wait(id).catch(() => {});
-    await this.recover(id);
-    if (entry.notebookPath !== notebook.path) {
-      const prevPdf = entry.pdfPath;
-      await this.controller.followNotebookName(id, notebook.path);
-      if (entry.pdfPath !== prevPdf && entry.enabled) {
-        await this.syncFrontmatter(notebook, id, entry);
+  /** Finishes writes an earlier session left half done. Run once the vault is indexed. */
+  async recoverAll(): Promise<void> {
+    for (const entry of Object.values(this.journal.entries)) {
+      const tx = entry.transaction;
+      if (!tx) continue;
+      try {
+        await this.internally([tx.target, tx.stage, tx.backup], () =>
+          recoverCompanionWrite(entry, this.writeIO()),
+        );
+      } catch {
+        entry.error = "write";
+        this.persist();
       }
     }
   }
 
-  private async syncFrontmatter(notebook: TFile, id: string, entry: CompanionEntry): Promise<void> {
-    await this.app.fileManager.processFrontMatter(
-      notebook,
-      (frontmatter: Record<string, unknown>) => {
-        frontmatter[COMPANION_ID_KEY] = id;
-        if (entry.enabled) {
-          frontmatter[COMPANION_PDF_KEY] = entry.pdfPath;
-          frontmatter[COMPANION_FOLLOW_KEY] = entry.followName;
-        } else {
-          delete frontmatter[COMPANION_PDF_KEY];
-          delete frontmatter[COMPANION_FOLLOW_KEY];
+  // --- Exporting --------------------------------------------------------------
+
+  /**
+   * Queues an export of the notebook as `capture` gives it. It runs after
+   * the caller's turn, one notebook at a time, never while the pen is down.
+   * Unforced, it does nothing for a notebook not changed since its PDF was
+   * checked, and never makes a PDF that is missing.
+   */
+  requestExport(
+    id: string,
+    notebook: TFile,
+    capture: () => CompanionCapture,
+    force: boolean,
+  ): Promise<void> {
+    if (this.stopped || !this.entry(id)?.enabled) return Promise.resolve();
+    if (!force && !this.entry(id)?.dirty) return Promise.resolve();
+    return this.queue.request(
+      id,
+      async (forced) => {
+        try {
+          await this.exportNow(id, notebook, capture, forced);
+        } catch (error) {
+          this.failed(id, error, forced);
         }
       },
+      force,
     );
   }
 
-  private generateId(): string {
-    let id: string;
-    do {
-      id = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) =>
-        b.toString(16).padStart(2, "0"),
-      ).join("");
-    } while (this.store.entries[id]);
-    return id;
+  private failed(id: string, error: unknown, loud: boolean): void {
+    const entry = this.entry(id);
+    if (!entry?.enabled) return;
+    entry.error = companionErrorCode(error);
+    entry.dirty = true;
+    this.persist();
+    if (!loud) return;
+    const words =
+      error instanceof Error && !(error instanceof CompanionError)
+        ? error.message
+        : companionErrorText(entry.error);
+    new Notice(t("notebooks.companion.notice", { error: words }));
   }
 
-  configure(
+  private async exportNow(
+    id: string,
     notebook: TFile,
-    _body: string,
-    folder: string | undefined,
-    patch: {
-      enabled?: boolean;
-      followName?: boolean;
-      pdfPath?: string;
-    },
-  ): Promise<string> {
-    return this.configureSerial(notebook, async () => {
-      const body = await this.app.vault.read(notebook);
-      return this.configureOnce(notebook, body, folder, patch);
+    capture: () => CompanionCapture,
+    force: boolean,
+  ): Promise<void> {
+    const entry = this.entry(id);
+    if (this.stopped || !entry?.enabled || !this.app.vault.getFileByPath(notebook.path)) return;
+    // The frontmatter as it is now: turned off or moved on another device wins.
+    const body = await this.app.vault.cachedRead(notebook);
+    if (companionIdFromBody(body) !== id) return;
+    this.hydrate(notebook, body);
+    if (!entry.enabled || (!force && !entry.dirty)) return;
+    if (entry.error === "duplicate") throw new CompanionError("duplicate");
+    const revision = this.revision(id);
+    const made = capture();
+    const target = entry.pdfPath;
+    if (made.resources.includes(target)) throw new CompanionError("source");
+    const hash = await captureHash(this.app, made);
+    const pdf = await this.pdfAt(entry, target);
+    if (pdf && pdf.id !== id) throw new CompanionError("occupied");
+    if (!pdf && !force) throw new CompanionError("missing");
+    if (pdf && pdf.hash === hash && !force) {
+      // Already shows this content (another device wrote it, or the edit was undone).
+      entry.dirty = this.revision(id) !== revision;
+      delete entry.error;
+      this.persist();
+      return;
+    }
+    const bytes = await renderCapture(this.app, made, companionPdfSubject(id, hash));
+    // Moved, renamed or turned off while it rendered: the next update writes it.
+    if (this.stopped || !entry.enabled || entry.pdfPath !== target) return;
+    const tx = companionTransaction(target, id, this.device, Date.now());
+    await this.ensureFolder(target);
+    await this.internally([tx.target, tx.stage, tx.backup], () =>
+      replaceCompanionPdf(entry, tx, bytes, this.writeIO()),
+    );
+    // Trusted from here on by its size and time: never read back.
+    const file = this.app.vault.getFileByPath(target);
+    if (file)
+      entry.written = { path: target, mtime: file.stat.mtime, size: file.stat.size, id, hash };
+    entry.dirty = this.revision(id) !== revision;
+    delete entry.error;
+    this.persist();
+  }
+
+  /**
+   * Whether the PDF shows the notebook as `hash` says it is now, for the
+   * state mark. Quiet: reads at most the PDF's Info, once per change.
+   */
+  async check(id: string, hash: string): Promise<void> {
+    const entry = this.entry(id);
+    if (!entry?.enabled || this.queue.busy(id) || entry.error === "duplicate") return;
+    const revision = this.revision(id);
+    const pdf = await this.pdfAt(entry, entry.pdfPath).catch(() => null);
+    if (revision !== this.revision(id) || !entry.enabled) return;
+    const dirty = !pdf || pdf.id !== id || pdf.hash !== hash;
+    if (entry.dirty === dirty && (!pdf || entry.error !== "missing")) return;
+    entry.dirty = dirty;
+    if (pdf && entry.error === "missing") delete entry.error;
+    this.persist();
+  }
+
+  // --- Setting up -------------------------------------------------------------
+
+  private async writeKeys(notebook: TFile, keys: CompanionKeys): Promise<void> {
+    for (const view of this.views()) {
+      if (view.file === notebook && (await view.writeKeys(keys))) return;
+    }
+    await this.app.vault.process(notebook, (text) => {
+      checkFrontmatter(text);
+      return withCompanionKeys(text, keys);
     });
   }
 
-  private configureSerial(notebook: TFile, run: () => Promise<string>): Promise<string> {
-    const previous = this.configurations.get(notebook) ?? Promise.resolve("");
-    const job = previous
-      .catch(() => "")
-      .then(run)
-      .finally(() => {
-        if (this.configurations.get(notebook) === job) this.configurations.delete(notebook);
-      });
-    this.configurations.set(notebook, job);
-    return job;
+  /** A path for this notebook's PDF at `preferred`, or a free name beside it when another file is there. */
+  private async placeFor(
+    id: string,
+    entry: CompanionEntry,
+    notebook: TFile,
+    preferred: string,
+  ): Promise<string> {
+    if (!this.exists(preferred)) return preferred;
+    if ((await this.pdfAt(entry, preferred))?.id === id) return preferred;
+    return freeCompanionPath(notebook.path, folderOf(preferred), (path) => this.exists(path));
   }
 
-  private async configureOnce(
-    notebook: TFile,
-    body: string,
-    folder: string | undefined,
-    patch: {
-      enabled?: boolean;
-      followName?: boolean;
-      pdfPath?: string;
-    },
-  ): Promise<string> {
-    if (!isCompanionNotebookPath(notebook.path))
-      throw new Error(t("notebooks.companion.errNotebookUnavailable"));
-    this.hydrateFromBody(notebook, body);
-    let id = companionIdFromBody(body);
-    if (!id) {
-      id = this.generateId();
-      const identity = id;
-      await this.app.fileManager.processFrontMatter(
-        notebook,
-        (frontmatter: Record<string, unknown>) => {
-          frontmatter[COMPANION_ID_KEY] = identity;
-        },
-      );
-    }
-    if (!validCompanionId(id)) throw new Error(t("notebooks.companion.errInvalidIdentity"));
-    if (patch.enabled === false && this.entry(id)) {
-      const entry = this.entry(id)!;
-      if (entry.notebookPath !== notebook.path) await this.bind(id, notebook);
-      this.cancelDelete(id);
-      this.disable(entry);
-      await this.syncFrontmatter(notebook, id, entry);
-      await this.persist();
-      return id;
-    }
-    await this.controller.wait(id).catch(() => {});
-    await this.bind(id, notebook);
-    const previous = this.entry(id);
-    const entry: CompanionEntry = previous ?? {
+  /**
+   * Turns the companion on: the PDF goes in `folder` (the notebook's
+   * exports folder) under the notebook's name, or a free name beside a file
+   * already there that is not this notebook's. Its id goes into the notebook.
+   */
+  async enable(notebook: TFile, body: string, folder: string | undefined): Promise<string> {
+    if (!isCompanionNotebookPath(notebook.path)) throw new CompanionError("path");
+    checkFrontmatter(body);
+    const meta = companionMetaFromBody(body);
+    let id = meta?.id ?? null;
+    while (!id || (!meta && this.entry(id))) id = randomId();
+    const known = this.entry(id);
+    const preferred =
+      meta?.pdfPath ??
+      known?.pdfPath ??
+      inCompanionFolder(folder ?? folderOf(notebook.path), companionName(notebook.path));
+    const entry: CompanionEntry = known ?? {
       notebookPath: notebook.path,
-      pdfPath: defaultCompanionPath(notebook.path, folder),
+      pdfPath: preferred,
       enabled: false,
       followName: true,
       dirty: true,
     };
-    const target = patch.pdfPath ? companionPath(patch.pdfPath) : entry.pdfPath;
-    const existing = this.app.vault.getAbstractFileByPath(target);
-    if (existing && (await this.identity(target)) !== id)
-      throw new Error(t("notebooks.companion.errTargetExists", { path: target }));
-    if (
-      Object.entries(this.store.entries).some(
-        ([other, e]) => other !== id && e.pdfPath.toLowerCase() === target.toLowerCase(),
-      )
-    )
-      throw new Error(t("notebooks.companion.errOwnedByOther"));
-    this.store.entries[id] = entry;
-    if (target !== entry.pdfPath) {
-      let current: string | null;
-      try {
-        current = await this.controller.resolve(id);
-      } catch {
-        // The old PDF cannot be told apart (two copies carry this identity, or
-        // another file sits at its path): a target chosen by hand starts a
-        // fresh PDF there and leaves every old file as it is.
-        current = null;
-      }
-      if (current && !existing) await this.rename(current, target, true);
-      this.controller.claim(id, target);
-      if (!current && !existing) delete entry.lastFingerprint;
-    }
-    if (patch.followName !== undefined) entry.followName = patch.followName;
-    if (patch.enabled !== undefined) {
-      this.cancelDelete(id);
-      if (!entry.enabled && patch.enabled) delete entry.awaitingPdf;
-      entry.enabled = patch.enabled;
-    }
-    if (patch.followName === true)
-      await this.controller.followNotebookName(id, notebook.path, true);
+    this.journal.entries[id] = entry;
+    const path = await this.placeFor(id, entry, notebook, preferred);
+    entry.notebookPath = notebook.path;
+    entry.pdfPath = path;
+    entry.followName = followsName(path, notebook.path);
+    entry.enabled = true;
+    entry.dirty = true;
     delete entry.error;
-    await this.syncFrontmatter(notebook, id, entry);
-    await this.persist();
+    await this.writeKeys(notebook, { id, pdfPath: path, followName: entry.followName });
+    this.persist();
     return id;
+  }
+
+  /** Turns it off here and, through the frontmatter, on every device. The PDF stays. */
+  async disable(notebook: TFile, id: string): Promise<void> {
+    const entry = this.entry(id);
+    if (entry && entry.notebookPath !== notebook.path) {
+      // A copy carrying another notebook's id: it lets go of the id, the other keeps its PDF.
+      await this.writeKeys(notebook, { id: null, pdfPath: null, followName: null });
+      if (entry.error === "duplicate") delete entry.error;
+      this.persist();
+      return;
+    }
+    if (entry) {
+      entry.enabled = false;
+      entry.dirty = false;
+      delete entry.error;
+    }
+    await this.writeKeys(notebook, { pdfPath: null, followName: null });
+    this.persist();
+  }
+
+  /** Moves the PDF (or where it will be made) to `folder`, keeping its name. */
+  async chooseFolder(notebook: TFile, id: string, folder: string): Promise<void> {
+    const entry = this.entry(id);
+    if (!entry?.enabled) return;
+    let next = inCompanionFolder(folder, fileNameOf(entry.pdfPath));
+    if (next.toLowerCase() === entry.pdfPath.toLowerCase()) return;
+    if (this.exists(next) && (await this.pdfAt(entry, next))?.id !== id) {
+      next = freeCompanionPath(notebook.path, folder, (path) => this.exists(path));
+    }
+    const current = await this.pdfAt(entry, entry.pdfPath);
+    if (current?.id === id && !this.exists(next)) await this.movePdf(entry, next);
+    else entry.dirty = true;
+    entry.pdfPath = next;
+    entry.followName = followsName(next, notebook.path);
+    delete entry.error;
+    await this.writeKeys(notebook, { pdfPath: next, followName: entry.followName });
+    this.persist();
   }
 
   /**
-   * Links a PDF that FineNotes just exported from this notebook as its
-   * Companion PDF: stamps our invisible Subject identity in-place (no
-   * re-rendering) and records the initial fingerprint so it starts Up to date.
+   * Makes a PDF the user just exported from this notebook its companion (the
+   * export dialog's Keep updated): the Subject is set in the bytes in hand,
+   * so it starts up to date without rendering again.
    */
-  adoptExportedPdf(
+  async adopt(
     notebook: TFile,
-    exportedPath: string,
-    rendered: Pick<CompanionSnapshot, "fingerprint" | "contentHash" | "resources">,
-    exportedBytes: ArrayBuffer,
-  ): Promise<string> {
-    return this.configureSerial(notebook, () =>
-      this.adoptExportedPdfOnce(notebook, exportedPath, rendered, exportedBytes),
-    );
-  }
-
-  private async adoptExportedPdfOnce(
-    notebook: TFile,
-    exportedPath: string,
-    rendered: Pick<CompanionSnapshot, "fingerprint" | "contentHash" | "resources">,
-    exportedBytes: ArrayBuffer,
-  ): Promise<string> {
-    if (!isCompanionNotebookPath(notebook.path))
-      throw new Error(t("notebooks.companion.errNotebookUnavailable"));
-    const cleanTarget = companionPath(exportedPath);
-    const pdfFile = this.app.vault.getFileByPath(cleanTarget);
-    if (!pdfFile) throw new Error(t("notebooks.companion.errMissing"));
-
-    const body = await this.app.vault.read(notebook);
-    this.hydrateFromBody(notebook, body);
-    const id = companionIdFromBody(body) ?? this.generateId();
-    if (this.entry(id)?.enabled) throw new Error(t("notebooks.companion.errAlreadyEnabled"));
-    await this.bind(id, notebook);
-    if (rendered.resources.includes(cleanTarget))
-      throw new Error(t("notebooks.companion.errSourceConflict"));
-    if (
-      Object.entries(this.store.entries).some(
-        ([other, e]) => other !== id && e.pdfPath.toLowerCase() === cleanTarget.toLowerCase(),
-      )
-    )
-      throw new Error(t("notebooks.companion.errOwnedByOther"));
-
-    const { mtime, size } = pdfFile.stat;
-    const raw = await this.app.vault.readBinary(pdfFile);
-    if (
-      raw.byteLength !== exportedBytes.byteLength ||
-      (await digestBytes(raw)) !== (await digestBytes(exportedBytes))
-    )
-      throw new Error(t("notebooks.companion.errTargetChanged"));
-    const stamped = await stampCompanionPdfSubject(raw, id, rendered.contentHash);
-    if (
-      this.app.vault.getFileByPath(cleanTarget) !== pdfFile ||
-      pdfFile.stat.mtime !== mtime ||
-      pdfFile.stat.size !== size
-    )
-      throw new Error(t("notebooks.companion.errTargetChanged"));
-    this.internal.add(cleanTarget);
-    this.identities.delete(cleanTarget);
-    try {
-      await this.app.vault.modifyBinary(pdfFile, stamped.slice().buffer);
-    } finally {
-      this.internal.delete(cleanTarget);
-    }
-
-    const fileName = cleanTarget.split("/").pop() ?? "";
-    const followName = fileName.toLowerCase() === companionName(notebook.path).toLowerCase();
+    body: string,
+    path: string,
+    bytes: Uint8Array,
+    hash: string,
+    stamp: (bytes: Uint8Array, id: string, hash: string) => Promise<Uint8Array>,
+  ): Promise<void> {
+    const file = this.app.vault.getFileByPath(path);
+    // The file must still be the one the dialog just wrote.
+    if (!file || file.stat.size !== bytes.byteLength) throw new CompanionError("occupied");
+    checkFrontmatter(body);
+    const meta = companionMetaFromBody(body);
+    const id = meta?.id ?? randomId();
+    const stamped = await stamp(bytes, id, hash);
+    await this.internally([path], () => this.app.vault.modifyBinary(file, stamped.slice().buffer));
     const entry: CompanionEntry = {
       notebookPath: notebook.path,
-      pdfPath: cleanTarget,
+      pdfPath: path,
       enabled: true,
-      followName,
+      followName: followsName(path, notebook.path),
       dirty: false,
-      lastFingerprint: rendered.fingerprint,
+      written: { path, mtime: file.stat.mtime, size: file.stat.size, id, hash },
     };
-    this.store.entries[id] = entry;
-    await this.syncFrontmatter(notebook, id, entry);
-    await this.persist();
-    return id;
+    this.journal.entries[id] = entry;
+    await this.writeKeys(notebook, { id, pdfPath: path, followName: entry.followName });
+    this.persist();
   }
 
-  async assess(
-    id: string,
-    notebook: TFile,
-    snapshot: () => Promise<CompanionSnapshot | undefined>,
-  ): Promise<void> {
-    const entry = this.entry(id);
-    if (!entry?.enabled) return;
-    await this.bind(id, notebook);
-    const path = entry.pdfPath;
-    const revision = this.controller.revision(id);
-    const owned = this.app.vault.getFileByPath(path) !== null && (await this.identity(path)) === id;
-    const current = owned ? await snapshot() : undefined;
-    if (owned && !current) return;
-    const dirty = !current || !(await this.controller.isCurrent(entry, path, current));
-    if (
-      entry.pdfPath !== path ||
-      !entry.enabled ||
-      this.controller.isRunning(id) ||
-      revision !== this.controller.revision(id)
-    )
-      return;
-    const changed = entry.dirty !== dirty || (owned && (entry.awaitingPdf || entry.error));
-    entry.dirty = dirty;
-    if (owned) {
-      delete entry.awaitingPdf;
-      delete entry.error;
-    }
-    if (current && !dirty) entry.lastFingerprint = current.fingerprint;
-    if (changed) await this.persist();
-  }
+  // --- The vault's events -----------------------------------------------------
 
-  async update(
-    id: string,
-    notebook: TFile,
-    snapshot: () => Promise<CompanionSnapshot>,
-    force: boolean,
-  ): Promise<void> {
-    if (
-      !this.entry(id)?.enabled ||
-      this.pendingDeletes.has(id) ||
-      !this.app.vault.getFileByPath(notebook.path)
-    )
-      return;
-    const body = await this.app.vault.cachedRead(notebook);
-    if (companionIdFromBody(body) !== id || !this.hydrateFromBody(notebook, body)?.enabled) return;
-    await this.bind(id, notebook);
-    if (this.pendingDeletes.has(id)) return;
-    const run = this.controller.update(id, snapshot, force);
-    this.statusChanged();
-    try {
-      await run;
-    } finally {
-      this.statusChanged();
-    }
-  }
-
+  /** A rename the user made: the PDF's new place, or the notebook's new name for a PDF that follows it. */
   async renamed(file: TAbstractFile, from: string): Promise<void> {
-    this.modified(from);
-    this.modified(file.path);
     if (this.isInternal(from) || this.isInternal(file.path)) return;
     const moved = (path: string): string =>
       path === from
         ? file.path
-        : path.startsWith(from + "/")
+        : path.startsWith(`${from}/`)
           ? file.path + path.slice(from.length)
           : path;
-    let changed = false;
-    for (const [id, entry] of Object.entries(this.store.entries)) {
-      const pdf = moved(entry.pdfPath);
-      if (pdf !== entry.pdfPath) {
-        this.cancelDelete(id);
-        entry.pdfPath = pdf;
-        changed = true;
-        const noteFile = this.app.vault.getFileByPath(entry.notebookPath);
-        if (noteFile && entry.enabled) await this.syncFrontmatter(noteFile, id, entry);
-      }
-      const note = moved(entry.notebookPath);
-      if (note !== entry.notebookPath) {
-        this.controller.markChanged(id);
-        await this.controller.wait(id).catch(() => {});
-        const prevPdf = entry.pdfPath;
-        await this.controller.followNotebookName(id, note);
-        if (entry.pdfPath !== prevPdf && entry.enabled) {
-          const noteFile = this.app.vault.getFileByPath(note);
-          if (noteFile) await this.syncFrontmatter(noteFile, id, entry);
+    for (const [id, entry] of Object.entries(this.journal.entries)) {
+      try {
+        const pdf = moved(entry.pdfPath);
+        const note = moved(entry.notebookPath);
+        if (pdf !== entry.pdfPath) {
+          for (const record of [entry.written, entry.seen])
+            if (record?.path === entry.pdfPath) record.path = pdf;
+          entry.pdfPath = pdf;
+          // A name the user gave stays: it no longer follows the notebook's.
+          entry.followName = followsName(pdf, note);
+          if (entry.error === "missing") delete entry.error;
+          this.persist();
+          const notebook = this.app.vault.getFileByPath(note);
+          if (entry.enabled && notebook) {
+            await this.writeKeys(notebook, { pdfPath: pdf, followName: entry.followName });
+          }
         }
-        changed = true;
+        if (note === entry.notebookPath) continue;
+        const renamedNote = fileNameOf(note) !== fileNameOf(entry.notebookPath);
+        entry.notebookPath = note;
+        this.persist();
+        if (!entry.enabled || !renamedNote) continue;
+        // The name is printed in the PDF's headers.
+        this.markDirty(id);
+        if (!entry.followName) continue;
+        const next = followedCompanionPath(entry.pdfPath, note);
+        if (next === entry.pdfPath || this.exists(next)) continue;
+        if ((await this.pdfAt(entry, entry.pdfPath))?.id === id) await this.movePdf(entry, next);
+        entry.pdfPath = next;
+        this.persist();
+        const notebook = this.app.vault.getFileByPath(note);
+        if (notebook) await this.writeKeys(notebook, { pdfPath: next, followName: true });
+      } catch (error) {
+        this.failed(id, error, false);
       }
     }
-    if (changed) await this.persist();
   }
 
-  private cancelDelete(id: string): void {
-    const pending = this.pendingDeletes.get(id);
-    if (pending) window.clearTimeout(pending.timer);
-    this.pendingDeletes.delete(id);
-    const entry = this.entry(id);
-    if (entry) delete entry.deletedAt;
-  }
-
-  destroy(): void {
-    for (const { timer } of this.pendingDeletes.values()) window.clearTimeout(timer);
-    this.pendingDeletes.clear();
-  }
-
-  private scheduleDelete(id: string, entry: CompanionEntry, time: number): void {
-    const path = entry.pdfPath;
-    const timer = window.setTimeout(
-      () => void this.finishDelete(id, path).catch((error: unknown) => this.noticeError(error)),
-      Math.max(0, time + COMPANION_DELETE_SETTLE_MS - Date.now()),
-    );
-    entry.deletedAt = time;
-    const observed = new Set<string>();
-    for (const [candidate, modifiedAt] of this.recentPdfs) {
-      if (candidate !== path && modifiedAt > time - COMPANION_DELETE_SETTLE_MS)
-        observed.add(candidate);
-    }
-    this.pendingDeletes.set(id, { path, timer, observed });
-  }
-
+  /**
+   * A PDF gone: marked missing, and made again only when asked. Nothing is
+   * turned off, since a sync tool reports a move on another device as a
+   * delete here, before the frontmatter with the new place arrives.
+   */
   deleted(path: string): void {
-    this.modified(path);
-    if (this.trashing.has(path)) return;
-    let changed = false;
-    for (const [id, entry] of Object.entries(this.store.entries)) {
-      if (!entry.enabled || this.pendingDeletes.has(id)) continue;
-      if (entry.pdfPath !== path && !entry.pdfPath.startsWith(path + "/")) continue;
-      this.scheduleDelete(id, entry, Date.now());
-      this.controller.markChanged(id);
-      changed = true;
+    if (this.isInternal(path)) return;
+    for (const [id, entry] of Object.entries(this.journal.entries)) {
+      if (entry.notebookPath === path) {
+        delete this.journal.entries[id];
+        this.persist();
+        continue;
+      }
+      if (!entry.enabled || (entry.pdfPath !== path && !entry.pdfPath.startsWith(`${path}/`)))
+        continue;
+      delete entry.written;
+      delete entry.seen;
+      entry.error = "missing";
+      entry.dirty = true;
+      this.persist();
     }
-    if (changed) this.persistHydration();
   }
 
-  private async finishDelete(id: string, target: string): Promise<void> {
-    try {
-      const entry = this.entry(id);
-      if (!entry?.enabled || entry.pdfPath !== target) return;
-      await this.controller.wait(id).catch(() => {});
-      if (
-        this.pendingDeletes.get(id)?.path !== target ||
-        !entry.enabled ||
-        entry.pdfPath !== target ||
-        this.app.vault.getFileByPath(target)
-      )
-        return;
-      const pending = this.pendingDeletes.get(id);
-      if (!pending) return;
-      const note = this.app.vault.getFileByPath(entry.notebookPath);
-      if (note) {
-        // Sync may have already supplied the new binding even if no view is open.
-        const body = await this.app.vault.read(note);
-        const meta = companionMetaFromBody(body);
-        if (meta?.id !== id || meta.pdfPath !== target) {
-          if (meta?.id === id) this.hydrateFromBody(note, body);
-          return;
-        }
-        const matches: string[] = [];
-        for (const candidate of pending.observed) {
-          if ((await this.identity(candidate).catch(() => null)) === id) matches.push(candidate);
-        }
-        // Keep the association intact when sync delivers several owned candidates.
-        if (matches.length > 1) {
-          entry.error = t("notebooks.companion.errMultiplePdfs");
-          return;
-        }
-        const moved = matches[0];
-        await this.app.fileManager.processFrontMatter(
-          note,
-          (frontmatter: Record<string, unknown>) => {
-            if (
-              this.pendingDeletes.get(id)?.path !== target ||
-              entry.pdfPath !== target ||
-              this.app.vault.getFileByPath(target) ||
-              frontmatter[COMPANION_ID_KEY] !== id ||
-              frontmatter[COMPANION_PDF_KEY] !== target
-            )
-              return;
-            if (moved) {
-              frontmatter[COMPANION_PDF_KEY] = moved;
-              entry.pdfPath = moved;
-              entry.awaitingPdf = true;
-              delete entry.error;
-            } else {
-              delete frontmatter[COMPANION_PDF_KEY];
-              delete frontmatter[COMPANION_FOLLOW_KEY];
-              this.disable(entry);
-            }
-          },
-        );
-      } else {
-        this.disable(entry);
-      }
-      if (!entry.enabled) {
-        const name = stripInkSuffix(note?.basename ?? entry.notebookPath.split("/").pop() ?? "");
-        new Notice(t("notebooks.companion.deletedDisabled", { name }), 6000);
-      }
-    } finally {
-      if (this.pendingDeletes.get(id)?.path === target) {
-        this.cancelDelete(id);
-        await this.persist();
-      }
+  /** A PDF written by anyone but this device: it may be behind (or ahead), so checked at next close. */
+  changed(file: TAbstractFile): void {
+    if (this.isInternal(file.path)) return;
+    const stat = file instanceof TFile ? file.stat : null;
+    for (const [id, entry] of Object.entries(this.journal.entries)) {
+      if (!entry.enabled || entry.pdfPath !== file.path) continue;
+      if (stat && sameStat(entry.written, { path: file.path, mtime: stat.mtime, size: stat.size }))
+        continue;
+      if (entry.error === "missing") delete entry.error;
+      this.markDirty(id);
+      this.persist();
     }
+    // A picture or an imported PDF a page is drawn from.
+    for (const view of this.views()) if (view.uses(file.path)) this.markDirty(view.id);
   }
 }

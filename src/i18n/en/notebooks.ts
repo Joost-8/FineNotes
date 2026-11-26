@@ -1570,70 +1570,26 @@ export const notebooks = {
   "notebooks.noteSearch.clear": "Clear search",
   "notebooks.noteSearch.options": "Search options",
   "notebooks.companion.title": "Companion PDF",
-  "notebooks.companion.desc":
-    "Keeps a synced vector PDF copy of this notebook (updates on close or on demand).",
-  "notebooks.companion.statusOff": "Off",
-  "notebooks.companion.statusError": "Last export failed: {error}",
-  "notebooks.companion.statusUpdating": "Updating…",
-  "notebooks.companion.statusMissing": "PDF missing — update to recreate",
-  "notebooks.companion.statusNeedsUpdate": "Needs update",
-  "notebooks.companion.statusUpToDate": "Up to date",
-  "notebooks.companion.badgeError": "Error",
-  "notebooks.companion.badgeMissing": "Missing",
-  "notebooks.companion.folder": "Folder",
-  "notebooks.companion.chooseFolderAria": "Choose companion PDF folder",
-  "notebooks.companion.chooseFolderPlaceholder": "Choose folder for companion PDF…",
-  "notebooks.companion.openPdfAria": "Open companion PDF",
-  "notebooks.companion.filename": "Filename",
-  "notebooks.companion.filenameModeAria": "Companion PDF filename mode",
-  "notebooks.companion.followName": "Follow name",
-  "notebooks.companion.custom": "Custom",
-  "notebooks.companion.customName": "Custom name",
-  "notebooks.companion.customNameAria": "Custom companion PDF filename",
-  "notebooks.companion.syncTitle": "Sync PDF",
-  "notebooks.companion.syncDesc": "Vector ink & embedded PDFs stay sharp.",
+  "notebooks.companion.markOff": "Off",
+  "notebooks.companion.markCurrent": "Up to date",
+  "notebooks.companion.markStale": "Needs update",
+  "notebooks.companion.markBusy": "Updating",
+  "notebooks.companion.chooseFolder": "Choose the PDF's folder",
+  "notebooks.companion.chooseFolderPlaceholder": "Choose a folder for the PDF…",
   "notebooks.companion.updateNow": "Update PDF now",
+  "notebooks.companion.openPdf": "Open PDF",
   "notebooks.companion.keepUpdated": "Keep PDF updated",
-  "notebooks.companion.keptUpdated": "Companion PDF enabled — updates automatically on close.",
-  "notebooks.companion.deletedDisabled":
-    "Companion PDF deleted — auto-update turned off for {name}.",
-  "notebooks.companion.noticePrefix": "FineNotes companion PDF: {error}",
-  "notebooks.companion.errUnrelatedFile":
-    "An unrelated file occupies the companion path. Choose another target.",
-  "notebooks.companion.errMultiplePdfs":
-    "Multiple PDFs have this companion identity. Choose one target explicitly.",
-  "notebooks.companion.errOwnedByOther": "Another notebook already owns this PDF target.",
-  "notebooks.companion.errFollowOccupied":
-    "Cannot follow the notebook name: another file occupies that path.",
-  "notebooks.companion.errSourceConflict":
-    "A companion PDF cannot also be this notebook's imported PDF or picture source.",
-  "notebooks.companion.errMissing":
-    "PDF missing. Choose its moved path, or use Update PDF now to recreate it.",
-  "notebooks.companion.errChangedDuringCheck": "PDF changed while its ownership was checked.",
-  "notebooks.companion.errNotebookUnavailable":
-    "The notebook is unavailable or its load is protected.",
-  "notebooks.companion.errNoPages": "The notebook has no pages to export.",
-  "notebooks.companion.errMissingIdentity": "Missing companion PDF identity.",
-  "notebooks.companion.errNotebookChanged": "Notebook changed during companion update.",
-  "notebooks.companion.errInvalidIdentity": "Invalid companion identity.",
-  "notebooks.companion.errInvalidPath":
-    "Choose a vault-relative PDF path without hidden folders or parent traversal.",
-  "notebooks.companion.errNotPdf": "The companion target must be a PDF file.",
-  "notebooks.companion.errCreateFolder": "Cannot create PDF folder: {path}",
-  "notebooks.companion.errMissingPath": "Missing PDF: {path}",
-  "notebooks.companion.errMissingSource": "Missing export source: {path}",
-  "notebooks.companion.errTargetExists": "Another file already exists at that path: {path}",
-  "notebooks.companion.errDuplicateNotebook":
-    "Two notebooks have the same companion identity. Remove the companion ID from the copied notebook before enabling it.",
-  "notebooks.companion.errBackupPreserved":
-    "Companion replacement recovery is incomplete; the previous PDF backup is preserved.",
-  "notebooks.companion.errStageOccupied":
-    "A companion staging or backup path is occupied. Resolve it before updating.",
-  "notebooks.companion.errRefuseReplace": "Refusing to replace an unrelated PDF.",
-  "notebooks.companion.errStageInvalid": "Staged companion PDF did not validate.",
-  "notebooks.companion.errMovedDuringWrite":
-    "Companion moved during replacement; retry at its new path.",
-  "notebooks.companion.errTargetChanged": "Companion target changed during export.",
-  "notebooks.companion.errReplacementInvalid": "Companion replacement did not validate.",
-  "notebooks.companion.errAlreadyEnabled": "This notebook already has an enabled companion PDF.",
+  "notebooks.companion.keptUpdated": "Kept updated",
+  "notebooks.companion.notice": "Companion PDF: {error}",
+  "notebooks.companion.errMissing": "The PDF is missing. Update it to make it again.",
+  "notebooks.companion.errOccupied": "Another file is where the PDF goes. Choose another folder.",
+  "notebooks.companion.errSource":
+    "The PDF is one of this notebook's own pages. Choose another folder.",
+  "notebooks.companion.errExport": "The PDF could not be made.",
+  "notebooks.companion.errWrite": "The PDF could not be written. The previous one was kept.",
+  "notebooks.companion.errFrontmatter":
+    "The notebook's properties could not be read. Fix them, then try again.",
+  "notebooks.companion.errPath": "That folder cannot hold the PDF.",
+  "notebooks.companion.errDuplicate":
+    "A copy of this notebook keeps the same PDF. Turn it off in the copy.",
 } as const;

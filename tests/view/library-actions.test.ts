@@ -92,6 +92,24 @@ describe("Duplicate", () => {
     ]);
   });
 
+  it("leaves the original's companion PDF out of the copy", async () => {
+    const { actions, text, write } = setUp(["Sketch.page.md"]);
+    const original = [
+      "---",
+      "tags: [art]",
+      "finenotes-companion-id: a3f9211234567890",
+      'finenotes-companion-pdf: "Exports/Sketch.pdf"',
+      "finenotes-companion-follow: true",
+      "---",
+      "My sketch",
+      "",
+    ].join("\n");
+    write("Sketch.page.md", original);
+    await actions.duplicate("Sketch.page.md");
+    expect(text("Sketch copy.page.md")).toBe("---\ntags: [art]\n---\nMy sketch\n");
+    expect(text("Sketch.page.md")).toBe(original);
+  });
+
   it("copies a plain notebook beside it", async () => {
     const { actions, files } = setUp(["Sketch.page.md"]);
     await actions.duplicate("Sketch.page.md");

@@ -205,8 +205,8 @@ import {
   parseNudges,
   recordUse,
 } from "./model/nudges";
-import { CompanionPdfManager } from "./view/companion-pdf";
 import { InkView } from "./view/ink-view";
+import { CompanionPdfManager } from "./view/companion-pdf";
 import { starsOf } from "./model/favorites";
 import {
   type SimplePart,
@@ -592,16 +592,13 @@ export default class GoodObsidianPlugin extends Plugin {
     paperWidth: () => this.settings.paperWidth,
   });
 
+  /** Companion PDFs: this device's journal and the one export queue (`view/companion-pdf.ts`). */
+  readonly companionPdfs = new CompanionPdfManager(this.app);
+
   /** The transcription engine chosen in the settings; Manual when it is gone. */
   activeProvider(): RecognitionProvider {
     return resolveProvider(this.providers, this.settings.recognitionProviderId);
   }
-
-  /** Companion PDF associations and atomic journalled writer. */
-  readonly companionPdfs = new CompanionPdfManager(this.app, async (store) => {
-    this.settings.companionPdfs = store;
-    await this.saveSettings();
-  });
 
   override async onload(): Promise<void> {
     this.startup.mark("onload");
@@ -616,15 +613,14 @@ export default class GoodObsidianPlugin extends Plugin {
     await this.loadSettings();
     // Before anything with words in it is made.
     await this.language.start();
-    this.companionPdfs.load(this.settings.companionPdfs);
-    void this.companionPdfs.recoverAll();
+    this.companionPdfs.register(this, () => this.openNotebooks().map((view) => view.companion));
     this.addCommand({
       id: "update-companion-pdf",
       name: t("notebooks.companion.updateNow"),
       checkCallback: (checking) => {
         const view = this.app.workspace.getActiveViewOfType(InkView);
-        if (!view || !view.hasCompanionPdf) return false;
-        if (!checking) void view.updateCompanionPdf(true);
+        if (!view?.companion.enabled) return false;
+        if (!checking) void view.companion.updateNow();
         return true;
       },
     });
@@ -861,16 +857,8 @@ export default class GoodObsidianPlugin extends Plugin {
     );
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => {
-        if (!this.companionPdfs.isInternal(oldPath) && !this.companionPdfs.isInternal(file.path)) {
-          this.fileMoves.renamed(file, oldPath);
-        }
-        void this.companionPdfs.renamed(file, oldPath).catch((error) => {
-          new Notice(
-            t("notebooks.companion.noticePrefix", {
-              error: error instanceof Error ? error.message : String(error),
-            }),
-          );
-        });
+        // A companion PDF's own staging renames are not the user's moves.
+        if (!this.companionPdfs.isInternal(oldPath)) this.fileMoves.renamed(file, oldPath);
         this.keepFolderNotebookPaired(file, oldPath);
         void this.followPagesFolder(file, oldPath);
         followNoteFiles(this.app, file, oldPath);
@@ -883,21 +871,7 @@ export default class GoodObsidianPlugin extends Plugin {
         }
       }),
     );
-    this.registerEvent(
-      this.app.vault.on("delete", (file) => {
-        this.libraryPathChanged(file.path);
-        this.companionPdfs.deleted(file.path);
-      }),
-    );
-    const companionFileChanged = (file: TAbstractFile): void => {
-      if (!(file instanceof TFile)) return;
-      this.companionPdfs.modified(file.path);
-      if (this.companionPdfs.isInternal(file.path)) return;
-      for (const view of this.openNotebooks()) view.companionVaultFileChanged(file.path);
-    };
-    this.registerEvent(this.app.vault.on("modify", companionFileChanged));
-    this.registerEvent(this.app.vault.on("create", companionFileChanged));
-    this.register(() => this.companionPdfs.destroy());
+    this.registerEvent(this.app.vault.on("delete", (file) => this.libraryPathChanged(file.path)));
     this.register(() => this.fileMoves.destroy());
     this.wordCheck.answered = (count) => this.remindToRelearn(count);
     void loadSharing({

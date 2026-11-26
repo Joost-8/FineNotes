@@ -25607,87 +25607,96 @@ button.clickable-icon.goodobsidian-ask-window-button {
   animation: finenotes-note-tints-in 0.18s cubic-bezier(0.2, 0.9, 0.25, 1);
 }
 
-/* --- Companion PDF card in Note Settings --- */
-.goodobsidian-ns-companion {
-  margin-top: 12px;
+/* --- Companion PDF: one row of the notebook's settings ------------------------- */
+
+/* Its state, as a mark after its name: a dot when up to date, a ring while
+   behind or updating (turning), the error colour when it failed. */
+.goodobsidian-ns-companion-mark {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: var(--size-4-2);
+  border: 2px solid var(--interactive-accent);
+  border-radius: 50%;
+  vertical-align: middle;
+  box-sizing: border-box;
 }
-.goodobsidian-ns-companion-head {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+
+.goodobsidian-ns-companion-mark.is-current {
+  background-color: var(--interactive-accent);
 }
-.goodobsidian-ns-companion-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.4;
-  letter-spacing: 0.01em;
+
+.goodobsidian-ns-companion-mark.is-stale,
+.goodobsidian-ns-companion-mark.is-busy {
+  background-color: transparent;
 }
-.goodobsidian-ns-companion-badge.is-off {
-  background: var(--background-modifier-hover);
-  color: var(--text-muted);
+
+.goodobsidian-ns-companion-mark.is-busy {
+  border-right-color: transparent;
+  animation: goodobsidian-spin 1s linear infinite;
 }
-.goodobsidian-ns-companion-badge.is-synced {
-  background: rgba(34, 197, 94, 0.14);
-  color: var(--color-green, #22c55e);
+
+.goodobsidian-ns-companion-mark.is-error {
+  border-color: var(--text-error);
+  background-color: var(--text-error);
 }
-.goodobsidian-ns-companion-badge.is-dirty {
-  background: rgba(245, 158, 11, 0.15);
-  color: var(--color-orange, #f59e0b);
+
+@media (prefers-reduced-motion: reduce) {
+  .goodobsidian-ns-companion-mark.is-busy {
+    animation: none;
+  }
 }
-.goodobsidian-ns-companion-badge.is-running {
-  background: hsla(var(--interactive-accent-hsl), 0.14);
-  color: var(--interactive-accent);
-}
-.goodobsidian-ns-companion-badge.is-error {
-  background: rgba(239, 68, 68, 0.14);
-  color: var(--text-error, #ef4444);
-}
-.goodobsidian-ns-companion-path {
+
+.goodobsidian-ns-companion-controls {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  max-width: 280px;
+  gap: var(--size-4-1);
+  min-width: 0;
 }
-.goodobsidian-ns-companion-folder.clickable-icon {
+
+.goodobsidian-ns-companion .setting-item-control {
+  min-width: 0;
+}
+
+/* The folder: its icon and name, as a chip. */
+button.goodobsidian-ns-companion-folder {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  max-width: 230px;
-  padding: 5px 10px;
-  border-radius: var(--radius-s);
-  background: var(--background-modifier-form-field);
+  gap: var(--size-4-1);
+  max-width: 9em;
+  height: 30px;
+  padding: 0 var(--size-4-2);
+  border-radius: var(--gob-radius-s, 8px);
+  background-color: var(--background-modifier-hover);
+  box-shadow: none;
   color: var(--text-normal);
-  font-size: 12px;
-  cursor: pointer;
+  font-size: var(--font-ui-small);
 }
+
 .goodobsidian-ns-companion-folder-icon {
   display: inline-flex;
-  flex: 0 0 auto;
+  flex: none;
   color: var(--text-muted);
+  --icon-size: 14px;
 }
-.goodobsidian-ns-companion-folder-icon .svg-icon {
-  width: 14px;
-  height: 14px;
-}
-.goodobsidian-ns-companion-folder-label {
+
+.goodobsidian-ns-companion-folder-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.goodobsidian-ns-companion-input {
-  flex: 1 1 auto;
-  min-width: 0;
-  max-width: 220px;
-  font-size: 12px;
+
+/* Keep updated, after a PDF export: an icon like the template switch; a check once it is. */
+.goodobsidian-ask-actions button.goodobsidian-export-keep {
+  width: var(--gob-touch);
+  padding: 0;
+  border-radius: var(--gob-radius-pill);
+  color: var(--text-muted);
 }
-.goodobsidian-ns-companion-open.clickable-icon {
-  flex: 0 0 auto;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-s);
+
+.goodobsidian-ask-actions button.goodobsidian-export-keep.is-active {
+  background: hsla(var(--interactive-accent-hsl), 0.15);
+  color: var(--interactive-accent);
+  opacity: 1;
 }

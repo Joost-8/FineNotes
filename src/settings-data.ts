@@ -9,7 +9,6 @@
  */
 
 import type { FolderStyles } from "./model/library-style";
-import type { CompanionStore } from "./model/companion-pdf";
 import type { SimplePart } from "./model/simple-mode";
 import { LLM_PROVIDER_ID } from "./recognition/llm-request";
 import type { AskVaultScope } from "./recognition/vault-context";
@@ -586,8 +585,6 @@ export interface GoodObsidianSettings {
    * where read (`parseCalculatorData`, model/calculator-store.ts).
    */
   calculator?: unknown;
-  /** Optional versioned Companion PDF runtime cache. */
-  companionPdfs?: CompanionStore;
 }
 
 // The records are copies, so a host that edits its settings in place cannot

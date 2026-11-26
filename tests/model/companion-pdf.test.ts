@@ -1,565 +1,236 @@
-import { describe, expect, it, vi } from "vitest";
+/**
+ * Companion PDFs, the pure part: the frontmatter keys (read, set, removed,
+ * with every other line kept), paths and free names, this device's staging
+ * names, the journal, and the state mark.
+ */
+import { describe, expect, it } from "vitest";
 import { blankPage, emptyDocument } from "../../src/model/document";
 import {
-  CompanionController,
-  companionContent,
+  CompanionError,
+  companionErrorCode,
+  companionFrontmatter,
   companionIdFromBody,
+  companionMark,
   companionMetaFromBody,
+  companionName,
   companionPath,
   companionResources,
-  defaultCompanionPath,
+  companionTransaction,
+  followedCompanionPath,
+  followsName,
+  freeCompanionPath,
   isCompanionNotebookPath,
-  isSyncConflictCopy,
-  parseCompanionStore,
+  isCompanionScratch,
+  parseCompanionJournal,
+  sameStat,
+  withCompanionKeys,
+  withoutCompanionKeys,
   type CompanionEntry,
-  type CompanionSnapshot,
-  type CompanionStore,
 } from "../../src/model/companion-pdf";
 
 const ID = "a3f9211234567890";
-const OTHER = "bbbbbbbbbbbbbbbb";
 
-function setup(enabled = true) {
-  const entry: CompanionEntry = {
-    notebookPath: "School/Biology.notebook.md",
-    pdfPath: defaultCompanionPath("School/Biology.notebook.md"),
-    enabled,
-    followName: true,
-    dirty: true,
-  };
-  const store: CompanionStore = { version: 1, entries: { [ID]: entry } };
-  const files = new Map<string, string>();
-  const replace = vi.fn(async (record: CompanionEntry, _bytes: Uint8Array, id: string) => {
-    files.set(record.pdfPath, id);
-  });
-  const rename = vi.fn(async (from: string, to: string) => {
-    files.set(to, files.get(from)!);
-    files.delete(from);
-  });
-  const persist = vi.fn(async () => {});
-  const controller = new CompanionController(store, {
-    exists: (path) => files.has(path),
-    pdfIdentity: async (path) => files.get(path) ?? null,
-    pdfPaths: () => [...files.keys()],
-    replace,
-    rename,
-    persist,
-  });
-  let fingerprint = "first";
-  const render = vi.fn(async () => new Uint8Array([1]));
-  const snapshot = vi.fn(async (): Promise<CompanionSnapshot> => ({
-    fingerprint,
-    resources: [],
-    export: render,
-  }));
-  return {
-    entry,
-    store,
-    files,
-    replace,
-    rename,
-    persist,
-    controller,
-    snapshot,
-    render,
-    change: (next: string) => {
-      fingerprint = next;
-      controller.markChanged(ID);
-    },
-  };
-}
+const front = (...lines: string[]) => ["---", ...lines, "---", "Body text", ""].join("\n");
 
-describe("companion associations and lifecycle", () => {
-  it("disabled notebooks never export or become dirty", async () => {
-    const s = setup(false);
-    s.entry.dirty = false;
-    expect(s.controller.markChanged(ID)).toBe(false);
-    await s.controller.update(ID, s.snapshot);
-    expect(s.render).not.toHaveBeenCalled();
-  });
-
-  it("dirty close exports once; successful export makes a subsequent clean close a no-op", async () => {
-    const s = setup();
-    await s.controller.update(ID, s.snapshot);
-    expect(s.render).toHaveBeenCalledOnce();
-    expect(s.entry.dirty).toBe(false);
-    expect(s.entry.lastFingerprint).toBe("first");
-    await s.controller.update(ID, s.snapshot);
-    expect(s.render).toHaveBeenCalledOnce();
-  });
-
-  it("failed export stays dirty and leaves the previous good PDF untouched", async () => {
-    const s = setup();
-    s.files.set(s.entry.pdfPath, ID);
-    s.render.mockRejectedValueOnce(new Error("source unavailable"));
-    await expect(s.controller.update(ID, s.snapshot)).rejects.toThrow("source unavailable");
-    expect(s.entry.dirty).toBe(true);
-    expect(s.entry.error).toBe("source unavailable");
-    expect(s.replace).not.toHaveBeenCalled();
-    expect(s.files.get(s.entry.pdfPath)).toBe(ID);
-    await s.controller.update(ID, s.snapshot);
-    expect(s.entry.dirty).toBe(false);
-    expect(s.entry.error).toBeUndefined();
-  });
-
-  it("manual update can force a clean PDF to refresh", async () => {
-    const s = setup();
-    await s.controller.update(ID, s.snapshot);
-    await s.controller.update(ID, s.snapshot, true);
-    expect(s.render).toHaveBeenCalledTimes(2);
-  });
-
-  it("concurrent update requests coalesce without simultaneous or duplicate renders", async () => {
-    const s = setup();
-    let release = () => {};
-    s.render.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          release = () => resolve(new Uint8Array([1]));
-        }),
-    );
-    const first = s.controller.update(ID, s.snapshot, true);
-    await vi.waitFor(() => expect(s.render).toHaveBeenCalledOnce());
-    const second = s.controller.update(ID, s.snapshot, true);
-    expect(second).toBe(first);
-    release();
-    await Promise.all([first, second]);
-    expect(s.render).toHaveBeenCalledOnce();
-    expect(s.replace).toHaveBeenCalledOnce();
-  });
-
-  it("a second content change while exporting is not falsely marked current", async () => {
-    const s = setup();
-    let release = () => {};
-    s.render.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          release = () => resolve(new Uint8Array([1]));
-        }),
-    );
-    const first = s.controller.update(ID, s.snapshot);
-    await vi.waitFor(() => expect(s.render).toHaveBeenCalledOnce());
-    s.change("second");
-    release();
-    await first;
-    expect(s.entry.dirty).toBe(true);
-    expect(s.entry.lastFingerprint).toBe("first");
-    await s.controller.update(ID, s.snapshot);
-    expect(s.entry.lastFingerprint).toBe("second");
-    expect(s.entry.dirty).toBe(false);
-  });
-
-  it("a close request during an older export finishes with the newest content", async () => {
-    const s = setup();
-    let release = () => {};
-    s.render.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          release = () => resolve(new Uint8Array([1]));
-        }),
-    );
-    const first = s.controller.update(ID, s.snapshot);
-    await vi.waitFor(() => expect(s.render).toHaveBeenCalledOnce());
-    s.change("newest");
-    const close = s.controller.update(ID, s.snapshot);
-    release();
-    await Promise.all([first, close]);
-    expect(s.render).toHaveBeenCalledTimes(2);
-    expect(s.entry.lastFingerprint).toBe("newest");
-    expect(s.entry.dirty).toBe(false);
-  });
-
-  it("recovery finds moved PDFs by Subject identity only after the known path fails", async () => {
-    const s = setup();
-    const recovered = "Archive/Biology.pdf";
-    s.files.set(recovered, ID);
-    await s.controller.update(ID, s.snapshot);
-    expect(s.entry.pdfPath).toBe(recovered);
-    expect(s.files.size).toBe(1);
-    const paths = vi.fn(() => []);
-    const other = new CompanionController(s.store, {
-      exists: () => true,
-      pdfIdentity: async () => ID,
-      pdfPaths: paths,
-      rename: s.rename,
-      replace: s.replace,
-      persist: s.persist,
-    });
-    await other.resolve(ID);
-    expect(paths).not.toHaveBeenCalled();
-  });
-
-  it("rejects ambiguous recovered copies and unrelated target collisions", async () => {
-    const s = setup();
-    s.files.set("One.pdf", ID);
-    s.files.set("Two.pdf", ID);
-    await expect(s.controller.resolve(ID)).rejects.toThrow("Multiple PDFs");
-    s.files.clear();
-    s.files.set(s.entry.pdfPath, OTHER);
-    await expect(s.controller.update(ID, s.snapshot)).rejects.toThrow("unrelated");
-    expect(s.replace).not.toHaveBeenCalled();
-  });
-
-  it("never takes a sync tool's conflict copy for the companion", async () => {
-    const s = setup();
-    await s.controller.update(ID, s.snapshot);
-    const target = s.entry.pdfPath;
-    const copy = "School/Biology.sync-conflict-20261125-120000-ABCDEFG.pdf";
-    s.files.set(copy, ID);
-    s.files.delete(target);
-    expect(await s.controller.resolve(ID)).toBeNull();
-    await s.controller.update(ID, s.snapshot, true);
-    expect(s.entry.pdfPath).toBe(target);
-    expect(s.files.get(target)).toBe(ID);
-    expect(s.files.get(copy)).toBe(ID);
-    // Two copies are not "multiple PDFs with this identity" either.
-    s.files.set("School/Biology (Joost's conflicted copy 2026-11-25).pdf", ID);
-    s.files.delete(target);
-    await expect(s.controller.update(ID, s.snapshot, true)).resolves.toBeUndefined();
-    expect(s.entry.pdfPath).toBe(target);
-  });
-
-  it("a target chosen by hand gets past copies it cannot tell apart", async () => {
-    const s = setup();
-    s.files.set("One.pdf", ID);
-    s.files.set("Two.pdf", ID);
-    await expect(s.controller.update(ID, s.snapshot, true)).rejects.toThrow("Multiple PDFs");
-    s.controller.claim(ID, "Exports/Biology.pdf");
-    await s.controller.update(ID, s.snapshot, true);
-    expect(s.entry.pdfPath).toBe("Exports/Biology.pdf");
-    expect(s.files.get("Exports/Biology.pdf")).toBe(ID);
-    expect(s.files.get("One.pdf")).toBe(ID);
-    expect(s.files.get("Two.pdf")).toBe(ID);
-    // Once written there, a later update finds it at once.
-    await s.controller.update(ID, s.snapshot, true);
-    expect(s.entry.pdfPath).toBe("Exports/Biology.pdf");
-  });
-
-  it("target deletion recreates the same path even when content is clean", async () => {
-    const s = setup();
-    await s.controller.update(ID, s.snapshot);
-    const target = s.entry.pdfPath;
-    s.files.delete(target);
-    await expect(s.controller.update(ID, s.snapshot)).rejects.toThrow("PDF missing");
-    expect(s.render).toHaveBeenCalledOnce();
-    await s.controller.update(ID, s.snapshot, true);
-    expect(s.render).toHaveBeenCalledTimes(2);
-    expect(s.entry.pdfPath).toBe(target);
-    expect(s.files.size).toBe(1);
-  });
-
-  it("follows a notebook rename with a clean filename and keeps the existing PDF folder on move", async () => {
-    const s = setup();
-    s.files.set(s.entry.pdfPath, ID);
-    await s.controller.followNotebookName(ID, "Elsewhere/Life.notebook.md");
-    expect(s.entry.pdfPath).toBe("School/Life.pdf");
-    expect(s.rename).toHaveBeenCalledOnce();
-    await s.controller.followNotebookName(ID, "Another/Life.notebook.md");
-    expect(s.rename).toHaveBeenCalledOnce();
-    expect(s.entry.notebookPath).toBe("Another/Life.notebook.md");
-  });
-
-  it("custom names do not follow notebook renames; follow mode refuses collisions", async () => {
-    const s = setup();
-    s.entry.followName = false;
-    s.files.set(s.entry.pdfPath, ID);
-    await s.controller.followNotebookName(ID, "Other.notebook.md");
-    expect(s.rename).not.toHaveBeenCalled();
-    s.entry.followName = true;
-    s.files.set("School/Collision.pdf", OTHER);
-    await expect(s.controller.followNotebookName(ID, "Collision.notebook.md")).rejects.toThrow(
-      "another file",
-    );
-    expect(s.rename).not.toHaveBeenCalled();
-  });
-
-  it("does not permit two notebooks to claim the same target", () => {
-    const s = setup();
-    s.store.entries[OTHER] = { ...s.entry, notebookPath: "Other.notebook.md" };
-    expect(() => s.controller.claim(ID, s.entry.pdfPath)).toThrow("already owns");
-  });
-
-  it("generated PDF source references are rejected instead of becoming a self-export loop", async () => {
-    const s = setup();
-    await expect(
-      s.controller.update(ID, async () => ({
-        fingerprint: "x",
-        resources: [s.entry.pdfPath],
-        export: s.render,
-      })),
-    ).rejects.toThrow("imported PDF");
-    expect(s.render).not.toHaveBeenCalled();
-  });
-
-  it("JSON restart retains paths, identity, selection mode and clean state", async () => {
-    const s = setup();
-    await s.controller.update(ID, s.snapshot);
-    const reloaded = parseCompanionStore(JSON.parse(JSON.stringify(s.store)));
-    expect(reloaded).toEqual(s.store);
-    expect(parseCompanionStore(undefined)).toEqual({ version: 1, entries: {} });
-  });
-});
-
-describe("names, portable frontmatter and exported-content tracking", () => {
-  it("tells sync tools' conflict copies from ordinary names", () => {
-    expect(isSyncConflictCopy("A/Biology.sync-conflict-20261125-120000-ABCDEFG.pdf")).toBe(true);
-    expect(isSyncConflictCopy("Biology (Oskar's conflicted copy 2026-11-25).pdf")).toBe(true);
-    expect(isSyncConflictCopy("Biology (conflicted copy 2026-11-25 120000).pdf")).toBe(true);
-    expect(isSyncConflictCopy("Conflict resolution.pdf")).toBe(false);
-    expect(isSyncConflictCopy("A.sync-conflict/Biology.pdf")).toBe(false);
-    expect(isSyncConflictCopy("Biology.pdf")).toBe(false);
-  });
-
-  it("uses clean filenames without suffix tags and supports all ink extensions", () => {
-    expect(defaultCompanionPath("School/Biology.notebook.md", "Exports")).toBe(
-      "Exports/Biology.pdf",
-    );
-    expect(defaultCompanionPath("Biology.notebook.md")).toBe("Biology.pdf");
-    expect(defaultCompanionPath("Scratch.page.md")).toBe("Scratch.pdf");
-    expect(defaultCompanionPath("Legacy.ink.md")).toBe("Legacy.pdf");
-    expect(companionPath(" School\\Custom.pdf ")).toBe("School/Custom.pdf");
-    expect(isCompanionNotebookPath("A.notebook.md")).toBe(true);
-    expect(isCompanionNotebookPath("A.page.md")).toBe(true);
-    expect(isCompanionNotebookPath("A.ink.md")).toBe(true);
-    expect(isCompanionNotebookPath("Plain.md")).toBe(false);
-  });
-
-  it.each(["../Outside.pdf", ".obsidian/Hidden.pdf", "Folder/file.md", "Folder/bad:name.pdf"])(
-    "rejects unsafe target %s",
-    (path) => expect(() => companionPath(path)).toThrow(),
-  );
-
-  it("reads portable companion metadata from leading frontmatter only", () => {
-    const body = [
-      "---",
-      `finenotes-companion-id: '${ID}'`,
-      'finenotes-companion-pdf: "School/HW 3.pdf"',
+describe("the frontmatter keys", () => {
+  it("reads the three keys from the leading frontmatter only", () => {
+    const body = front(
+      `finenotes-companion-id: ${ID}`,
+      'finenotes-companion-pdf: "Exports/Cell biology.pdf"',
       "finenotes-companion-follow: false",
-      "user: keep",
-      "---",
-      "Text",
-    ].join("\n");
-    expect(companionIdFromBody(body)).toBe(ID);
+    );
     expect(companionMetaFromBody(body)).toEqual({
       id: ID,
-      pdfPath: "School/HW 3.pdf",
+      pdfPath: "Exports/Cell biology.pdf",
       followName: false,
     });
-    expect(companionIdFromBody(`Text\nfinenotes-companion-id: ${ID}`)).toBeNull();
-    expect(companionMetaFromBody(`Text\nfinenotes-companion-id: ${ID}`)).toBeNull();
+    expect(companionIdFromBody(`Text\n---\nfinenotes-companion-id: ${ID}\n---\n`)).toBeNull();
+    expect(companionMetaFromBody(front("tags: [a]"))).toBeNull();
+    // A path that cannot be a companion (hidden folder, not a PDF) is no path.
+    expect(
+      companionMetaFromBody(
+        front(`finenotes-companion-id: ${ID}`, "finenotes-companion-pdf: .x/a.pdf"),
+      ),
+    ).toEqual({ id: ID });
+    expect(
+      companionMetaFromBody(
+        front(`finenotes-companion-id: ${ID}`, "finenotes-companion-pdf: a.png"),
+      ),
+    ).toEqual({ id: ID });
+    // Single quotes and plain scalars too.
+    expect(
+      companionMetaFromBody(
+        front(`finenotes-companion-id: '${ID}'`, "finenotes-companion-pdf: 'It''s.pdf'"),
+      )?.pdfPath,
+    ).toBe("It's.pdf");
   });
 
-  it("ignores navigation, folders, audio, bookmarks and recognition metadata", () => {
-    const doc = emptyDocument(1024);
-    const options = { usePressure: false, highlighterAlpha: 0.4 };
-    const before = companionContent(doc, options, []);
-    doc.view.scrollY = 40;
-    doc.scroll = "horizontal";
-    doc.folders = { exports: "Elsewhere" };
-    doc.pages[0].bookmarked = true;
-    doc.pages[0].title = "Section";
-    doc.recognizedHash = "new";
-    expect(companionContent(doc, options, [])).toBe(before);
+  it("sets only its own lines and keeps everything else as it was", () => {
+    const body = front("tags: [biology]", `finenotes-companion-id: ${ID}`, "aliases: [cells]");
+    const set = withCompanionKeys(body, { pdfPath: "Exports/Cell biology.pdf", followName: true });
+    expect(set).toBe(
+      front(
+        "tags: [biology]",
+        "aliases: [cells]",
+        `finenotes-companion-id: ${ID}`,
+        'finenotes-companion-pdf: "Exports/Cell biology.pdf"',
+        "finenotes-companion-follow: true",
+      ),
+    );
+    expect(companionMetaFromBody(set)).toEqual({
+      id: ID,
+      pdfPath: "Exports/Cell biology.pdf",
+      followName: true,
+    });
+    // Turned off: the place goes, the id stays.
+    expect(withCompanionKeys(set, { pdfPath: null, followName: null })).toBe(
+      front("tags: [biology]", "aliases: [cells]", `finenotes-companion-id: ${ID}`),
+    );
   });
 
-  it("tracks every exported content category, export options, and page order", () => {
-    const options = {
-      usePressure: false,
-      highlighterAlpha: 0.4,
-      plainPaper: false,
-      withoutTapes: false,
-      margins: "all",
-    };
-    const doc0 = emptyDocument(1024);
-    const base = companionContent(doc0, options, []);
-    expect(companionContent(doc0, { ...options, plainPaper: true }, [])).not.toBe(base);
-    expect(companionContent(doc0, { ...options, withoutTapes: true }, [])).not.toBe(base);
-    expect(companionContent(doc0, { ...options, margins: "none" }, [])).not.toBe(base);
+  it("adds a frontmatter where there is none, and removes one that held only its keys", () => {
+    const added = withCompanionKeys("Body text\n", { id: ID, pdfPath: "a.pdf", followName: true });
+    expect(added).toBe(
+      `---\nfinenotes-companion-id: ${ID}\nfinenotes-companion-pdf: "a.pdf"\nfinenotes-companion-follow: true\n---\nBody text\n`,
+    );
+    expect(withoutCompanionKeys(added)).toBe("Body text\n");
+    expect(withCompanionKeys("Body text\n", { pdfPath: null })).toBe("Body text\n");
+  });
 
-    const mutations = [
-      (doc: ReturnType<typeof emptyDocument>) =>
-        doc.pages[0].strokes.push({
-          id: "s",
-          color: "#000",
-          size: 3,
-          tool: "pen",
-          pts: [1, 2, 0.5],
-        }),
-      (doc: ReturnType<typeof emptyDocument>) =>
-        doc.pages[0].textBoxes.push({
-          id: "t",
-          text: "Hi",
-          color: "#000",
-          fontSize: 22,
-          x: 1,
-          y: 2,
-          w: 200,
-        }),
-      (doc: ReturnType<typeof emptyDocument>) =>
-        doc.pages[0].images.push({ id: "i", path: "Image.png", x: 1, y: 2, w: 20, h: 30 }),
-      (doc: ReturnType<typeof emptyDocument>) => {
-        doc.pages[0].backdrop = { kind: "pdf", path: "Source.pdf", page: 0 };
-      },
-      (doc: ReturnType<typeof emptyDocument>) => {
-        doc.pages[0].backdrop = { kind: "lined", paperColor: "#ff0" };
-      },
-      (doc: ReturnType<typeof emptyDocument>) => {
-        doc.pages[0].geometry.width = 800;
-      },
-      (doc: ReturnType<typeof emptyDocument>) => doc.pages.push(blankPage("p2")),
-    ];
-    for (const mutate of mutations) {
-      const doc = emptyDocument(1024);
-      const before = companionContent(doc, options, []);
-      mutate(doc);
-      expect(companionContent(doc, options, [])).not.toBe(before);
+  it("keeps Windows line ends and a byte-order mark", () => {
+    const body = `\uFEFF---\r\ntags: [x]\r\n---\r\nText`;
+    const set = withCompanionKeys(body, { id: ID });
+    expect(set).toBe(`\uFEFF---\r\ntags: [x]\r\nfinenotes-companion-id: ${ID}\r\n---\r\nText`);
+    expect(companionFrontmatter(set)).toBe(`tags: [x]\r\nfinenotes-companion-id: ${ID}`);
+  });
+
+  it("leaves a copy without a companion, and a note without keys untouched", () => {
+    const body = front(
+      "tags: [a]",
+      `finenotes-companion-id: ${ID}`,
+      'finenotes-companion-pdf: "a.pdf"',
+    );
+    expect(withoutCompanionKeys(body)).toBe(front("tags: [a]"));
+    const plain = front("tags: [a]");
+    expect(withoutCompanionKeys(plain)).toBe(plain);
+  });
+});
+
+describe("paths and names", () => {
+  it("cleans a path, and refuses one that cannot be a companion", () => {
+    expect(companionPath(" Exports\\Cell.pdf ")).toBe("Exports/Cell.pdf");
+    for (const bad of ["../a.pdf", ".hidden/a.pdf", "a:b.pdf", "a.png", ""]) {
+      expect(() => companionPath(bad)).toThrow(CompanionError);
     }
-    const doc = emptyDocument(1024);
-    doc.pages.push({ ...blankPage("p2"), backdrop: { kind: "pdf", path: "Source.pdf", page: 0 } });
-    const before = companionContent(doc, options, []);
-    doc.pages.reverse();
-    expect(companionContent(doc, options, [])).not.toBe(before);
-    expect(companionResources(doc)).toEqual(["Source.pdf"]);
+    expect(companionErrorCode(new CompanionError("occupied"))).toBe("occupied");
+    expect(companionErrorCode(new Error("boom"))).toBe("export");
+  });
+
+  it("names the PDF after the notebook, and finds a free name beside a file already there", () => {
+    expect(companionName("School/Cell biology.notebook.md")).toBe("Cell biology.pdf");
+    expect(isCompanionNotebookPath("School/Cell biology.notebook.md")).toBe(true);
+    expect(isCompanionNotebookPath("School/Cell biology.md")).toBe(false);
+    const taken = new Set(["exports/cell biology.pdf", "exports/cell biology 1.pdf"]);
+    expect(
+      freeCompanionPath("School/Cell biology.notebook.md", "Exports", (p) =>
+        taken.has(p.toLowerCase()),
+      ),
+    ).toBe("Exports/Cell biology 2.pdf");
+    expect(freeCompanionPath("Cell.notebook.md", "", () => false)).toBe("Cell.pdf");
+  });
+
+  it("follows a renamed notebook in the PDF's own folder; a name the user gave does not follow", () => {
+    expect(followedCompanionPath("Exports/Old.pdf", "School/New.notebook.md")).toBe(
+      "Exports/New.pdf",
+    );
+    expect(followsName("Exports/new.PDF", "School/New.notebook.md")).toBe(true);
+    expect(followsName("Exports/Homework 3.pdf", "School/New.notebook.md")).toBe(false);
+  });
+
+  it("puts this device's id in its staging and backup names", () => {
+    const a = companionTransaction("Exports/Cell.pdf", ID, "dev-A1", 35);
+    const b = companionTransaction("Exports/Cell.pdf", ID, "devB2", 35);
+    expect(a.stage).toBe(`Exports/Cell.pdf.fn-${ID}-devA1-z-pending.pdf`);
+    expect(a.backup).toBe(`Exports/Cell.pdf.fn-${ID}-devA1-z-backup.pdf`);
+    expect(a.stage).not.toBe(b.stage);
+    // Each write has names of its own.
+    expect(companionTransaction("Exports/Cell.pdf", ID, "dev-A1", 36).stage).not.toBe(a.stage);
+    expect(isCompanionScratch(a.stage) && isCompanionScratch(b.backup)).toBe(true);
+    expect(isCompanionScratch("Exports/Cell.pdf")).toBe(false);
+  });
+
+  it("lists the files a notebook's pages are drawn from", () => {
+    const doc = emptyDocument();
+    doc.pages[0].backdrop = { kind: "pdf", path: "Slides.pdf", page: 0 } as never;
+    doc.pages.push(blankPage("p2"));
+    doc.pages[1].images.push({ id: "i", path: "a.png", x: 0, y: 0, w: 1, h: 1 } as never);
+    expect(companionResources(doc)).toEqual(["Slides.pdf", "a.png"]);
   });
 });
 
-it("simultaneous manual requests on a clean PDF retain one forced refresh", async () => {
-  const s = setup();
-  await s.controller.update(ID, s.snapshot);
-  s.render.mockClear();
-  await Promise.all([
-    s.controller.update(ID, s.snapshot, true),
-    s.controller.update(ID, s.snapshot, true),
-  ]);
-  expect(s.render).toHaveBeenCalledOnce();
-});
+describe("the journal (this device's local storage)", () => {
+  const entry: CompanionEntry = {
+    notebookPath: "School/Cell.notebook.md",
+    pdfPath: "Exports/Cell.pdf",
+    enabled: true,
+    followName: true,
+    dirty: false,
+    written: { path: "Exports/Cell.pdf", mtime: 5, size: 9, id: ID, hash: "0123456789abcdef" },
+    error: "missing",
+    transaction: { ...companionTransaction("Exports/Cell.pdf", ID, "devA"), staged: true },
+  };
 
-it("fingerprints rendering metadata while excluding stroke identity and replay timing", () => {
-  const doc = emptyDocument(1024),
-    options = { usePressure: false, highlighterAlpha: 0.4 };
-  doc.pages[0].strokes.push({
-    id: "s",
-    tool: "pen",
-    color: "#000",
-    size: 3,
-    pts: [1, 2, 0.5, 4, 5, 0.5],
-  });
-  const before = companionContent(doc, options, []);
-  doc.pages[0].strokes[0].id = "another";
-  doc.pages[0].strokes[0].t0 = 250;
-  expect(companionContent(doc, options, [])).toBe(before);
-  doc.pages[0].strokes[0].shape = "line";
-  expect(companionContent(doc, options, [])).not.toBe(before);
-});
-
-it("automatically fingerprints unknown future visual fields added to Page", () => {
-  const doc = emptyDocument(1024);
-  const options = { usePressure: false, highlighterAlpha: 0.4 };
-  const before = companionContent(doc, options, []);
-  (doc.pages[0] as unknown as Record<string, unknown>).futureDiagrams = [{ x: 10, y: 20 }];
-  expect(companionContent(doc, options, [])).not.toBe(before);
-});
-
-it("detects a stale synced PDF via contentHash without ping-ponging across different device render settings", async () => {
-  const s = setup();
-  let pdfHash: string | null = "1111111111111111";
-  const controller = new CompanionController(s.store, {
-    exists: (p) => s.files.has(p),
-    pdfIdentity: async (p) => s.files.get(p) ?? null,
-    pdfContentHash: async () => pdfHash,
-    pdfPaths: () => [...s.files.keys()],
-    rename: async (from, to) => {
-      const id = s.files.get(from);
-      if (id !== undefined) {
-        s.files.delete(from);
-        s.files.set(to, id);
-      }
-    },
-    replace: async (entry, _bytes, id) => {
-      s.files.set(entry.pdfPath, id);
-      pdfHash = "2222222222222222";
-    },
-    persist: async () => {},
+  it("survives a round trip through JSON", () => {
+    const journal = { version: 2 as const, entries: { [ID]: entry } };
+    expect(parseCompanionJournal(JSON.stringify(journal))).toEqual(journal);
   });
 
-  // Existing PDF on disk has an older contentHash ("1111...") even though local lastFingerprint matches.
-  s.files.set(s.store.entries[ID].pdfPath, ID);
-  s.store.entries[ID].lastFingerprint = "device-a-fp";
-  const render = vi.fn(async () => new Uint8Array([1, 2, 3]));
-  await controller.update(
-    ID,
-    async () => ({
-      fingerprint: "device-a-fp",
-      contentHash: "2222222222222222",
-      resources: [],
-      export: render,
-    }),
-    false,
-  );
-  expect(render).toHaveBeenCalledOnce();
-
-  // Another device with a different local render fingerprint sees the matching contentHash -> no rewrite.
-  render.mockClear();
-  await controller.update(
-    ID,
-    async () => ({
-      fingerprint: "device-b-different-pressure-fp",
-      contentHash: "2222222222222222",
-      resources: [],
-      export: render,
-    }),
-    false,
-  );
-  expect(render).not.toHaveBeenCalled();
+  it("leaves out what is malformed or another notebook's scratch", () => {
+    const foreign = {
+      ...entry,
+      transaction: companionTransaction("Exports/Cell.pdf", "bbbbbbbbbbbbbbbb", "devA"),
+    };
+    const parsed = parseCompanionJournal({
+      version: 2,
+      entries: {
+        [ID]: { ...foreign, error: "a sentence, not a code" },
+        nothex: entry,
+        bbbbbbbbbbbbbbbb: { ...entry, pdfPath: "../x.pdf" },
+      },
+    });
+    expect(Object.keys(parsed.entries)).toEqual([ID]);
+    expect(parsed.entries[ID].transaction).toBeUndefined();
+    expect(parsed.entries[ID].error).toBeUndefined();
+    expect(parseCompanionJournal("{oops")).toEqual({ version: 2, entries: {} });
+    expect(parseCompanionJournal({ version: 1, entries: { [ID]: entry } })).toEqual({
+      version: 2,
+      entries: {},
+    });
+  });
 });
 
-it("scopes background resolve() to local candidates instead of scanning unrelated vault PDFs", async () => {
-  const s = setup();
-  s.files.set("Archive/2020/Unrelated.pdf", "bbbbbbbbbbbbbbbb");
-  const checked: string[] = [];
-  const controller = new CompanionController(s.store, {
-    exists: (p) => s.files.has(p),
-    pdfIdentity: async (p) => {
-      checked.push(p);
-      return s.files.get(p) ?? null;
-    },
-    pdfPaths: () => [...s.files.keys()],
-    rename: async () => {},
-    replace: async () => {},
-    persist: async () => {},
+describe("the state mark", () => {
+  const on = {
+    notebookPath: "a.notebook.md",
+    pdfPath: "a.pdf",
+    enabled: true,
+    followName: true,
+    dirty: false,
+  };
+  it("is a dot when current, a ring when behind or updating, an error when it failed", () => {
+    expect(companionMark(undefined, false, false)).toBe("off");
+    expect(companionMark({ ...on, enabled: false }, false, true)).toBe("off");
+    expect(companionMark(on, false, true)).toBe("current");
+    expect(companionMark({ ...on, dirty: true }, false, true)).toBe("stale");
+    expect(companionMark(on, false, false)).toBe("stale");
+    expect(companionMark({ ...on, error: "write" }, false, true)).toBe("error");
+    expect(companionMark({ ...on, error: "write" }, true, true)).toBe("busy");
   });
-  await controller.resolve(ID, false);
-  expect(checked).not.toContain("Archive/2020/Unrelated.pdf");
-});
 
-it("keeps a queued close snapshot when a live export rejects after the view switches", async () => {
-  const s = setup();
-  let reject!: (error: Error) => void;
-  let started!: () => void;
-  const rendering = new Promise<void>((resolve) => {
-    started = resolve;
+  it("knows this device's own write by its listing", () => {
+    const written = { path: "a.pdf", mtime: 1, size: 2 };
+    expect(sameStat(written, { path: "a.pdf", mtime: 1, size: 2 })).toBe(true);
+    expect(sameStat(written, { path: "a.pdf", mtime: 1, size: 3 })).toBe(false);
+    expect(sameStat(undefined, written)).toBe(false);
   });
-  const blocked = new Promise<Uint8Array<ArrayBuffer>>((_, fail) => {
-    reject = fail;
-  });
-  s.render.mockImplementationOnce(() => {
-    started();
-    return blocked;
-  });
-  const first = s.controller.update(ID, s.snapshot);
-  await rendering;
-  s.change("from-close");
-  const close = s.controller.update(ID, s.snapshot);
-  reject(new Error("the outgoing view is gone"));
-  await Promise.all([first, close]);
-  expect(s.entry.lastFingerprint).toBe("from-close");
-  expect(s.replace).toHaveBeenCalledOnce();
-});
-
-it("includes headers and page numbers in the portable hash payload", () => {
-  const doc = emptyDocument(1024);
-  const options = { usePressure: false, highlighterAlpha: 0.4 };
-  const before = companionContent(doc, options, []);
-  doc.furniture = { header: "{title}", numbers: "center" };
-  expect(companionContent(doc, options, [])).not.toBe(before);
 });
