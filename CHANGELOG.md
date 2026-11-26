@@ -157,6 +157,17 @@ extracted from the matching section of this file by `release.yml`.
   handwriting sheet ("Five" came out "Fi~"). Smoothing now moves each point
   no further than the rounding did, so straight lines stay steady and letters
   keep their shape.
+- **Turning several pages quickly stays smooth on pages with writing**
+  ([#201](https://github.com/Joost-8/FineNotes/issues/201)). The next page
+  was only prepared once a turn had come fully to rest, half a second after
+  the swipe, so a second swipe soon after met a page whose ink was still
+  being drawn. It is now prepared while the turn settles, and a page's ink
+  is prepared a little each frame instead of all in one. In a long notebook
+  the next page was often not prepared at all once a dozen pages had been
+  read; it is now, and the pages just read stay ready for turning back.
+- **The Input debug overlay reads a 120 Hz screen as 120.** An iPad Pro
+  whose frames often started a millisecond late was shown as a 143 Hz
+  screen, and the overlay counted late frames as missed.
 
 ### Fixed
 
