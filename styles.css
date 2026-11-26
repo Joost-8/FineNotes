@@ -18120,28 +18120,22 @@ button.goodobsidian-simple-part.clickable-icon.is-on {
   width: 92%;
   aspect-ratio: 1.22;
   margin-top: 6%;
+  filter: drop-shadow(0 4px 4px rgb(0 0 0 / 24%));
+  transition:
+    transform 0.3s var(--gob-ease),
+    filter 0.3s var(--gob-ease);
 }
 .goodobsidian-library-folder-back {
   position: absolute;
-  inset: 0 0 auto 0;
-  height: 88%;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--gob-folder) 78%, #000);
-}
-.goodobsidian-library-folder-back::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  bottom: 99%;
-  width: 40%;
-  height: 12%;
-  border-radius: 8px 8px 0 0;
-  background: inherit;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: color-mix(in srgb, var(--gob-folder) 78%, #000);
 }
 .goodobsidian-library-folder-front {
   position: absolute;
   inset: auto 0 0 0;
-  height: 80%;
+  height: 75%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -18151,9 +18145,7 @@ button.goodobsidian-simple-part.clickable-icon.is-on {
     color-mix(in srgb, var(--gob-folder) 86%, #fff),
     var(--gob-folder)
   );
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.4),
-    0 8px 14px -6px rgba(0, 0, 0, 0.4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
   color: color-mix(in srgb, var(--gob-folder) 52%, #000);
 }
 .goodobsidian-library-folder-front .svg-icon {
@@ -18833,15 +18825,20 @@ button.goodobsidian-library-star:active {
   color: var(--text-muted);
 }
 @media (hover: hover) {
-  .goodobsidian-library-card:hover .goodobsidian-library-cover {
+  .goodobsidian-library-card:hover .goodobsidian-library-cover:not(.is-folder) {
     transform: translateY(-3px) scale(1.015);
     box-shadow:
       0 0 0 0.5px rgba(0, 0, 0, 0.12),
       0 2px 4px rgba(0, 0, 0, 0.12),
       0 12px 22px -6px rgba(0, 0, 0, 0.34);
   }
+  .goodobsidian-library-card:hover .goodobsidian-library-folder-art {
+    transform: translateY(-3px) scale(1.015);
+    filter: drop-shadow(0 8px 6px rgb(0 0 0 / 34%));
+  }
 }
-.goodobsidian-library-card:active .goodobsidian-library-cover {
+.goodobsidian-library-card:active .goodobsidian-library-cover:not(.is-folder),
+.goodobsidian-library-card:active .goodobsidian-library-folder-art {
   transform: scale(0.97);
   transition-duration: 0.1s;
 }
@@ -18856,6 +18853,7 @@ button.goodobsidian-library-star:active {
     animation: none;
   }
   .goodobsidian-library-cover,
+  .goodobsidian-library-folder-art,
   .goodobsidian-library-search,
   button.goodobsidian-library-star {
     transition: none;
