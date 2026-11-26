@@ -25609,18 +25609,12 @@ button.clickable-icon.goodobsidian-ask-window-button {
   animation: finenotes-note-tints-in 0.18s cubic-bezier(0.2, 0.9, 0.25, 1);
 }
 
-/* --- Handwrite Here: inline embeds, active editor, setup modal & fuzzy picker --- */
+/* --- Handwrite here: blocks in a note, and one written in place --- */
 .markdown-source-view.mod-cm6 .goodobsidian-page-embed-page.is-transparent {
-  border-radius: var(--gob-radius-l, 12px);
+  border-radius: var(--radius-m);
   border: 1px solid var(--background-modifier-border);
   background: var(--background-secondary-alt);
-  transition:
-    border-color 140ms ease,
-    background-color 140ms ease;
-}
-.markdown-source-view.mod-cm6 .goodobsidian-page-embed-page.is-transparent:hover {
-  border-color: hsla(var(--interactive-accent-hsl), 0.42);
-  background: var(--background-modifier-hover);
+  box-shadow: none;
 }
 .markdown-reading-view .goodobsidian-page-embed-page.is-transparent,
 .print .goodobsidian-page-embed-page.is-transparent {
@@ -25629,53 +25623,40 @@ button.clickable-icon.goodobsidian-ask-window-button {
   box-shadow: none;
   background: transparent;
 }
-.goodobsidian-page-embed-actions {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 5;
+/* A block's one control, in Live Preview only: the pencil that opens it for writing. */
+.goodobsidian-page-embed-write {
   display: none;
-  align-items: center;
-  gap: 3px;
-  padding: 3px;
-  border-radius: 10px;
-  background: var(--gob-frost, var(--background-primary));
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
-  border: 1px solid var(--background-modifier-border);
-  box-shadow: var(--shadow-s);
-  opacity: 0;
-  transition: opacity 140ms ease;
 }
 .markdown-source-view.mod-cm6
   .goodobsidian-page-embed-page:not(.is-inline-editing)
-  .goodobsidian-page-embed-actions {
-  display: inline-flex;
+  > .goodobsidian-page-embed-write {
+  position: absolute;
+  top: var(--size-4-1);
+  right: var(--size-4-1);
+  z-index: 5;
+  display: flex;
+  color: var(--text-faint);
 }
-.markdown-source-view.mod-cm6 .goodobsidian-page-embed-page:hover .goodobsidian-page-embed-actions,
-.markdown-source-view.mod-cm6
-  .goodobsidian-page-embed-page:focus-within
-  .goodobsidian-page-embed-actions {
-  opacity: 1;
-}
-@media (hover: none) {
-  .markdown-source-view.mod-cm6 .goodobsidian-page-embed-actions {
-    opacity: 0.85;
-  }
-}
-.goodobsidian-page-embed-action.clickable-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
+.markdown-source-view.mod-cm6 .goodobsidian-page-embed-page:hover > .goodobsidian-page-embed-write {
   color: var(--text-muted);
+}
+/* Named for screen readers, not shown (Obsidian makes a tooltip of aria-label). */
+.goodobsidian-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
 }
 .goodobsidian-page-embed-page.is-inline-editing {
   overflow: visible;
   cursor: default;
   background: transparent;
   box-shadow: none;
-  border: 1.5px solid var(--interactive-accent);
-  border-radius: var(--gob-radius-l, 12px);
+  border: 1px solid var(--interactive-accent);
+  border-radius: var(--radius-m);
 }
 .goodobsidian-page-embed-page.is-inline-editing > .goodobsidian-page-embed-canvas {
   display: none;
@@ -25694,10 +25675,10 @@ button.clickable-icon.goodobsidian-ask-window-button {
   position: sticky;
   top: 0;
   z-index: 30;
-  border-radius: var(--gob-radius-l, 12px) var(--gob-radius-l, 12px) 0 0;
+  border-radius: var(--radius-m) var(--radius-m) 0 0;
 }
 .goodobsidian-inline-toolbar-host .goodobsidian-toolbar {
-  border-radius: var(--gob-radius-l, 12px) var(--gob-radius-l, 12px) 0 0;
+  border-radius: var(--radius-m) var(--radius-m) 0 0;
 }
 .goodobsidian-inline-done-icon.clickable-icon {
   color: var(--interactive-accent);
@@ -25707,12 +25688,21 @@ button.clickable-icon.goodobsidian-ask-window-button {
   width: 100%;
   min-height: 0;
   overflow: hidden;
-  border-radius: 0 0 var(--gob-radius-l, 12px) var(--gob-radius-l, 12px);
-  touch-action: pan-y;
+  border-radius: 0 0 var(--radius-m) var(--radius-m);
 }
 .goodobsidian-inline-stage .goodobsidian-surface {
   width: 100%;
   height: 100%;
+}
+/* With the pen only, a finger scrolls the note over the block; the pen still writes. */
+.goodobsidian-inline-stage.is-finger-scroll .goodobsidian-scroll {
+  touch-action: pan-y;
+}
+/* One page that never zooms: no page number, zoom or scroll marks. */
+.goodobsidian-inline-stage .goodobsidian-pageindicator,
+.goodobsidian-inline-stage .goodobsidian-zoomreadout,
+.goodobsidian-inline-stage .goodobsidian-scrollthumb {
+  display: none;
 }
 .goodobsidian-page-embed-page.is-transparent .goodobsidian-inline-stage .goodobsidian-surface {
   background: transparent;
@@ -25733,17 +25723,15 @@ button.clickable-icon.goodobsidian-ask-window-button {
 .goodobsidian-inline-resize-pill {
   width: 44px;
   height: 4px;
-  border-radius: 999px;
+  border-radius: var(--radius-l);
   background: var(--interactive-accent);
-  opacity: 0.7;
 }
 .goodobsidian-page-flash {
   position: absolute;
   z-index: 25;
   pointer-events: none;
-  border-radius: 8px;
-  border: 2.5px solid var(--interactive-accent);
-  box-shadow: 0 0 0 6px hsla(var(--interactive-accent-hsl), 0.22);
+  border-radius: var(--radius-m);
+  border: 2px solid var(--interactive-accent);
   animation: goodobsidian-page-flash-fade 1.45s ease-out forwards;
 }
 @keyframes goodobsidian-page-flash-fade {
@@ -25759,97 +25747,6 @@ button.clickable-icon.goodobsidian-ask-window-button {
   100% {
     opacity: 0;
   }
-}
-.modal.goodobsidian-hw-setup-modal {
-  max-height: min(90vh, 90dvh);
-  overflow-y: auto;
-}
-.goodobsidian-hw-setup > * {
-  flex-shrink: 0;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.goodobsidian-hw-setup .goodobsidian-ask-actions {
-  flex-wrap: wrap;
-}
-.goodobsidian-hw-setup-sub {
-  margin: 0 0 14px;
-  font-size: var(--font-ui-small);
-  color: var(--text-muted);
-  line-height: 1.45;
-}
-.goodobsidian-hw-setup-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.goodobsidian-hw-setup-card.clickable-icon {
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-start;
-  gap: 12px;
-  width: 100%;
-  height: auto;
-  white-space: normal;
-  padding: 12px 14px;
-  text-align: left;
-  border-radius: var(--gob-radius-m);
-  border: var(--gob-hairline);
-  background: var(--gob-well);
-  color: var(--text-normal);
-  transition:
-    border-color 120ms ease,
-    background-color 120ms ease;
-}
-.goodobsidian-hw-setup-card.clickable-icon.is-active {
-  border-color: var(--interactive-accent);
-  background: color-mix(in srgb, var(--interactive-accent) 10%, var(--gob-well));
-}
-.goodobsidian-hw-setup-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  margin-top: 1px;
-  flex: none;
-  color: var(--text-muted);
-}
-.goodobsidian-hw-setup-card.is-active .goodobsidian-hw-setup-icon {
-  color: var(--interactive-accent);
-}
-.goodobsidian-hw-setup-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-.goodobsidian-hw-setup-title {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--font-ui-medium);
-  font-weight: 600;
-  color: var(--text-normal);
-}
-.goodobsidian-hw-setup-badge {
-  padding: 1px 7px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 500;
-  background: color-mix(in srgb, var(--interactive-accent) 16%, transparent);
-  color: var(--interactive-accent);
-}
-.goodobsidian-hw-setup-desc {
-  font-size: var(--font-ui-smaller);
-  color: var(--text-muted);
-  line-height: 1.4;
-}
-.goodobsidian-hw-setup-hint {
-  margin: 12px 0 14px;
-  font-size: var(--font-ui-smaller);
-  color: var(--text-faint);
 }
 .goodobsidian-hw-pick-row {
   display: flex;
@@ -25876,6 +25773,13 @@ button.clickable-icon.goodobsidian-ask-window-button {
 .goodobsidian-hw-pick-sub {
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
+}
+.goodobsidian-hw-pick-badge {
+  padding: 1px 7px;
+  border-radius: var(--radius-l);
+  font-size: var(--font-ui-smaller);
+  background: var(--background-modifier-hover);
+  color: var(--interactive-accent);
 }
 .goodobsidian-paper-swatch.is-transparent-swatch .goodobsidian-paper-swatch-disc {
   background-image:

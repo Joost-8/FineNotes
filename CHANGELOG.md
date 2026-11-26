@@ -19,6 +19,9 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Handwrite here** (PR #312, thanks @bendi087): in a Markdown note, the command puts a
+  handwriting block at the cursor and opens it for the Pencil in place; the blocks are pages of
+  one notebook per note and show in reading view and exported PDFs.
 - **Insert space on boards, and on paper without lines**
   ([discussion #276](https://github.com/Joost-8/FineNotes/discussions/276)).
   With the lasso on **By line**, press anywhere on a board and drag down: everything
