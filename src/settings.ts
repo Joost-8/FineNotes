@@ -1769,23 +1769,21 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             // Only while "One notebook for everything" is chosen.
             visible: () => this.plugin.settings.handwriteBlocks === "one",
           },
-          this.tile(
-            drawnRow(
-              t("settings.notes.embedName"),
-              t("settings.notes.embedLine"),
-              (s) => this.drawEmbedHelp(s),
-              ["embed", "![[", "page embed", "region", "wikilink", "reading view", "transclude"],
-            ),
-            "info",
+          // No tile and no ⓘ: a reference, not a setting; its cards take the row's width.
+          drawnRow(
+            t("settings.notes.embedName"),
+            t("settings.notes.embedLine"),
+            (s) => this.drawEmbedHelp(s),
+            ["embed", "![[", "page embed", "region", "wikilink", "reading view", "transclude"],
           ),
         ],
       ],
     ]);
   }
 
-  /** The ⓘ of "How to embed a notebook": the link forms, and where Handwrite here is. */
+  /** "How to embed a notebook": a card per link form, and where Handwrite here is. */
   private drawEmbedHelp(setting: Setting): void {
-    // Open from the start: the section has the room, and this is its reference.
+    setting.settingEl.addClass("goodobsidian-embed-row");
     const panel = setting.descEl.createDiv({ cls: "goodobsidian-embed-help" });
     // A picture of each way to embed, its link as typed and what it shows (embed-pictures.ts).
     drawEmbedPictures(panel, (form) => ({
@@ -1793,16 +1791,6 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
       meaning: t(EMBED_MEANINGS[form]),
     }));
     panel.createDiv({ text: t("settings.notes.syntaxWhere") });
-    setting.addExtraButton((button) => {
-      button
-        .setIcon("info")
-        .setTooltip(t("settings.notes.embedHelp"))
-        .onClick(() => {
-          panel.toggleClass("is-hidden", !panel.hasClass("is-hidden"));
-          button.extraSettingsEl.toggleClass("is-active", !panel.hasClass("is-hidden"));
-        });
-      button.extraSettingsEl.addClass("is-active");
-    });
   }
 
   /** The paper, where new notebooks go, and what Obsidian's file list shows. */

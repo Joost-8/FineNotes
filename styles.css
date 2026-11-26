@@ -25819,7 +25819,7 @@ button.clickable-icon.goodobsidian-ask-window-button {
     opacity: 0;
   }
 }
-/* Settings → Notebooks in notes: the ⓘ of "Embedding a notebook", the link forms. */
+/* Settings → Embeds in notes: "How to embed a notebook", the link forms. */
 .goodobsidian-embed-help {
   margin-top: var(--size-4-2);
   font-size: var(--font-ui-smaller);
@@ -25863,7 +25863,8 @@ button.clickable-icon.goodobsidian-ask-window-button {
   font-family: var(--font-monospace);
   overflow-wrap: anywhere;
 }
-.goodobsidian-embed-help.is-hidden {
+/* Its row has no tile and no control: the name, line and cards take the whole width. */
+.goodobsidian-embed-row .setting-item-control:empty {
   display: none;
 }
 

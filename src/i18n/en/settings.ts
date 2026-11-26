@@ -505,7 +505,6 @@ export const settings = {
   "settings.handwriteNotebook.line": "Sketches from every note go into this notebook.",
   "settings.notes.embedName": "How to embed a notebook",
   "settings.notes.embedLine": "Show a notebook, a page or a sketch in a note.",
-  "settings.notes.embedHelp": "How to embed",
   "settings.notes.meaningWhole": "The whole notebook",
   "settings.notes.meaningPage": "One page",
   "settings.notes.meaningRegion": "A named region",
