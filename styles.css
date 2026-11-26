@@ -891,6 +891,19 @@ body:not(.is-mobile) .goodobsidian-view {
   display: inline-flex;
 }
 
+.goodobsidian-tool-note-stack {
+  display: inline-grid;
+  align-items: center;
+}
+
+.goodobsidian-tool-note-stack > span {
+  grid-area: 1 / 1;
+}
+
+.goodobsidian-tool-note-stack > span.is-ghost {
+  visibility: hidden;
+}
+
 .goodobsidian-options .goodobsidian-tool.is-active {
   color: var(--text-on-accent);
   background: var(--interactive-accent);
@@ -2381,9 +2394,9 @@ select.goodobsidian-choice-select {
   z-index: 2;
 }
 
-/* The laser pointer's trail (FineNotes#25), over the ink, in screen px. */
+/* The laser pointer's trail (FineNotes#25), over the ink and text boxes, in screen px. */
 .goodobsidian-canvas-laser {
-  z-index: 2;
+  z-index: 4;
   width: 100%;
   height: 100%;
 }

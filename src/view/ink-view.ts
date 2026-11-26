@@ -2146,6 +2146,12 @@ export class InkView extends TextFileView {
     this.toolbar?.refreshSavedPens();
   }
 
+  /** Keep an open laser pill's Hold toggle in step with another pane's change. */
+  syncLaserSustain(): void {
+    this.toolbar?.syncLaserSustain();
+    this.surface?.clearLaser();
+  }
+
   /** The tool bar's layout as the settings hold it. */
   setNewsDot(on: boolean, controls: readonly string[] = this.plugin.newsControlIds()): void {
     this.toolbar?.setHomeDot(on);
@@ -5002,6 +5008,9 @@ export class InkView extends TextFileView {
           this.settings.laserDefaultColor = color;
           void this.plugin.saveSettings();
         },
+        onLaserSustainChange: (on) => {
+          this.plugin.setLaserSustain(on);
+        },
         onPressureToggle: () => this.updateSidebarRendering(),
         pressureAllowed: () => this.settings.pressureWidth,
         onUndo: () => {
@@ -5151,6 +5160,7 @@ export class InkView extends TextFileView {
         onlyStylusMode: this.plugin.stylusOnly,
         fingerDrawing: this.plugin.fingerDrawing,
         laserColor: () => this.settings.laserDefaultColor,
+        laserSustain: () => this.settings.laserSustain,
       },
     );
     // The PDF tabs, under the bar (above the page), hidden until a PDF is attached.
@@ -5289,6 +5299,7 @@ export class InkView extends TextFileView {
         palette,
         paper: this.shownPaper(),
         laserColor: () => this.settings.laserDefaultColor,
+        laserSustain: () => this.settings.laserSustain,
       },
       {
         onRecentColors: (colors) => this.plugin.saveRecentColors(colors),

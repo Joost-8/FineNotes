@@ -744,6 +744,12 @@ export interface ToolbarState {
   /** Active pen type. `undefined` counts as "fountain". */
   penType?: PenType;
   /**
+   * Pen tool (`"pen"` or `"highlighter"`) the laser pointer was opened from in
+   * the pen submenu so `InkSurface` inherits that pen's live style and builder
+   * options; `null`/`undefined` uses the default beam (`L` / Presentation mode).
+   */
+  laserFromTool?: "pen" | "highlighter" | null;
+  /**
    * The pen types' order in the pen's row (`model/pen-type-order.ts`).
    * `undefined`: their own order.
    */
@@ -826,6 +832,8 @@ export interface ToolbarCallbacks {
   onSizeChange: (size: number) => void;
   /** The laser pointer's colour changed in its pill. Hosts persist it. */
   onLaserColorChange?: (color: string) => void;
+  /** The laser pointer's hold/sustain toggle changed in its pill. Hosts persist it. */
+  onLaserSustainChange?: (on: boolean) => void;
   onPressureToggle: (enabled: boolean) => void;
   /** Whether pressure pens may widen with pressure (the advanced setting); off when absent. */
   pressureAllowed?: () => boolean;
@@ -1058,6 +1066,8 @@ export interface ToolbarOptions {
   fingerDrawing?: boolean;
   /** The laser pointer's colour, read live so its pill follows Settings, even while it shows. */
   laserColor?: () => string;
+  /** Whether the laser holds strokes solid briefly before fading out together. */
+  laserSustain?: () => boolean;
 }
 
 /** Minimum gap between the pill and the edge of the page area, in CSS px. */
@@ -1250,6 +1260,8 @@ export class Toolbar {
   private readonly shapeButtons = new Map<ShapeMode, HTMLButtonElement>();
   /** The Table button's "3 × 4" caption, kept in step with the picked size. */
   private tableCaption: HTMLElement | null = null;
+  /** Syncs the open laser pill's Hold toggle + note when the shared setting changes. */
+  private syncLaserSustainUi: (() => void) | null = null;
   private homeButton: HTMLButtonElement | null = null;
   private thumbnailsButton: HTMLButtonElement | null = null;
   /** Full screen (tablets only, `onFullScreen`); its icon says which way it goes. */
@@ -3114,6 +3126,7 @@ export class Toolbar {
   }
 
   private leaveToolFor(next: ActiveTool): void {
+    if (next !== "laser") this.state.laserFromTool = null;
     if (optionsKey(next) === optionsKey(this.optionsTool)) return;
     this.tuckedByStroke = false;
     if (this.optionsVisible) this.tuckedTools.delete(optionsKey(this.optionsTool));
@@ -3145,6 +3158,7 @@ export class Toolbar {
     this.penTypeButtons.clear();
     this.eraserSizeButtons.clear();
     this.shapeButtons.clear();
+    this.syncLaserSustainUi = null;
 
     // A text box being edited shows the text options whatever the tool is:
     // styling the box under the caret is what the pill is for right then.
@@ -3863,24 +3877,40 @@ export class Toolbar {
     return swatch;
   }
 
-  /** A tool pill with nothing to set: an icon and one line. */
-  private toolNote(icon: string, text: string): void {
+  /** A tool pill with nothing to set: an icon and one line (optionally reserving another line's width). */
+  private toolNote(
+    icon: string,
+    text: string,
+    reserveText?: string,
+  ): { live: HTMLSpanElement; ghost: HTMLSpanElement | null } | null {
     // Docked in the bar, its room goes to the tool's choices (discussion #200).
-    if (this.dockedAcross()) return;
+    if (this.dockedAcross()) return null;
     const note = this.optionsEl.createDiv({ cls: "goodobsidian-tool-note" });
     const mark = note.createSpan({ cls: "goodobsidian-tool-note-icon" });
     iconOrText(mark, icon, "");
-    note.createSpan({ text });
+    if (!reserveText) {
+      return { live: note.createSpan({ text }), ghost: null };
+    }
+    const stack = note.createSpan({ cls: "goodobsidian-tool-note-stack" });
+    const live = stack.createSpan({ text });
+    const ghost = stack.createSpan({
+      cls: "is-ghost",
+      text: reserveText,
+      attr: { "aria-hidden": "true" },
+    });
+    return { live, ghost };
   }
 
   /**
-   * The laser's pill: what it is and that nothing it draws stays, then the
-   * colour it points with. The colour is one button — a disc of it and a
-   * caret — opening the same picker the Shape tool's colour opens; a laser
-   * has no stroke and no width, so its colour is all it sets.
+   * The laser's pill: its active mode note (reserving the longer mode's width
+   * so toggling Hold never resizes the pill), its colour button, and the
+   * Hold/Sustain toggle.
    */
   private buildLaserOptions(): void {
-    this.toolNote("pointer", t("toolbar.laser.note"));
+    const sustain = this.options?.laserSustain?.() ?? true;
+    const activeNote = t(sustain ? "toolbar.laser.noteHold" : "toolbar.laser.note");
+    const otherNote = t(sustain ? "toolbar.laser.note" : "toolbar.laser.noteHold");
+    const noteSpans = this.toolNote("pointer", activeNote, otherNote);
     if (!this.dockedAcross()) this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
     const color = this.laserColor();
     if (this.dockedAcross()) {
@@ -3893,6 +3923,8 @@ export class Toolbar {
             this.setLaserColor(picked),
           ),
       );
+      this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+      this.buildLaserSustainButton(noteSpans);
       return;
     }
     const button = this.optionsEl.createEl("button", {
@@ -3905,6 +3937,38 @@ export class Toolbar {
     button.addEventListener("click", () =>
       this.toggleColorPopover("laser-color", button, color, (picked) => this.setLaserColor(picked)),
     );
+    this.buildLaserSustainButton(noteSpans);
+  }
+
+  private buildLaserSustainButton(
+    noteSpans: { live: HTMLSpanElement; ghost: HTMLSpanElement | null } | null,
+  ): void {
+    const toggle = this.optionsEl.createEl("button", {
+      cls: "clickable-icon",
+    });
+    iconOrText(toggle, "timer", "");
+    const syncToggle = (sustain: boolean): void => {
+      toggle.toggleClass("is-active", sustain);
+      toggle.setAttribute("aria-pressed", String(sustain));
+      if (noteSpans) {
+        noteSpans.live.setText(t(sustain ? "toolbar.laser.noteHold" : "toolbar.laser.note"));
+        noteSpans.ghost?.setText(t(sustain ? "toolbar.laser.note" : "toolbar.laser.noteHold"));
+      }
+    };
+    this.syncLaserSustainUi = () => syncToggle(this.options?.laserSustain?.() ?? true);
+    this.syncLaserSustainUi();
+    toggle.setAttribute("aria-label", t("toolbar.laser.sustain"));
+    toggle.setAttribute("title", t("toolbar.laser.sustain"));
+    toggle.addEventListener("click", () => {
+      const next = !(this.options?.laserSustain?.() ?? true);
+      this.callbacks.onLaserSustainChange?.(next);
+      syncToggle(next);
+    });
+  }
+
+  /** Keep an open laser pill's Hold toggle in sync when another pane changes it. */
+  syncLaserSustain(): void {
+    this.syncLaserSustainUi?.();
   }
 
   /** The laser's colour, as the settings have it now (never the icon's: the laser's icon stays grey). */
@@ -6505,6 +6569,8 @@ export class Toolbar {
     laser.createEl("kbd", { cls: "goodobsidian-saved-pen-key", text: "L" });
     laser.addEventListener("click", () => {
       this.closePopover();
+      this.state.laserFromTool =
+        this.activePenType().tool === "highlighter" ? "highlighter" : "pen";
       this.leaveToolFor("laser");
       this.state.tool = "laser";
       this.callbacks.onToolChange("laser");
@@ -8173,6 +8239,7 @@ export class Toolbar {
     markChosen(this.eraserSizeButtons, this.chosenEraserSlot());
     markChosen(this.penTypeButtons, this.activePenType().id);
     markChosen(this.shapeButtons, shapeModeFor(state), true);
+    this.syncLaserSustainUi?.();
     this.drawPenPreview();
     this.drawLassoIcon();
     this.drawEraserIcon();
