@@ -4341,7 +4341,8 @@ export class InkSurface {
   showCalcNote(note: CalcNoteSpec): void {
     this.calcGlow ??= new CalcGlow(this.paperEl, (doubt) => this.openCalcCard(doubt));
     if (!this.calcCard) {
-      this.calcCard = new CalcCard(this.paperEl);
+      // While the card asks "Which did you write?", that character is highlighted on the page.
+      this.calcCard = new CalcCard(this.paperEl, (doubt) => this.calcGlow?.ask(doubt));
       // A press anywhere else while the card is open only closes the card:
       // the sum keeps glowing, and the press neither writes nor scrolls.
       this.surfaceEl.addEventListener(

@@ -16,7 +16,11 @@
  *   as the amounts, not the text, so names and dates to its left
  *   (`12.03.2024`) are never read as amounts.
  * - the sign: a short dash level with the middle of the digits, left of the
- *   amount or as its first mark, makes the row a minus.
+ *   amount or as its first mark, makes the row a minus; on a line of its
+ *   own, the row under it. A plus (a dash crossed by a stem) there, or right
+ *   after the amount, is taken out of the amount (FineNotes#277).
+ * - ink beside the column (a neighbouring sum, names) never splits or ends
+ *   it; only ink over the line does.
  *
  * Grape then reads only each amount's ink, and {@link parseAmount} turns the
  * text into a number in the column's convention (`1.234,50` or `1,234.50`).
@@ -45,8 +49,8 @@ export interface ColumnRow {
   amount: Stroke[];
   /** A minus left of the amount (or as its first mark), not handed to Grape. */
   sign: 1 | -1;
-  /** The sign's stroke, when it has one. */
-  signStroke: Stroke | null;
+  /** The sign's ink, when the row has one: a minus's dash, or a plus's two strokes. */
+  signStrokes: Stroke[];
   /** The ink left of the amount: a name, a date, a document number. Never read. */
   label: Stroke[];
   bounds: Bounds;
@@ -65,6 +69,7 @@ export interface Column {
 const width = (b: Bounds): number => b.maxX - b.minX;
 const height = (b: Bounds): number => b.maxY - b.minY;
 const midY = (b: Bounds): number => (b.minY + b.maxY) / 2;
+const midX = (b: Bounds): number => (b.minX + b.maxX) / 2;
 
 function union(boxes: readonly Bounds[]): Bounds {
   return {
@@ -84,6 +89,20 @@ function median(values: readonly number[]): number {
 
 /** The shortest a rule may be, in page px, before any column is known. */
 const MIN_RULE_PX = 24;
+
+/**
+ * The widest gap between two rows, in digits, that always keeps them in one
+ * column.
+ */
+const ROW_GAP = 1.6;
+
+/**
+ * The widest gap, in digits, for a row that also lines up with the row under
+ * it (right edges within a digit, no taller than a digit and a half): one
+ * amount per ruled line in a small hand. The reporter of FineNotes#277 wrote
+ * 28 px digits on 85 px lines; his rows stood 1.46 and 1.61 digits apart.
+ */
+const ALIGNED_ROW_GAP = 2.5;
 
 /** A long, flat, straight stroke: a candidate line under a column. */
 function isRuleStroke(stroke: Stroke, box: Bounds): boolean {
@@ -132,14 +151,61 @@ interface Item {
   box: Bounds;
 }
 
-/** A short dash level with the middle of the digits: a minus in the margin. */
-function isMinus(item: Item, row: Bounds, digit: number): boolean {
+/**
+ * A short dash: a minus, wherever it sits. Up to 1.6 digits wide: the
+ * reporter of FineNotes#277 drew one 1.46 digits wide.
+ */
+function isMinusDash(item: Item, digit: number): boolean {
   if (!isDash(item.stroke, item.box)) return false;
   const w = width(item.box);
-  if (w < 0.2 * digit || w > 1.2 * digit) return false;
+  return w >= 0.2 * digit && w <= 1.6 * digit;
+}
+
+/** A short dash level with the middle of the digits: a minus in the margin. */
+function isMinus(item: Item, row: Bounds, digit: number): boolean {
+  if (!isMinusDash(item, digit)) return false;
   const y = midY(item.box);
   // Between a quarter and three quarters of the way down the row's digits.
   return y >= row.minY + 0.25 * height(row) && y <= row.maxY - 0.2 * height(row);
+}
+
+/** A short straight stroke within 20 degrees of upright: a plus's stem. */
+function isStem(item: Item): boolean {
+  const h = height(item.box);
+  return h > 1 && width(item.box) <= Math.max(0.35 * h, 1.5) && pathLength(item.stroke) <= 1.3 * h;
+}
+
+/**
+ * Two strokes that make a plus: a dash and a stem, each a fifth to one and
+ * a quarter digits long, crossing. Real ink crosses off centre (Oskar's
+ * pluses: the stem 61 to 88% along the bar, the bar 28 to 52% down the
+ * stem), so the crossing may fall anywhere but the ends; a 1's foot sits
+ * at the bottom of its stem, and a 4's or a 7's strokes are not a dash and
+ * a stem.
+ */
+function isPlusPair(a: Item, b: Item, digit: number): boolean {
+  const [bar, stem] = isStem(a) ? [b, a] : [a, b];
+  if (!isDash(bar.stroke, bar.box) || !isStem(stem)) return false;
+  const bw = width(bar.box);
+  const sh = height(stem.box);
+  if (bw < 0.2 * digit || bw > 1.25 * digit || sh < 0.2 * digit || sh > 1.25 * digit) return false;
+  // Lopsided, as real ones are: a 9 px bar on a 24 px stem in Oskar's ink.
+  if (Math.max(bw, sh) > 3 * Math.min(bw, sh)) return false;
+  const along = (midX(stem.box) - bar.box.minX) / bw;
+  const down = (midY(bar.box) - stem.box.minY) / sh;
+  return along >= 0.1 && along <= 0.95 && down >= 0.15 && down <= 0.85;
+}
+
+/** Whether strokes `a` and `b` make a plus, at digit height `digit`. */
+export function isPlusSign(a: Stroke, b: Stroke, digit: number): boolean {
+  const ba = strokeBounds(a);
+  const bb = strokeBounds(b);
+  return !!ba && !!bb && isPlusPair({ stroke: a, box: ba }, { stroke: b, box: bb }, digit);
+}
+
+/** `items` when they are a plus and nothing else, else null. */
+function plusOf(items: readonly Item[], digit: number): Item[] | null {
+  return items.length === 2 && isPlusPair(items[0], items[1], digit) ? [...items] : null;
 }
 
 /** Pieces of a row, left to right, split at gaps wider than `gap`. */
@@ -160,25 +226,42 @@ function pieces(items: readonly Item[], gap: number): Item[][] {
  * one joins the band its middle falls in, or just under (a comma or a full
  * stop below the baseline, a minus, a dot), else it is a band of its own. A
  * line (`isLine`: under the amounts) is always a band of its own, or of two
- * for a double line (an earlier subtotal's line).
+ * for a double line (an earlier subtotal's line). Only `items` make bands;
+ * each of `others` (ink left of the column: names, a neighbouring sum)
+ * joins the band its middle falls in, or none: ink beside the column never
+ * splits it or ends it (FineNotes#277).
  */
-function bands(items: readonly Item[], isLine: (it: Item) => boolean): Item[][] {
+function bands(
+  items: readonly Item[],
+  others: readonly Item[],
+  isLine: (it: Item) => boolean,
+): Item[][] {
   const sorted = [...items].sort((a, b) => height(b.box) - height(a.box));
-  const out: { items: Item[]; box: Bounds; tall: number; rule: boolean }[] = [];
+  type Band = { items: Item[]; box: Bounds; tall: number; rule: boolean };
+  const out: Band[] = [];
+  const holds = (b: Band, y: number): boolean => {
+    if (b.rule) return false;
+    const pad = 0.35 * b.tall;
+    return y >= b.box.minY - pad && y <= b.box.maxY + pad;
+  };
   for (const it of sorted) {
     const rule = isLine(it);
     const y = midY(it.box);
     const band = rule
       ? out.find((b) => b.rule && b.items.length === 1 && isDoubleRule(b.box, it.box))
-      : out.find((b) => {
-          if (b.rule) return false;
-          const pad = 0.35 * b.tall;
-          return y >= b.box.minY - pad && y <= b.box.maxY + pad;
-        });
+      : out.find((b) => holds(b, y));
     if (band) {
       band.items.push(it);
       band.box = union([band.box, it.box]);
     } else out.push({ items: [it], box: it.box, tall: height(it.box), rule });
+  }
+  for (const it of others) {
+    const y = midY(it.box);
+    // The nearest band that holds it; these never grow a band.
+    const band = out
+      .filter((b) => holds(b, y))
+      .sort((a, b) => Math.abs(midY(a.box) - y) - Math.abs(midY(b.box) - y))[0];
+    band?.items.push(it);
   }
   out.sort((a, b) => b.box.maxY - a.box.maxY);
   return out.map((b) => b.items);
@@ -206,7 +289,12 @@ export function columnAbove(strokes: readonly Stroke[], rule: SumRule): Column |
   // Ink in the column above the line, its digits' height, and the column's reach.
   const above = items.filter((it) => it.box.maxY <= r.maxY + 2 && midY(it.box) < r.minY);
   const inSpan = above.filter((it) => over(it.box) && !isRuleStroke(it.stroke, it.box));
-  const digit = median(inSpan.map((it) => height(it.box)).filter((h) => h > 2));
+  const heights = (its: readonly Item[]): number[] =>
+    its.map((it) => height(it.box)).filter((h) => h > 2);
+  // The digits' height from the ink near the line: writing far up the page
+  // in the same span (a heading, a paragraph) is not the column's.
+  const reach = 10 * median(heights(inSpan));
+  const digit = median(heights(inSpan.filter((it) => it.box.maxY > r.minY - reach)));
   if (digit <= 0 || w < 1.2 * digit) return null;
 
   // Nothing level with the line, to its left or through it: then it is an
@@ -224,17 +312,41 @@ export function columnAbove(strokes: readonly Stroke[], rule: SumRule): Column |
   const near = above.filter((it) => it.box.minX < right && it.box.maxY > r.minY - 40 * digit);
   const rows: ColumnRow[] = [];
   let bottom = r.minY;
+  /** The right edge of the amount in the row under the next band. */
+  let lastRight: number | null = null;
+  /** A minus on a line of its own: the row under it's, once a row above shows it is in the column. */
+  let pending: { row: ColumnRow; dash: Item } | null = null;
   // A line under the amounts, not a t's bar or an underlined name.
   const isLine = (it: Item): boolean =>
     isRuleStroke(it.stroke, it.box) &&
     Math.min(it.box.maxX, r.maxX) - Math.max(it.box.minX, r.minX) >= 0.6 * w;
-  for (const band of bands(near, isLine)) {
+  const inColumn = near.filter((it) => over(it.box));
+  const beside = near.filter((it) => !over(it.box));
+  for (const band of bands(inColumn, beside, isLine)) {
     const box = union(band.map((it) => it.box));
-    if (bottom - box.maxY > 1.6 * digit) break;
+    const ink = band.filter((it) => over(it.box));
+    const inkBox = union(ink.map((it) => it.box));
+    const aligned =
+      lastRight !== null &&
+      Math.abs(inkBox.maxX - lastRight) <= digit &&
+      height(inkBox) <= 1.5 * digit;
+    if (bottom - inkBox.maxY > (aligned ? ALIGNED_ROW_GAP : ROW_GAP) * digit) break;
     const rowRule = band.length <= 2 ? earlierRule(band, r) : null;
     if (rowRule) {
-      rows.push({ amount: [], sign: 1, signStroke: null, label: [], bounds: box, rule: rowRule });
-      bottom = box.minY;
+      rows.push({ amount: [], sign: 1, signStrokes: [], label: [], bounds: box, rule: rowRule });
+      bottom = inkBox.minY;
+      lastRight = null;
+      pending = null;
+      continue;
+    }
+    // A sign on a line of its own: a plus says nothing; a minus belongs to
+    // the row under it.
+    const plus = plusOf(ink, digit);
+    const dash = ink.length === 1 && isMinusDash(ink[0], digit) ? ink[0] : null;
+    if (plus || dash) {
+      const under = rows[rows.length - 1];
+      if (dash && under && !under.rule && under.sign === 1) pending = { row: under, dash };
+      bottom = inkBox.minY;
       continue;
     }
     const row = rowOf(band, box, left, right, digit);
@@ -244,8 +356,16 @@ export function columnAbove(strokes: readonly Stroke[], rule: SumRule): Column |
       if (rows.length === 0) return null;
       break;
     }
+    if (pending) {
+      pending.row.sign = -1;
+      pending.row.signStrokes = [pending.dash.stroke];
+      pending = null;
+    }
     rows.push(row);
-    bottom = box.minY;
+    bottom = inkBox.minY;
+    lastRight = Math.max(
+      ...band.filter((it) => row.amount.includes(it.stroke)).map((it) => it.box.maxX),
+    );
   }
   rows.reverse();
   if (rows.filter((x) => x.amount.length > 0).length < 2) return null;
@@ -267,7 +387,12 @@ function earlierRule(band: readonly Item[], r: Bounds): SumRule | null {
   };
 }
 
-/** A row's amount (the ink over the line), its sign and its label. */
+/**
+ * A row's amount (the ink over the line), its sign and its label. The sign
+ * is a minus or a plus as the amount's first marks or just left of it; a
+ * plus as its last marks is taken out too (`13 +`). A dash after the amount
+ * is never a minus: `120,-` is a whole amount.
+ */
 function rowOf(
   band: readonly Item[],
   box: Bounds,
@@ -282,31 +407,52 @@ function rowOf(
     return b.maxX > left && b.minX < right;
   });
   let amount = amountPieces.flat();
-  const label = ps.filter((p) => !amountPieces.includes(p)).flat();
-  const digitsBox = amount.length > 0 ? union(amount.map((it) => it.box)) : box;
+  let label = ps.filter((p) => !amountPieces.includes(p)).flat();
   let sign: 1 | -1 = 1;
-  let signStroke: Stroke | null = null;
-  // A minus as the amount's first mark.
-  const first = [...amount].sort((a, b) => a.box.minX - b.box.minX)[0];
-  if (first && amount.length > 1 && isMinus(first, digitsBox, digit)) {
-    sign = -1;
-    signStroke = first.stroke;
-    amount = amount.filter((it) => it !== first);
-  } else if (label.length > 0) {
-    // A minus just left of the amount, in the margin.
-    const nearest = [...label].sort((a, b) => b.box.maxX - a.box.maxX)[0];
-    const amountLeft = amount.length > 0 ? Math.min(...amount.map((it) => it.box.minX)) : left;
-    if (nearest.box.maxX > amountLeft - 2 * digit && isMinus(nearest, digitsBox, digit)) {
-      sign = -1;
-      signStroke = nearest.stroke;
+  let signItems: Item[] = [];
+  const byX = (its: readonly Item[]): Item[] => [...its].sort((a, b) => a.box.minX - b.box.minX);
+  // A plus first or last in the amount: never part of a number.
+  const sorted = byX(amount);
+  if (sorted.length > 2) {
+    const plus = plusOf(sorted.slice(0, 2), digit) ?? plusOf(sorted.slice(-2), digit);
+    if (plus) {
+      signItems = plus;
+      amount = amount.filter((it) => !plus.includes(it));
     }
   }
-  const byOrder = (items: Item[]): Stroke[] => items.map((it) => it.stroke);
+  const digitsBox = amount.length > 0 ? union(amount.map((it) => it.box)) : box;
+  const first = byX(amount)[0];
+  if (signItems.length > 0) {
+    // A plus: the row adds, as it would without one.
+  } else if (first && amount.length > 1 && isMinus(first, digitsBox, digit)) {
+    // A minus as the amount's first mark.
+    sign = -1;
+    signItems = [first];
+    amount = amount.filter((it) => it !== first);
+  } else if (label.length > 0) {
+    // A minus or a plus just left of the amount, in the margin.
+    const amountLeft = amount.length > 0 ? Math.min(...amount.map((it) => it.box.minX)) : left;
+    const nearest = [...label].sort((a, b) => b.box.maxX - a.box.maxX).slice(0, 2);
+    const close = (it: Item): boolean => it.box.maxX > amountLeft - 2 * digit;
+    // A plus only as a piece of its own: a name's last t is no plus.
+    const leftPieces = ps.filter(
+      (p) => !amountPieces.includes(p) && Math.max(...p.map((it) => it.box.maxX)) <= amountLeft,
+    );
+    const lastPiece = leftPieces[leftPieces.length - 1] ?? [];
+    const plus = lastPiece.every(close) ? plusOf(lastPiece, digit) : null;
+    if (plus) signItems = plus;
+    else if (close(nearest[0]) && isMinus(nearest[0], digitsBox, digit)) {
+      sign = -1;
+      signItems = [nearest[0]];
+    }
+    label = label.filter((it) => !signItems.includes(it));
+  }
+  const strokesOf = (items: Item[]): Stroke[] => items.map((it) => it.stroke);
   return {
-    amount: byOrder(amount),
+    amount: strokesOf(amount),
     sign,
-    signStroke,
-    label: byOrder(label.filter((it) => it.stroke !== signStroke)),
+    signStrokes: strokesOf(signItems),
+    label: strokesOf(label),
     bounds: box,
     rule: null,
   };
@@ -329,7 +475,8 @@ export interface Amount {
  * Text Grape read for an amount, as a number in `convention`, or null when it
  * is not one (a date, a document number, a word). Accepts thousands
  * separators only in groups of three, a decimal part, and the whole-amount
- * dash `,-` / `,--` / `,–` (de) or `.-` (en). A leading "-" is a minus.
+ * dash `,-` / `,--` / `,–` (de) or `.-` (en). A leading "-" is a minus, a
+ * leading "+" nothing.
  */
 export function parseAmount(text: string, convention: Convention): Amount | null {
   let t = text.replace(/\s+/g, "").replace(/[–—]/g, "-");
@@ -337,7 +484,7 @@ export function parseAmount(text: string, convention: Convention): Amount | null
   if (t.startsWith("-") || t.startsWith("−")) {
     negative = true;
     t = t.slice(1);
-  }
+  } else if (t.startsWith("+")) t = t.slice(1);
   const dec = convention === "de" ? "," : ".";
   const thou = convention === "de" ? "." : ",";
   // The whole-amount dash: "120,-" "120,--".
