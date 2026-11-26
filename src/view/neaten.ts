@@ -74,6 +74,7 @@ import {
   applyAnswers,
   joinPunctuation,
   pickQuestions,
+  questionBudget,
   sureWords,
   unsureCandidates,
   writeUnasked,
@@ -365,9 +366,11 @@ export class NeatenService {
       return this.workWord(request, request.word, jobs, jobsWith, { model, pool, profile });
     }
     // Of the words Grape is not sure of, the least sure few are asked about with the word card,
-    // about one per line (Joost, 25 November: ten cards for two lines was far too many). An
-    // answered word is written as answered; a skipped one stays the writer's ink.
-    const questions = pickQuestions(unsureCandidates(jobs));
+    // about one per line (Joost, 25 November: ten cards for two lines was far too many) and
+    // no more than the words being beautified allow (26 November: one per 8 words, five at
+    // most). An answered word is written as answered; a skipped one stays the writer's ink.
+    const wordCount = jobs.reduce((n, job) => n + job.read.length, 0);
+    const questions = pickQuestions(unsureCandidates(jobs), 1, questionBudget(wordCount));
     const asked = new Set(questions.map((q) => jobs[q.line].words[q.word][0]));
     if (questions.length > 0 && request.ask) {
       request.asking?.();

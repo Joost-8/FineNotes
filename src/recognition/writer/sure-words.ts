@@ -173,19 +173,46 @@ export const ASK_BELOW = 0.9;
  * under `ASK_BELOW` (Joost, 25 November, after ten cards for two lines:
  * "way fewer and dependent on the amount of lines"). Lines in order.
  */
-export function pickQuestions(candidates: readonly Question[], perLine = 1): Question[] {
+export function pickQuestions(
+  candidates: readonly Question[],
+  perLine = 1,
+  /** At most this many in all (`questionBudget`): the least sure are kept. */
+  limit = Infinity,
+): Question[] {
   const byLine = new Map<number, Question[]>();
   for (const q of candidates) {
     if (q.sure >= ASK_BELOW) continue;
     byLine.set(q.line, [...(byLine.get(q.line) ?? []), q]);
   }
-  return [...byLine.keys()]
+  const picked = [...byLine.keys()]
     .sort((a, b) => a - b)
     .flatMap((line) =>
       (byLine.get(line) ?? [])
         .sort((a, b) => a.sure - b.sure || a.word - b.word)
         .slice(0, Math.max(0, perLine)),
     );
+  if (picked.length <= limit) return picked;
+  const kept = new Set(
+    [...picked]
+      .sort((a, b) => a.sure - b.sure || a.line - b.line || a.word - b.word)
+      .slice(0, Math.max(0, limit)),
+  );
+  return picked.filter((q) => kept.has(q));
+}
+
+/** One card for about this many words being beautified. */
+export const WORDS_PER_CARD = 8;
+/** Never more cards than this for one Beautify, however much is selected. */
+export const MOST_CARDS = 5;
+
+/**
+ * How many cards one Beautify may show, by how many words it is asked to
+ * beautify (Joost, 26 November: "a limit adjusted to the number of words, as
+ * to not overwhelm"): one for up to 8 words, one more per 8, five at most.
+ * Ten two-word lines got ten cards under one per line; they get three.
+ */
+export function questionBudget(words: number): number {
+  return Math.min(MOST_CARDS, Math.max(1, Math.ceil(words / WORDS_PER_CARD)));
 }
 
 /** A line's words as Beautify sees them before asking: their text, ink, whether sure, and how sure. */

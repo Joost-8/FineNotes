@@ -7,6 +7,7 @@ import {
   applyAnswers,
   joinPunctuation,
   pickQuestions,
+  questionBudget,
   sureWords,
   unsureCandidates,
   wordCore,
@@ -342,5 +343,30 @@ describe("unsureCandidates: a lone word takes no card", () => {
     };
     const asked = unsureCandidates([line], { lone: true }).filter((q) => q.word === 0);
     expect(pickQuestions(asked)).toEqual([{ line: 0, word: 0, sure: 0.2 }]);
+  });
+});
+
+describe("questionBudget: cards by the words being beautified", () => {
+  it("is one for up to 8 words, one more per 8, five at most", () => {
+    expect([0, 1, 8, 9, 16, 17, 40, 41, 400].map(questionBudget)).toEqual([
+      1, 1, 1, 2, 2, 3, 5, 5, 5,
+    ]);
+  });
+
+  it("keeps the least sure words, in line order, when the lines offer more than the budget", () => {
+    // Ten two-word lines, one unsure word each: one per line gave ten cards.
+    const sure = [0.5, 0.1, 0.8, 0.3, 0.7, 0.2, 0.6, 0.4, 0.85, 0.45];
+    const candidates = sure.map((s, line) => ({ line, word: 0, sure: s }));
+    expect(pickQuestions(candidates)).toHaveLength(10);
+    const asked = pickQuestions(candidates, 1, questionBudget(20));
+    expect(asked.map((q) => q.line)).toEqual([1, 3, 5]);
+  });
+
+  it("changes nothing when the lines offer fewer than the budget", () => {
+    const candidates = [
+      { line: 0, word: 2, sure: 0.3 },
+      { line: 1, word: 0, sure: 0.6 },
+    ];
+    expect(pickQuestions(candidates, 1, questionBudget(20))).toEqual(candidates);
   });
 });
