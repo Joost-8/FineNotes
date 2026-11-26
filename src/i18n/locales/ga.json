@@ -1554,6 +1554,8 @@
   "notebooks.export.cancelHint": "Dún gan easpórtáil.",
   "notebooks.export.go": "Easpórtáil",
   "notebooks.export.goHint": "Déan na comhaid agus sábháil sa stór iad.",
+  "notebooks.export.replace": "Ionadaigh",
+  "notebooks.export.nameLabel": "Ainm comhaid; folamh: comhad nua gach uair",
   "notebooks.export.tapPages": "Tapáil na leathanaigh le heaspórtáil.",
   "notebooks.export.rendering": "Leathanach {page} as {total} á rindreáil…",
   "notebooks.export.saving": "Á shábháil…",

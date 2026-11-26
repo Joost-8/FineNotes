@@ -1282,6 +1282,8 @@
   "notebooks.export.cancelHint": "Tutup tanpa mengeksport.",
   "notebooks.export.go": "Eksport",
   "notebooks.export.goHint": "Hasilkan fail dan simpan dalam vault.",
+  "notebooks.export.replace": "Ganti",
+  "notebooks.export.nameLabel": "Nama fail; kosong: fail baharu setiap kali",
   "notebooks.export.tapPages": "Ketik halaman untuk dieksport.",
   "notebooks.export.rendering": "Memaparkan halaman {page} daripada {total}…",
   "notebooks.export.saving": "Menyimpan…",

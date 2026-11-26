@@ -1282,6 +1282,8 @@
   "notebooks.export.cancelHint": "내보내지 않고 닫아요.",
   "notebooks.export.go": "내보내기",
   "notebooks.export.goHint": "파일을 만들어 보관함에 저장해요.",
+  "notebooks.export.replace": "바꾸기",
+  "notebooks.export.nameLabel": "파일 이름; 비워 두면 매번 새 파일",
   "notebooks.export.tapPages": "내보낼 페이지를 탭하세요.",
   "notebooks.export.rendering": "{page}/{total}페이지를 렌더링하는 중…",
   "notebooks.export.saving": "저장하는 중…",

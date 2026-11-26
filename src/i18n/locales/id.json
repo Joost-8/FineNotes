@@ -1282,6 +1282,8 @@
   "notebooks.export.cancelHint": "Tutup tanpa mengekspor.",
   "notebooks.export.go": "Ekspor",
   "notebooks.export.goHint": "Buat berkasnya dan simpan di vault.",
+  "notebooks.export.replace": "Ganti",
+  "notebooks.export.nameLabel": "Nama file; kosong: file baru setiap kali",
   "notebooks.export.tapPages": "Ketuk halaman yang akan diekspor.",
   "notebooks.export.rendering": "Merender halaman {page} dari {total}…",
   "notebooks.export.saving": "Menyimpan…",

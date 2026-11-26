@@ -1418,6 +1418,8 @@
   "notebooks.export.cancelHint": "Închide fără să exporți.",
   "notebooks.export.go": "Exportă",
   "notebooks.export.goHint": "Creează fișierele și le salvează în seif.",
+  "notebooks.export.replace": "Înlocuiește",
+  "notebooks.export.nameLabel": "Numele fișierului; gol: un fișier nou de fiecare dată",
   "notebooks.export.tapPages": "Atinge paginile de exportat.",
   "notebooks.export.rendering": "Se randează pagina {page} din {total}…",
   "notebooks.export.saving": "Se salvează…",

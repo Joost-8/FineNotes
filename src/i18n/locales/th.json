@@ -1282,6 +1282,8 @@
   "notebooks.export.cancelHint": "ปิดโดยไม่ส่งออก",
   "notebooks.export.go": "ส่งออก",
   "notebooks.export.goHint": "สร้างไฟล์และบันทึกไว้ในคลัง",
+  "notebooks.export.replace": "แทนที่",
+  "notebooks.export.nameLabel": "ชื่อไฟล์; ว่าง: สร้างไฟล์ใหม่ทุกครั้ง",
   "notebooks.export.tapPages": "แตะหน้าที่จะส่งออก",
   "notebooks.export.rendering": "กำลังเรนเดอร์หน้า {page} จาก {total}…",
   "notebooks.export.saving": "กำลังบันทึก…",

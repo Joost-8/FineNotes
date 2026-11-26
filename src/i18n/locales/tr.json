@@ -1350,6 +1350,8 @@
   "notebooks.export.cancelHint": "Dışa aktarmadan kapat.",
   "notebooks.export.go": "Dışa aktar",
   "notebooks.export.goHint": "Dosyaları oluştur ve kasaya kaydet.",
+  "notebooks.export.replace": "Değiştir",
+  "notebooks.export.nameLabel": "Dosya adı; boş: her seferinde yeni bir dosya",
   "notebooks.export.tapPages": "Dışa aktarılacak sayfalara dokun.",
   "notebooks.export.rendering": "Sayfa {page} / {total} işleniyor…",
   "notebooks.export.saving": "Kaydediliyor…",

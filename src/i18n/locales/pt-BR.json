@@ -1350,6 +1350,8 @@
   "notebooks.export.cancelHint": "Fecha sem exportar.",
   "notebooks.export.go": "Exportar",
   "notebooks.export.goHint": "Cria os arquivos e os salva no cofre.",
+  "notebooks.export.replace": "Substituir",
+  "notebooks.export.nameLabel": "Nome do arquivo; vazio: um arquivo novo a cada vez",
   "notebooks.export.tapPages": "Toque nas páginas a exportar.",
   "notebooks.export.rendering": "Renderizando a página {page} de {total}…",
   "notebooks.export.saving": "Salvando…",

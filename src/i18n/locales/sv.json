@@ -1350,6 +1350,8 @@
   "notebooks.export.cancelHint": "Stäng utan att exportera.",
   "notebooks.export.go": "Exportera",
   "notebooks.export.goHint": "Skapa filerna och spara dem i valvet.",
+  "notebooks.export.replace": "Ersätt",
+  "notebooks.export.nameLabel": "Filnamn; tomt: en ny fil varje gång",
   "notebooks.export.tapPages": "Tryck på sidorna som ska exporteras.",
   "notebooks.export.rendering": "Renderar sida {page} av {total}…",
   "notebooks.export.saving": "Sparar…",

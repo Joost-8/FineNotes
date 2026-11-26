@@ -1418,6 +1418,8 @@
   "notebooks.export.cancelHint": "Затвори без извоза.",
   "notebooks.export.go": "Извези",
   "notebooks.export.goHint": "Направи датотеке и сачувај их у трезору.",
+  "notebooks.export.replace": "Замени",
+  "notebooks.export.nameLabel": "Назив датотеке; празно: нова датотека сваки пут",
   "notebooks.export.tapPages": "Додирните странице за извоз.",
   "notebooks.export.rendering": "Црта се страница {page} од {total}…",
   "notebooks.export.saving": "Чува се…",

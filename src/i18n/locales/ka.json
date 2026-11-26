@@ -1350,6 +1350,8 @@
   "notebooks.export.cancelHint": "დახურვა ექსპორტის გარეშე.",
   "notebooks.export.go": "ექსპორტი",
   "notebooks.export.goHint": "ფაილების შექმნა და საცავში შენახვა.",
+  "notebooks.export.replace": "ჩანაცვლება",
+  "notebooks.export.nameLabel": "ფაილის სახელი; ცარიელი: ყოველ ჯერზე ახალი ფაილი",
   "notebooks.export.tapPages": "შეეხეთ ექსპორტირებად გვერდებს.",
   "notebooks.export.rendering": "გვერდი {page} {total}-დან იხატება…",
   "notebooks.export.saving": "ინახება…",

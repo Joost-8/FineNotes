@@ -1418,6 +1418,8 @@
   "notebooks.export.cancelHint": "סגירה בלי לייצא.",
   "notebooks.export.go": "ייצוא",
   "notebooks.export.goHint": "יצירת הקבצים ושמירתם בכספת.",
+  "notebooks.export.replace": "החלפה",
+  "notebooks.export.nameLabel": "שם הקובץ; ריק: קובץ חדש בכל פעם",
   "notebooks.export.tapPages": "הקישו על העמודים לייצוא.",
   "notebooks.export.rendering": "מעבד את עמוד {page} מתוך {total}…",
   "notebooks.export.saving": "שומר…",

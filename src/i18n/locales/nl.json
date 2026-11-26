@@ -1350,6 +1350,8 @@
   "notebooks.export.cancelHint": "Sluiten zonder te exporteren.",
   "notebooks.export.go": "Exporteren",
   "notebooks.export.goHint": "De bestanden maken en in de kluis opslaan.",
+  "notebooks.export.replace": "Vervangen",
+  "notebooks.export.nameLabel": "Bestandsnaam; leeg: elke keer een nieuw bestand",
   "notebooks.export.tapPages": "Tik op de pagina's om te exporteren.",
   "notebooks.export.rendering": "Pagina {page} van {total} verwerken…",
   "notebooks.export.saving": "Opslaan…",

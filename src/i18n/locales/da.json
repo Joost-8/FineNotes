@@ -1350,6 +1350,8 @@
   "notebooks.export.cancelHint": "Luk uden at eksportere.",
   "notebooks.export.go": "Eksportér",
   "notebooks.export.goHint": "Lav filerne og gem dem i vaulten.",
+  "notebooks.export.replace": "Erstat",
+  "notebooks.export.nameLabel": "Filnavn; tomt: en ny fil hver gang",
   "notebooks.export.tapPages": "Tryk på de sider, der skal eksporteres.",
   "notebooks.export.rendering": "Gengiver side {page} af {total}…",
   "notebooks.export.saving": "Gemmer…",

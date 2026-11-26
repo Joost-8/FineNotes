@@ -1486,6 +1486,8 @@
   "notebooks.export.cancelHint": "Zavřít bez exportu.",
   "notebooks.export.go": "Exportovat",
   "notebooks.export.goHint": "Vytvořit soubory a uložit je do trezoru.",
+  "notebooks.export.replace": "Nahradit",
+  "notebooks.export.nameLabel": "Název souboru; prázdný: pokaždé nový soubor",
   "notebooks.export.tapPages": "Klepnutím vyberte stránky k exportu.",
   "notebooks.export.rendering": "Vykresluje se stránka {page} z {total}…",
   "notebooks.export.saving": "Ukládá se…",

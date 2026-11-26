@@ -1282,6 +1282,8 @@
   "notebooks.export.cancelHint": "Đóng mà không xuất.",
   "notebooks.export.go": "Xuất",
   "notebooks.export.goHint": "Tạo các tệp và lưu chúng vào kho.",
+  "notebooks.export.replace": "Thay thế",
+  "notebooks.export.nameLabel": "Tên tệp; để trống: mỗi lần một tệp mới",
   "notebooks.export.tapPages": "Chạm vào các trang cần xuất.",
   "notebooks.export.rendering": "Đang dựng trang {page} / {total}…",
   "notebooks.export.saving": "Đang lưu…",

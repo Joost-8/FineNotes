@@ -1350,6 +1350,8 @@
   "notebooks.export.cancelHint": "Lukk uten å eksportere.",
   "notebooks.export.go": "Eksporter",
   "notebooks.export.goHint": "Lag filene og lagre dem i hvelvet.",
+  "notebooks.export.replace": "Erstatt",
+  "notebooks.export.nameLabel": "Filnavn; tomt: en ny fil hver gang",
   "notebooks.export.tapPages": "Trykk på sidene som skal eksporteres.",
   "notebooks.export.rendering": "Tegner side {page} av {total}…",
   "notebooks.export.saving": "Lagrer…",

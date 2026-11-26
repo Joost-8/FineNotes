@@ -1282,6 +1282,8 @@
   "notebooks.export.cancelHint": "書き出さずに閉じます。",
   "notebooks.export.go": "書き出す",
   "notebooks.export.goHint": "ファイルを作成して、保管庫に保存します。",
+  "notebooks.export.replace": "置き換える",
+  "notebooks.export.nameLabel": "ファイル名。空欄の場合は毎回新しいファイルを作成",
   "notebooks.export.tapPages": "書き出すページをタップしてください。",
   "notebooks.export.rendering": "ページ{page} / {total}を描画中…",
   "notebooks.export.saving": "保存中…",

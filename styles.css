@@ -11245,7 +11245,8 @@ body .goodobsidian-more input.goodobsidian-more-goto::placeholder {
 /* Its own `display` outranks the shared `.is-hidden` (ledger). */
 .goodobsidian-export-choose.is-hidden,
 .goodobsidian-export-grid.is-hidden,
-.goodobsidian-export-single.is-hidden {
+.goodobsidian-export-single.is-hidden,
+.goodobsidian-export-name.is-hidden {
   display: none;
 }
 
@@ -11305,6 +11306,16 @@ body:not(.is-phone) .modal.goodobsidian-contents-modal {
 .goodobsidian-export-choose .goodobsidian-export-range {
   flex: 1 1 160px;
   min-width: 0;
+  height: var(--gob-touch-compact);
+  font-size: 16px;
+}
+
+/* The PDF's name (#318), first in the actions row; empty shows the free name as
+   its placeholder. 16px: no iPadOS zoom. */
+.goodobsidian-export-name {
+  flex: 1 1 140px;
+  min-width: 0;
+  margin-right: auto;
   height: var(--gob-touch-compact);
   font-size: 16px;
 }
