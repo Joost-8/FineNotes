@@ -506,14 +506,11 @@ export class CompanionPdfManager {
     for (const record of [entry.written, entry.seen]) if (record?.path === from) record.path = to;
   }
 
-  private writeIO(): CompanionWriteIO {
+  /** The vault as a write needs it; `id` and `entry` are the notebook writing, whose own files it may replace. */
+  private writeIO(id: string, entry: CompanionEntry): CompanionWriteIO {
     return {
       exists: (path) => this.exists(path),
-      owned: async (path) => {
-        const [id] = Object.entries(this.journal.entries).find(([, e]) => e.pdfPath === path) ?? [];
-        const entry = this.entry(id ?? null);
-        return !!id && !!entry && (await this.isOwn(id, entry, path));
-      },
+      owned: (path) => this.isOwn(id, entry, path),
       create: async (path, bytes) => {
         await this.ensureFolder(path);
         await this.app.vault.createBinary(path, bytes.slice().buffer);
@@ -536,12 +533,12 @@ export class CompanionPdfManager {
 
   /** Finishes writes an earlier session left half done. Run once the vault is indexed. */
   async recoverAll(): Promise<void> {
-    for (const entry of Object.values(this.journal.entries)) {
+    for (const [id, entry] of Object.entries(this.journal.entries)) {
       const tx = entry.transaction;
       if (!tx) continue;
       try {
         await this.internally([tx.target, tx.stage, tx.backup], () =>
-          recoverCompanionWrite(entry, this.writeIO()),
+          recoverCompanionWrite(entry, this.writeIO(id, entry)),
         );
       } catch {
         entry.error = "write";
@@ -614,6 +611,9 @@ export class CompanionPdfManager {
     const revision = made.revision;
     const target = entry.pdfPath;
     if (made.resources.includes(target)) throw new CompanionError("source");
+    // A notebook over big PDFs is made only when asked: it may take the app
+    // down. Checked first, before the PDF is read at all.
+    if (!force && this.importedPdfBytes(made) > COMPANION_AUTO_PDF_LIMIT) return;
     const hash = await captureHash(this.app, made);
     const pdf = await this.pdfAt(entry, target);
     // A file of the notebook's typed export name is the user's to replace (#318).
@@ -629,8 +629,6 @@ export class CompanionPdfManager {
       this.persist();
       return;
     }
-    // A notebook over big PDFs is made only when asked: it may take the app down.
-    if (!force && this.importedPdfBytes(made) > COMPANION_AUTO_PDF_LIMIT) return;
     entry.exporting = true;
     this.persist();
     let bytes: Uint8Array;
@@ -654,7 +652,7 @@ export class CompanionPdfManager {
     const tx = companionTransaction(target, id, this.device, Date.now());
     await this.ensureFolder(target);
     await this.internally([tx.target, tx.stage, tx.backup], () =>
-      replaceCompanionPdf(entry, tx, bytes, this.writeIO()),
+      replaceCompanionPdf(entry, tx, bytes, this.writeIO(id, entry)),
     );
     // Trusted from here on by its size and time: never read back.
     const file = this.app.vault.getFileByPath(target);
@@ -753,7 +751,6 @@ export class CompanionPdfManager {
     entry.dirty = true;
     delete entry.error;
     await this.writeKeys(notebook, { id, pdfPath: path, followName: entry.followName });
-    this.recordOwn(entry);
     this.persist();
     return id;
   }
@@ -798,14 +795,24 @@ export class CompanionPdfManager {
       next = await this.placeFor(id, entry, next);
     }
     const current = await this.pdfAt(entry, entry.pdfPath);
-    if (current?.id === id && !this.exists(next)) await this.movePdf(entry, next);
+    const moved = current?.id === id && !this.exists(next);
+    if (moved) await this.movePdf(entry, next);
     else entry.dirty = true;
     entry.pdfPath = next;
     entry.followName = followsName(next, notebook.path);
     delete entry.error;
     await this.writeKeys(notebook, { pdfPath: next, followName: entry.followName });
-    this.recordOwn(entry);
+    // Recorded as the own file only once a file of ours is there.
+    if (moved) this.recordOwn(entry);
     this.persist();
+  }
+
+  /**
+   * Whether `entry` is this notebook's own companion, on: not a copy made
+   * outside FineNotes that carries another notebook's id.
+   */
+  mine(entry: CompanionEntry | undefined, notebookPath: string): entry is CompanionEntry {
+    return !!entry?.enabled && entry.notebookPath === notebookPath && entry.error !== "duplicate";
   }
 
   /** Whether the notebook's export last wrote `path` (#318's own file). */
@@ -845,17 +852,19 @@ export class CompanionPdfManager {
    */
   async moveTo(notebook: TFile, id: string, path: string): Promise<void> {
     const entry = this.entry(id);
-    if (!entry?.enabled || path.toLowerCase() === entry.pdfPath.toLowerCase()) return;
+    if (!this.mine(entry, notebook.path) || path.toLowerCase() === entry.pdfPath.toLowerCase())
+      return;
     // A file there that is not this notebook's own is never taken over.
     if (this.exists(path) && !(await this.isOwn(id, entry, path))) return;
     const current = await this.pdfAt(entry, entry.pdfPath);
-    if (current?.id === id && !this.exists(path)) await this.movePdf(entry, path);
+    const moved = current?.id === id && !this.exists(path);
+    if (moved) await this.movePdf(entry, path);
     else entry.dirty = true;
     entry.pdfPath = path;
     entry.followName = followsName(path, notebook.path);
     delete entry.error;
     await this.writeKeys(notebook, { pdfPath: path, followName: entry.followName });
-    this.recordOwn(entry);
+    if (moved) this.recordOwn(entry);
     this.persist();
   }
 
@@ -868,19 +877,21 @@ export class CompanionPdfManager {
    */
   async writeExport(
     id: string,
+    notebookPath: string,
     path: string,
     bytes: Uint8Array,
     made: { hash: string; optionsKey: string } | null,
     stamp: (bytes: Uint8Array, id: string, hash: string) => Promise<Uint8Array>,
   ): Promise<void> {
     const entry = this.entry(id);
-    if (!entry?.enabled || entry.pdfPath.toLowerCase() !== path.toLowerCase()) return;
+    if (!this.mine(entry, notebookPath) || entry.pdfPath.toLowerCase() !== path.toLowerCase())
+      return;
     const stamped = await stamp(bytes, id, made?.hash ?? "");
     const target = entry.pdfPath;
     const tx = companionTransaction(target, id, this.device, Date.now());
     await this.ensureFolder(target);
     await this.internally([tx.target, tx.stage, tx.backup], () =>
-      replaceCompanionPdf(entry, tx, stamped, this.writeIO()),
+      replaceCompanionPdf(entry, tx, stamped, this.writeIO(id, entry)),
     );
     const file = this.app.vault.getFileByPath(target);
     if (file) {

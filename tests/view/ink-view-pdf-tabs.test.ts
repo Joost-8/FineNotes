@@ -363,6 +363,7 @@ describe("the companion PDF while a PDF's tab is shown", () => {
     const entry = { enabled: true, dirty: true };
     const manager = recorder({
       entry: () => entry,
+      mine: (e?: { enabled: boolean }) => e?.enabled === true,
       requestExport: vi.fn(async () => {}),
     });
     const file = { path: "Algo/Algo.notebook.md", basename: "Algo.notebook", parent: null };

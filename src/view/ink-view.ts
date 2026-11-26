@@ -72,7 +72,6 @@ import {
 } from "../model/document";
 import { DocumentEncoder, buildInkFile, inkFileText, parseInkFile } from "../model/serialize";
 import { CompanionSession } from "./companion-session";
-import { companionResources } from "../model/companion-pdf";
 import { DotClock, attachDotClock, dotClockOf, idsIn } from "../model/dot-ids";
 import {
   type DevicePagesLoad,
@@ -550,13 +549,7 @@ import {
   exportTarget,
   mimeTypeOf,
 } from "../export/export-choice";
-import {
-  exportNamesOf,
-  ownPdfName,
-  pdfName,
-  rememberPdfName,
-  typedPdfName,
-} from "../export/export-name";
+import { exportNamesOf, ownPdfName, pdfName, rememberPdfName } from "../export/export-name";
 import { inkFileSuffix, stripInkSuffix, uniqueFileName } from "../model/new-notebook";
 import { TEMPLATE_EXTENSION, buildTemplatePackage } from "../import/template-package";
 import { SaveTemplateModal, type TemplateDetails } from "./template-ui";
@@ -2569,26 +2562,14 @@ export class InkView extends TextFileView {
   readonly companion: CompanionSession;
 
   private companionSession(): CompanionSession {
-    // eslint-disable-next-line @typescript-eslint/no-this-alias -- the host reads the view live
-    const view = this;
     return new CompanionSession(
       {
         app: this.app,
-        get file() {
-          return view.file;
-        },
-        get noteBody() {
-          return view.noteBody;
-        },
-        set noteBody(body: string) {
-          view.noteBody = body;
-        },
-        get doc() {
-          return view.doc;
-        },
-        get paperWidth() {
-          return view.settings.paperWidth;
-        },
+        file: () => this.file,
+        body: () => this.noteBody,
+        setBody: (body) => (this.noteBody = body),
+        doc: () => this.doc,
+        paperWidth: () => this.settings.paperWidth,
         snapshot: () => this.encoder.snapshot(this.doc),
         options: () => this.pdfExportSources(),
         crop: (page) => this.boardDrawing(page),
@@ -2600,7 +2581,6 @@ export class InkView extends TextFileView {
         },
         writable: () => !this.guard.locked && !this.devicePagesSyncing(),
         penDown: () => this.writeHold.writing(performance.now()),
-        uses: (path) => companionResources(this.doc).includes(path),
         isLeaf: (leaf) => leaf === this.leaf,
         hidden: () => docOf(this.contentEl).visibilityState === "hidden",
       },
@@ -6636,23 +6616,8 @@ export class InkView extends TextFileView {
           const { name, replaces } = pdfName(typed ?? "", free, taken(), own());
           const path = inFolder(name);
           await ensureFolder(exports);
-          const buffer = bytes.buffer.slice(
-            bytes.byteOffset,
-            bytes.byteOffset + bytes.byteLength,
-          ) as ArrayBuffer;
-          // A typed name is the companion's name too, by the same rule: the
-          // companion moves to it, and an export to its file goes through its
-          // writer, Subject and all.
-          const whole = pages.length === total;
-          if (typedPdfName(typed ?? "")) await this.companion.moveTo(path);
-          const existing = replaces ? this.app.vault.getFileByPath(path) : null;
-          if (this.companion.writes(path)) await this.companion.writeExport(path, bytes, whole);
-          else if (existing) await this.app.vault.modifyBinary(existing, buffer);
-          else await this.app.vault.createBinary(path, buffer);
-          // The whole notebook can become its companion PDF (Keep updated).
-          const keepUpdated = whole ? this.companion.keepUpdated(path, bytes) : undefined;
-          const files = [new File([buffer], name, { type })];
-          return { paths: [path], where: path, files, ...(keepUpdated ? { keepUpdated } : {}) };
+          const how = { whole: pages.length === total, typed: typed ?? "", replaces, type };
+          return this.companion.saveExport(path, bytes, how);
         }
         // Pictures: one file, or a new folder of them. Named at save time too.
         const target = exportTarget(note.basename, pages, total, format, taken());

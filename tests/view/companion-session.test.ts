@@ -26,6 +26,7 @@ function setup(entry: { enabled: boolean; dirty: boolean; optionsKey?: string })
   const manager = {
     entry: () => entry,
     revisionOf: () => 3,
+    mine: (e?: { enabled: boolean }) => e?.enabled === true,
     markDirty: vi.fn(() => {
       entry.dirty = true;
     }),
@@ -35,10 +36,11 @@ function setup(entry: { enabled: boolean; dirty: boolean; optionsKey?: string })
   const session = new CompanionSession(
     {
       app: {} as never,
-      file: file as never,
-      noteBody: `---\nfinenotes-companion-id: "${ID}"\n---\n`,
-      doc,
-      paperWidth: 1000,
+      file: () => file as never,
+      body: () => `---\nfinenotes-companion-id: "${ID}"\n---\n`,
+      setBody: () => undefined,
+      doc: () => doc,
+      paperWidth: () => 1000,
       snapshot: () => new DocumentEncoder().snapshot(doc),
       options: () => options,
       crop: (page) => page,
@@ -47,7 +49,6 @@ function setup(entry: { enabled: boolean; dirty: boolean; optionsKey?: string })
       saveBody: async () => {},
       writable: () => true,
       penDown: () => false,
-      uses: () => false,
       isLeaf: (other) => other === leaf,
       hidden: () => hidden,
     },

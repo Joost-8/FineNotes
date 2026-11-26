@@ -639,6 +639,7 @@ describe("one name and one own file for the export and the companion (#318)", ()
     const hash = await captureHash(s.app as never, capture()());
     await s.manager.writeExport(
       id,
+      NOTE,
       TYPED,
       new Uint8Array(5),
       { hash, optionsKey: "switches" },
@@ -668,6 +669,7 @@ describe("one name and one own file for the export and the companion (#318)", ()
     const hash = await captureHash(s.app as never, capture(2)());
     await s.manager.writeExport(
       s.id,
+      NOTE,
       PDF,
       new Uint8Array(5),
       { hash, optionsKey: "switches" },
@@ -681,7 +683,7 @@ describe("one name and one own file for the export and the companion (#318)", ()
     expect(s.vault.readBinary).not.toHaveBeenCalled();
     expect(rendered).not.toHaveBeenCalled();
     // Part of the notebook: written, and marked behind.
-    await s.manager.writeExport(s.id, PDF, new Uint8Array(5), null, stamp);
+    await s.manager.writeExport(s.id, NOTE, PDF, new Uint8Array(5), null, stamp);
     expect(s.manager.state(s.id).mark).toBe("stale");
   });
 
@@ -711,5 +713,83 @@ describe("one name and one own file for the export and the companion (#318)", ()
     const id = companionMetaFromBody(s.texts.get(NOTE)!)!.id;
     expect(s.manager.entry(id)?.pdfPath).toBe(TYPED);
     expect(s.manager.state(id).mark).toBe("current");
+  });
+});
+
+describe("the reviewer's second pass", () => {
+  const stamp = async (_bytes: Uint8Array, id: string, hash: string) =>
+    tinyPdf(companionPdfSubject(id, hash));
+
+  it("a copy carrying the original's id never writes or moves the original's PDF", async () => {
+    const s = await enabled();
+    const copyPath = "School/Copy.notebook.md";
+    const copy = s.put(copyPath, s.texts.get(NOTE)!);
+    s.manager.hydrate(copy as never, s.texts.get(copyPath)!);
+    const before = s.bytes.get(PDF);
+    await s.manager.writeExport(s.id, copyPath, PDF, new Uint8Array(5), null, stamp);
+    await s.manager.moveTo(copy as never, s.id, "School/Exports/Copy.pdf");
+    expect(s.bytes.get(PDF)).toBe(before);
+    expect(s.manager.entry(s.id)?.pdfPath).toBe(PDF);
+    expect(s.manager.mine(s.manager.entry(s.id), copyPath)).toBe(false);
+  });
+
+  it("records the own file only once a file of ours is there", async () => {
+    const s = setup();
+    const names = new Map<string, { name: string; file?: string }>([
+      [NOTE, { name: "Cell biology" }],
+    ]);
+    s.manager.register({ app: s.app, registerEvent: vi.fn(), register: vi.fn() } as never, () => [], {
+      get: (path) => names.get(path),
+      setFile: (path, file) => names.set(path, { name: names.get(path)!.name, file }),
+    });
+    const id = await s.manager.enable(s.note as never, s.texts.get(NOTE)!, "School/Exports");
+    // Nothing written yet: nothing recorded.
+    expect(names.get(NOTE)?.file).toBeUndefined();
+    await s.manager.chooseFolder(s.note as never, id, "Archive");
+    expect(names.get(NOTE)?.file).toBeUndefined();
+    await s.manager.requestExport(id, s.note as never, capture(), true);
+    expect(names.get(NOTE)?.file).toBe("Archive/Cell biology.pdf");
+  });
+
+  it("a turned-off notebook's old path does not make a shared name 'occupied'", async () => {
+    const s = await enabled();
+    // Another notebook, turned off, once kept its PDF at this same path.
+    const other = "bbbbbbbbbbbbbbbb";
+    const journal = JSON.parse(s.storage.get("finenotes-companion-journal") as string);
+    // Listed first, so a check that takes the first entry with this path finds it.
+    journal.entries = {
+      [other]: {
+        notebookPath: "School/Other.notebook.md",
+        pdfPath: PDF,
+        enabled: false,
+        followName: true,
+        dirty: false,
+      },
+      ...journal.entries,
+    };
+    s.storage.set("finenotes-companion-journal", JSON.stringify(journal));
+    const next = new CompanionPdfManager(s.app as never, "devA", { startDelay: 0 });
+    revisionNow = () => next.revisionOf(s.id);
+    next.markDirty(s.id);
+    await next.requestExport(s.id, s.note as never, capture(2), false);
+    next.markDirty(s.id);
+    await next.requestExport(s.id, s.note as never, capture(3), false);
+    expect(next.state(s.id).mark).toBe("current");
+  });
+
+  it("over the size limit, the PDF is not even read", async () => {
+    const s = await enabled();
+    const slides = s.put("Slides.pdf", new Uint8Array(1));
+    slides.stat.size = 70 * 1024 * 1024;
+    s.put(PDF, foreignPdf(s.id, "0000000000000000"));
+    s.manager.changed(s.files.get(PDF) as never);
+    await s.manager.requestExport(
+      s.id,
+      s.note as never,
+      capture(2, "Cell biology", { resources: ["Slides.pdf"] }),
+      false,
+    );
+    expect(s.vault.readBinary).not.toHaveBeenCalled();
+    expect(rendered).not.toHaveBeenCalled();
   });
 });

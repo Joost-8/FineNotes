@@ -18,6 +18,8 @@ import { readFurniture } from "../model/furniture";
 import type { DocumentSnapshot } from "../model/serialize";
 import { stripInkSuffix } from "../model/new-notebook";
 import { stampCompanionPdfSubject } from "../export/companion-metadata";
+import { typedPdfName } from "../export/export-name";
+import type { ExportedFiles } from "./export-modal";
 import {
   type CompanionCapture,
   type CompanionExportOptions,
@@ -33,12 +35,13 @@ import {
 /** What the notebook view gives its companion session. */
 export interface CompanionSessionHost {
   readonly app: App;
-  readonly file: TFile | null;
+  file(): TFile | null;
   /** The note's text around the ink, frontmatter included. */
-  noteBody: string;
+  body(): string;
+  setBody(body: string): void;
   /** The notebook's pages, whichever tab is shown (never a PDF tab's own document). */
-  readonly doc: InkDocument;
-  readonly paperWidth: number;
+  doc(): InkDocument;
+  paperWidth(): number;
   /** The pages as the save cache holds them. */
   snapshot(): DocumentSnapshot;
   options(): CompanionExportOptions;
@@ -52,8 +55,6 @@ export interface CompanionSessionHost {
   /** The view may write its file (not held, not waiting for page files): asked quietly. */
   writable(): boolean;
   penDown(): boolean;
-  /** Whether a page is drawn from the file at `path` (an imported PDF, a picture). */
-  uses(path: string): boolean;
   /** Whether `leaf` is this view's own tab. */
   isLeaf(leaf: unknown): boolean;
   /** Whether the app is in the background. */
@@ -101,7 +102,7 @@ export class CompanionSession implements CompanionViewLink {
   ) {}
 
   get file(): TFile | null {
-    return this.host.file;
+    return this.host.file();
   }
 
   get penDown(): boolean {
@@ -110,18 +111,23 @@ export class CompanionSession implements CompanionViewLink {
 
   /** The notebook's companion id, from its frontmatter. */
   get id(): string | null {
-    return companionIdFromBody(this.host.noteBody);
+    return companionIdFromBody(this.host.body());
   }
 
   uses(path: string): boolean {
-    return this.host.uses(path);
+    return companionResources(this.host.doc()).includes(path);
   }
 
-  /** Whether this notebook keeps a Companion PDF. */
+  /**
+   * Whether this notebook keeps a Companion PDF of its own: on, and not a
+   * copy made outside FineNotes that carries another notebook's id.
+   */
   get enabled(): boolean {
-    const file = this.host.file;
+    const file = this.host.file();
     return (
-      !!file && isCompanionNotebookPath(file.path) && this.manager?.entry(this.id)?.enabled === true
+      !!file &&
+      isCompanionNotebookPath(file.path) &&
+      !!this.manager?.mine(this.manager.entry(this.id), file.path)
     );
   }
 
@@ -129,9 +135,9 @@ export class CompanionSession implements CompanionViewLink {
   loaded(again: boolean): void {
     this.closed = null;
     this.stopLeft();
-    const file = this.host.file;
+    const file = this.host.file();
     if (!file || !this.manager) return;
-    this.manager.hydrate(file, this.host.noteBody);
+    this.manager.hydrate(file, this.host.body());
     if (again) this.manager.markDirty(this.id);
   }
 
@@ -142,22 +148,23 @@ export class CompanionSession implements CompanionViewLink {
 
   async writeKeys(keys: CompanionKeys): Promise<boolean> {
     if (!this.host.writable()) return false;
-    checkFrontmatter(this.host.noteBody);
-    this.host.noteBody = withCompanionKeys(this.host.noteBody, keys);
+    checkFrontmatter(this.host.body());
+    this.host.setBody(withCompanionKeys(this.host.body(), keys));
     await this.host.saveBody();
     return true;
   }
 
   /** The notebook as saved: kept by the export after this view is gone. */
   private capture(): CompanionCapture {
-    const { doc, file } = this.host;
+    const doc = this.host.doc();
+    const file = this.host.file();
     const options = this.host.options();
     return {
       revision: this.manager?.revisionOf(this.id) ?? 0,
       optionsKey: JSON.stringify(options),
       title: stripInkSuffix(file?.basename ?? ""),
       snapshot: this.host.snapshot(),
-      paperWidth: this.host.paperWidth,
+      paperWidth: this.host.paperWidth(),
       furniture: doc.endless ? undefined : readFurniture(doc.furniture),
       resources: companionResources(doc),
       options,
@@ -187,7 +194,7 @@ export class CompanionSession implements CompanionViewLink {
       this.manager.markDirty(id);
     if (!entry.dirty) return;
     await this.host.saveNow();
-    if (this.host.file !== file) return;
+    if (this.host.file() !== file) return;
     const made = this.capture();
     void this.manager.requestExport(id, file, () => made, false);
   }
@@ -203,11 +210,11 @@ export class CompanionSession implements CompanionViewLink {
       this.stopLeft();
       return;
     }
-    const file = this.host.file;
+    const file = this.host.file();
     if (!file || this.leftTimer || !this.enabled || !this.manager?.entry(this.id)?.dirty) return;
     this.leftTimer = window.setTimeout(() => {
       this.leftTimer = 0;
-      if (this.host.file !== file || this.host.hidden()) return;
+      if (this.host.file() !== file || this.host.hidden()) return;
       void this.queueChanged(file);
     }, LEFT_EXPORT_MS);
   }
@@ -219,11 +226,11 @@ export class CompanionSession implements CompanionViewLink {
 
   /** Update now (the row's button, the command): made even when it looks current or is missing. */
   async updateNow(): Promise<void> {
-    const file = this.host.file;
+    const file = this.host.file();
     const id = this.id;
     if (!file || !id || !this.manager || !this.enabled) return;
     if (this.host.writable()) await this.host.saveNow();
-    if (this.host.file !== file) return;
+    if (this.host.file() !== file) return;
     const made = this.capture();
     await this.manager.requestExport(id, file, () => made, true);
   }
@@ -240,12 +247,12 @@ export class CompanionSession implements CompanionViewLink {
   }
 
   private requireFile(file: TFile): void {
-    if (this.host.file !== file) throw new CompanionError("path");
+    if (this.host.file() !== file) throw new CompanionError("path");
   }
 
   /** The Note Settings row, or `undefined` where a notebook cannot have one. */
   settings(): CompanionSettingsHost | undefined {
-    const file = this.host.file;
+    const file = this.host.file();
     const manager = this.manager;
     if (!file || !manager || !isCompanionNotebookPath(file.path)) return undefined;
     return {
@@ -260,7 +267,7 @@ export class CompanionSession implements CompanionViewLink {
           return;
         }
         if (this.host.writable()) await this.host.saveNow();
-        await manager.enable(file, this.host.noteBody, this.host.exportsFolder());
+        await manager.enable(file, this.host.body(), this.host.exportsFolder());
         void this.updateNow();
       }),
       chooseFolder: inWords(async (folder: string) => {
@@ -293,11 +300,17 @@ export class CompanionSession implements CompanionViewLink {
     return (at < 0 ? "" : path.slice(0, at)) === folder ? path.slice(at + 1) : undefined;
   }
 
-  /** A PDF name typed in the Export dialog (#318): the companion moves to it. */
+  /**
+   * A new PDF name typed in the Export dialog (#318): the companion takes it.
+   * Only the name: a companion kept in a folder of its own stays there.
+   */
   async moveTo(path: string): Promise<void> {
-    const file = this.host.file;
+    const file = this.host.file();
     const id = this.id;
-    if (!file || !id || !this.manager || !this.enabled) return;
+    const current = this.manager?.entry(id)?.pdfPath;
+    if (!file || !id || !this.manager || !this.enabled || !current) return;
+    const nameOf = (p: string): string => p.slice(p.lastIndexOf("/") + 1).toLowerCase();
+    if (nameOf(path) === nameOf(current)) return;
     await this.manager.moveTo(file, id, path);
   }
 
@@ -308,12 +321,40 @@ export class CompanionSession implements CompanionViewLink {
    */
   async writeExport(path: string, bytes: Uint8Array, whole: boolean): Promise<void> {
     const id = this.id;
-    if (!id || !this.manager) return;
+    const file = this.host.file();
+    if (!id || !file || !this.manager) return;
     const made = whole ? this.capture() : null;
     const stamp = made
       ? { hash: await captureHash(this.host.app, made, this.hasher), optionsKey: made.optionsKey }
       : null;
-    await this.manager.writeExport(id, path, bytes, stamp, stampCompanionPdfSubject);
+    await this.manager.writeExport(id, file.path, path, bytes, stamp, stampCompanionPdfSubject);
+  }
+
+  /**
+   * Writes the Export dialog's PDF (#318, #310): a typed name is the
+   * companion's name too, by one rule. An export of every page moves the
+   * companion to it; an export to the companion's own file goes through its
+   * writer, Subject and all (a part of the notebook is written there and
+   * marked behind); any other file is written as the export always was, in
+   * place when `replaces` (this notebook's own file). The whole notebook
+   * can then become its companion (Keep updated).
+   */
+  async saveExport(
+    path: string,
+    bytes: Uint8Array,
+    how: { whole: boolean; typed: string; replaces: boolean; type: string },
+  ): Promise<ExportedFiles> {
+    const { vault } = this.host.app;
+    const buffer = bytes.slice().buffer;
+    if (how.whole && typedPdfName(how.typed)) await this.moveTo(path);
+    const existing = how.replaces ? vault.getFileByPath(path) : null;
+    if (this.writes(path)) await this.writeExport(path, bytes, how.whole);
+    else if (existing) await vault.modifyBinary(existing, buffer);
+    else await vault.createBinary(path, buffer);
+    const keepUpdated = how.whole ? this.keepUpdated(path, bytes) : undefined;
+    const name = path.slice(path.lastIndexOf("/") + 1);
+    const files = [new File([buffer], name, { type: how.type })];
+    return { paths: [path], where: path, files, ...(keepUpdated ? { keepUpdated } : {}) };
   }
 
   /**
@@ -321,14 +362,14 @@ export class CompanionSession implements CompanionViewLink {
    * saved at `path`; `undefined` when this notebook already has a companion.
    */
   keepUpdated(path: string, bytes: Uint8Array): (() => Promise<void>) | undefined {
-    const file = this.host.file;
+    const file = this.host.file();
     const manager = this.manager;
     if (!file || !manager || this.enabled || !isCompanionNotebookPath(file.path)) return undefined;
     return async () => {
       this.requireFile(file);
       if (this.host.writable()) await this.host.saveNow();
       const hash = await captureHash(this.host.app, this.capture(), this.hasher);
-      await manager.adopt(file, this.host.noteBody, path, bytes, hash, stampCompanionPdfSubject);
+      await manager.adopt(file, this.host.body(), path, bytes, hash, stampCompanionPdfSubject);
     };
   }
 }
