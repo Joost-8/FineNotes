@@ -4591,6 +4591,7 @@ body,
 .goodobsidian-colour-panel input[type="range"].goodobsidian-width-range,
 .goodobsidian-mm-stepper input[type="range"].goodobsidian-width-range,
 .finenotes-note-palette input[type="range"].goodobsidian-width-range,
+.goodobsidian-aimenu input[type="range"].goodobsidian-width-range,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range {
   position: absolute;
   inset: 0;
@@ -4611,6 +4612,7 @@ body,
 .goodobsidian-colour-panel input[type="range"].goodobsidian-width-range,
 .goodobsidian-mm-stepper input[type="range"].goodobsidian-width-range,
 .finenotes-note-palette input[type="range"].goodobsidian-width-range,
+.goodobsidian-aimenu input[type="range"].goodobsidian-width-range,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range {
   --gob-slider-height: var(--gob-touch);
 }
@@ -4635,6 +4637,7 @@ input[type="range"].goodobsidian-player-scrubber {
 .goodobsidian-mm-stepper
   input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 .finenotes-note-palette input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
+.goodobsidian-aimenu input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range::-webkit-slider-runnable-track,
 input[type="range"].goodobsidian-player-scrubber::-webkit-slider-runnable-track {
   height: var(--gob-slider-height);
@@ -4664,6 +4667,7 @@ input[type="range"].goodobsidian-player-scrubber::-webkit-slider-runnable-track 
 .goodobsidian-colour-panel input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 .goodobsidian-mm-stepper input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 .finenotes-note-palette input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
+.goodobsidian-aimenu input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
 input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
   top: 0;
@@ -4687,6 +4691,7 @@ input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
   input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 .goodobsidian-mm-stepper input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 .finenotes-note-palette input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
+.goodobsidian-aimenu input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 .goodobsidian-margin input[type="range"].goodobsidian-width-range:active::-webkit-slider-thumb,
 input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
   /* Obsidian's held knob changes size and `top` too: keep ours as it was. */
@@ -4705,6 +4710,7 @@ input[type="range"].goodobsidian-player-scrubber:active::-webkit-slider-thumb {
   .goodobsidian-mm-stepper input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   .finenotes-note-palette input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   .goodobsidian-margin input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
+  .goodobsidian-aimenu input[type="range"].goodobsidian-width-range::-webkit-slider-thumb,
   input[type="range"].goodobsidian-player-scrubber::-webkit-slider-thumb {
     transition: none;
   }
@@ -8609,6 +8615,30 @@ textarea.goodobsidian-chat-input:focus-visible {
   width: min(320px, calc(100vw - 24px));
 }
 
+/* Beautify's neatness, at the AI menu's end: a pen, the tool bar's slider,
+   Beautify's brush, and one line saying what it does. */
+.goodobsidian-neatness {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+}
+
+.goodobsidian-neatness-about {
+  padding: 0 6px 6px;
+}
+
+.goodobsidian-neatness .goodobsidian-width-slider {
+  flex: 1;
+  margin: 0;
+}
+
+.goodobsidian-neatness-end {
+  display: flex;
+  flex: none;
+  color: var(--text-muted);
+}
+
 .goodobsidian-popover-title {
   font-size: var(--font-ui-medium);
   font-weight: var(--font-semibold, 600);
@@ -8874,6 +8904,35 @@ textarea.goodobsidian-chat-input:focus-visible {
 
 .goodobsidian-selection-frame.has-outline .goodobsidian-selection-outline {
   display: block;
+}
+
+/* Neaten at work on the selection: its loop runs, a mark and no words. */
+.goodobsidian-selection-frame.is-working {
+  animation: goodobsidian-working-frame 1.2s ease-in-out infinite;
+}
+
+.goodobsidian-selection-frame.is-working .goodobsidian-selection-outline path {
+  animation: goodobsidian-working-loop 0.8s linear infinite;
+}
+
+@keyframes goodobsidian-working-frame {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@keyframes goodobsidian-working-loop {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goodobsidian-selection-frame.is-working,
+  .goodobsidian-selection-frame.is-working .goodobsidian-selection-outline path {
+    animation: none;
+    opacity: 0.6;
+  }
 }
 
 .goodobsidian-selection-outline path {
@@ -11186,7 +11245,8 @@ body .goodobsidian-more input.goodobsidian-more-goto::placeholder {
 /* Its own `display` outranks the shared `.is-hidden` (ledger). */
 .goodobsidian-export-choose.is-hidden,
 .goodobsidian-export-grid.is-hidden,
-.goodobsidian-export-single.is-hidden {
+.goodobsidian-export-single.is-hidden,
+.goodobsidian-export-name.is-hidden {
   display: none;
 }
 
@@ -11246,6 +11306,16 @@ body:not(.is-phone) .modal.goodobsidian-contents-modal {
 .goodobsidian-export-choose .goodobsidian-export-range {
   flex: 1 1 160px;
   min-width: 0;
+  height: var(--gob-touch-compact);
+  font-size: 16px;
+}
+
+/* The PDF's name (#318), first in the actions row; empty shows the free name as
+   its placeholder. 16px: no iPadOS zoom. */
+.goodobsidian-export-name {
+  flex: 1 1 140px;
+  min-width: 0;
+  margin-right: auto;
   height: var(--gob-touch-compact);
   font-size: 16px;
 }

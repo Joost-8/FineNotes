@@ -170,6 +170,20 @@ export function versionOf(asset: ModelAsset, name: string): string | null {
 }
 
 /**
+ * The files of another stored version: its main file, and for a model of
+ * several files the ones named after it (`<prefix><version>-…`, as the
+ * writer's graphs are), so a superseded version goes whole.
+ */
+export function filesOfVersion(
+  asset: ModelAsset,
+  names: readonly string[],
+  other: { version: string; file: string },
+): string[] {
+  const stem = asset.prefix === undefined ? null : `${asset.prefix}${other.version}-`;
+  return [other.file, ...names.filter((n) => stem !== null && n.startsWith(stem))];
+}
+
+/**
  * What the folder holds of this model, from its file names: whether every
  * current file is there (still to be verified), and the other versions,
  * newest first.

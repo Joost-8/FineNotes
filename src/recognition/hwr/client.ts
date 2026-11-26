@@ -21,6 +21,7 @@ import {
 } from "./protocol";
 import type { LabelledLine } from "./tune";
 import type { LineReading, PageReading } from "./recognizer";
+import type { Rows, TaggedLine } from "../writer/rows";
 
 /** Parsing a file is fast; a page of 30 lines on a slow device is not. */
 const LOAD_TIMEOUT_MS = 30_000;
@@ -87,7 +88,7 @@ export class HwrWorkerClient {
         reject(new Error(`the recogniser did not answer within ${Math.round(timeoutMs / 1000)} s`));
       }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer, onProgress });
-      this.worker.postMessage({ [HWR_TAG]: true, id, ...request }, transfer);
+      this.worker.postMessage({ ...request, [HWR_TAG]: true, id }, transfer);
     });
   }
 
@@ -122,6 +123,13 @@ export class HwrWorkerClient {
     return result.size;
   }
 
+  /** Give the worker a language pack. `bytes` is transferred: do not reuse it. */
+  async loadPack(bytes: ArrayBuffer): Promise<{ language: string; words: number }> {
+    const result = await this.send({ type: "pack", bytes }, LOAD_TIMEOUT_MS, [bytes]);
+    if (result.type !== "pack") throw new Error("unexpected reply");
+    return { language: result.language, words: result.words };
+  }
+
   /**
    * List words for words of a page read with `keep` (its `PageReading.id`);
    * null when the worker no longer keeps that page.
@@ -138,10 +146,39 @@ export class HwrWorkerClient {
     useLm = true,
     chars = false,
     math = false,
+    extra: { wordInk?: boolean; reread?: boolean } = {},
   ): Promise<LineReading[]> {
-    const result = await this.send({ type: "lines", lines, useLm, chars, math }, READ_TIMEOUT_MS);
+    const result = await this.send(
+      { type: "lines", lines, useLm, chars, math, ...extra },
+      READ_TIMEOUT_MS,
+    );
     if (result.type !== "lines") throw new Error("unexpected reply");
     return result.readings;
+  }
+
+  /** Neaten: copied lines as curve rows tied to their letters (null where they could not be). */
+  async tagLines(
+    lines: { text: string; strokes: InkStroke[] }[],
+    rows: { tol: number; norm: string },
+  ): Promise<{ lines: (TaggedLine | null)[]; rowsMatch: boolean }> {
+    const result = await this.send({ type: "tag", lines, rows }, READ_TIMEOUT_MS);
+    if (result.type !== "tag") throw new Error("unexpected reply");
+    return { lines: result.lines, rowsMatch: result.rowsMatch };
+  }
+
+  /** Neaten: what the model reads in written curve rows. */
+  async readRows(rows: Rows): Promise<string> {
+    return (await this.readRowsSure(rows)).text;
+  }
+
+  /** Neaten: what the model reads in written curve rows, and how sure it is of each character. */
+  async readRowsSure(rows: Rows): Promise<{ text: string; sure: number[] }> {
+    const result = await this.send(
+      { type: "rows", rows: { x: rows.x, n: rows.n } },
+      READ_TIMEOUT_MS,
+    );
+    if (result.type !== "rows") throw new Error("unexpected reply");
+    return { text: result.text, sure: result.sure };
   }
 
   /**

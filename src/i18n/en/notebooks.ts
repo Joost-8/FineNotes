@@ -600,6 +600,8 @@ export const notebooks = {
   "notebooks.export.cancelHint": "Close without exporting.",
   "notebooks.export.go": "Export",
   "notebooks.export.goHint": "Make the files and save them in the vault.",
+  "notebooks.export.replace": "Replace",
+  "notebooks.export.nameLabel": "File name; empty: a new file each time",
   "notebooks.export.tapPages": "Tap the pages to export.",
   "notebooks.export.rendering": "Rendering page {page} of {total}…",
   "notebooks.export.saving": "Saving…",

@@ -367,6 +367,20 @@ describe("OcrService", () => {
     expect(r.log.rendered).toEqual(["a.pdf#0"]);
   });
 
+  it("reads nothing while paused for another model (Neaten), and carries on when resumed", async () => {
+    const r = rig();
+    const resume = await r.service.pause();
+    r.service.focus("a.pdf", 0);
+    r.service.want(r.owner, "a.pdf", 0, 3, NONE);
+    await r.settle();
+    await r.advance(10_000);
+    expect(r.log.rendered).toEqual([]);
+    resume();
+    resume(); // a second call does nothing more
+    await r.settle();
+    expect(r.log.rendered).toEqual(["a.pdf#0"]);
+  });
+
   it("drops a PDF's queue when the last notebook using it closes, but not while another does", async () => {
     const r = rig();
     const other = {

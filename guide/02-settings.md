@@ -206,7 +206,7 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 ### Underline words it may have misread (experimental)
 
 - **Id:** `settingUnderlineMisread`
-- **What:** Experimental, off by default. A dotted underline marks words Grape is unsure of; tap one with a finger to correct, confirm or ignore it, and your answers help it learn.
+- **What:** Experimental, off by default. A dotted underline marks words Grape is unsure of; tap one with a finger to correct it, confirm it, fix your own spelling (Should be …) or ignore it. Your answers help it learn; a spelling fix changes the text, while Grape learns what you really wrote. Pages in another language are checked against that language's pack (French, Spanish and Italian), or not underlined.
 - **Where:** Settings › Reading and voice › Underline words it may have misread
 - **Notes:** Shown only while Read handwriting with is not Off.
 - **Words:** underline, misread, correct reading, wrong word, spell check handwriting, correction
@@ -245,9 +245,9 @@ Part of FineNotes' guide (see `README.md` here): what Ask AI looks up to answer 
 ### Models on this device (download or remove)
 
 - **Id:** `settingModels`
-- **What:** The models that run on the device: Voice (Whisper, for transcribing recordings), Handwriting (Grape), your own handwriting model, and Scanned pages (reading printed PDF pages). Each shows its state with Download, or ⋯ to re-download or remove it. Nothing they read or hear leaves the device.
+- **What:** The models that run on the device: Voice (Whisper, for transcribing recordings), Handwriting (Grape), Grape's language packs once a page in that language was read (Grape in Nederlands, Deutsch, …), your own handwriting model, and Scanned pages (reading printed PDF pages). Each shows its state with Download, or ⋯ to re-download or remove it. Nothing they read or hear leaves the device.
 - **Where:** Settings › Reading and voice › Models on this device
-- **Words:** download model, models, whisper, voice model, grape download, remove model, storage, disk space, ocr model
+- **Words:** download model, models, whisper, voice model, grape download, remove model, storage, disk space, ocr model, language pack, dutch, german, french, spanish, portuguese, italian
 
 ### Voice model size and spoken language
 

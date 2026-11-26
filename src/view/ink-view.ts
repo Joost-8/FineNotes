@@ -435,7 +435,9 @@ import { type ReadingContext, inkForReading, readingText } from "./handwriting";
 import { pageWords } from "../recognition/hwr/page-words";
 import { type HandwrittenLink, findHandwrittenLinks } from "../recognition/handwritten-links";
 import type { PageReading } from "../recognition/hwr/recognizer";
+import type { PageLanguage } from "../recognition/hwr/page-language";
 import { type ReadWord, readWords, strokeKey } from "../recognition/hwr/corrections";
+import { answeredTexts } from "../recognition/hwr/answered-reading";
 import {
   type ReadLine,
   lineHits,
@@ -459,6 +461,8 @@ import {
 } from "../recognition/hwr/selection-words";
 import type { SpellingFix } from "./spelling-row";
 import type { WordPopover } from "./word-popover";
+import { type WordCardHost, askUnsureWords } from "./beautify-ask";
+import { wordInHand } from "./write-in-hand";
 import { type TranslateAi, TranslateWindow, type TranslateTarget } from "./translate-window";
 import { nextDeviceStep } from "../recognition/device-reading";
 import type { LinkableNote } from "../search/link-choices";
@@ -537,6 +541,7 @@ import {
   exportTarget,
   mimeTypeOf,
 } from "../export/export-choice";
+import { exportNamesOf, pdfName, rememberPdfName } from "../export/export-name";
 import { inkFileSuffix, stripInkSuffix, uniqueFileName } from "../model/new-notebook";
 import { TEMPLATE_EXTENSION, buildTemplatePackage } from "../import/template-package";
 import { SaveTemplateModal, type TemplateDetails } from "./template-ui";
@@ -741,6 +746,8 @@ interface PageWords {
   readLines: ReadLine[];
   /** The worker's id for it, while it keeps its log-probabilities. */
   id?: number;
+  /** The page's language (page-language.ts): the English word list is for "en" only. */
+  language: PageLanguage;
 }
 
 /** What lassoed ink says, for a dialog's field. */
@@ -1088,6 +1095,7 @@ export class InkView extends TextFileView {
           "calc",
         );
       },
+      handAnswer: (text, at) => plugin.writeInHand.answerInk(text, at),
     });
     this.columnNotes = new ColumnNotes({
       app: this.app,
@@ -2755,6 +2763,7 @@ export class InkView extends TextFileView {
           }
         });
       },
+      this.plugin.beautifyNeatness(),
     );
   }
 
@@ -4385,7 +4394,9 @@ export class InkView extends TextFileView {
     const words = readWords(reading.lines);
     const checked: CheckedPage = { hash, words };
     this.checkedWords.set(page.id, checked);
-    const flagged = await this.plugin.wordCheck.flags(file.path, page.id, words);
+    // A page in another language is checked against its own pack, if any (word-check.ts flags).
+    const language = reading.language ?? "en";
+    const flagged = await this.plugin.wordCheck.flags(file.path, page.id, words, language);
     if (this.surface === surface)
       surface.setWordFlags(
         page.id,
@@ -4429,14 +4440,27 @@ export class InkView extends TextFileView {
       lines: reading.lines.map((line) => line.text),
       readLines: reading.lines.map((line) => ({ text: line.text, words: line.words })),
       id: reading.id,
+      language: reading.language ?? "en",
     };
     this.pageReadings.set(page.id, entry);
-    // Kept on this device, so Home's search finds the page (search-store.ts).
-    const path = this.file?.path;
-    if (path) {
-      saveReading(vaultKeyOf(this.app), path, page.id, { hash, text: entry.lines.join("\n") });
-    }
+    this.searchAnswered(page.id);
     return entry;
+  }
+
+  /**
+   * What search finds on a page: its kept reading with the writer's answers
+   * in it (answered-reading.ts), for in-note search and, kept on this
+   * device, Home's (search-store.ts). Again after each answer, so a
+   * correction is found at once.
+   */
+  private searchAnswered(pageId: string): void {
+    const entry = this.pageReadings.get(pageId);
+    const path = this.file?.path;
+    if (!entry || !path) return;
+    const lines = entry.lines.map((text, i) => ({ text, words: entry.readLines[i]?.words ?? [] }));
+    const shown = answeredTexts(lines, this.plugin.wordCheck.shownOn(path, pageId));
+    entry.readLines = lines.map((line, i) => ({ text: shown[i], words: line.words }));
+    saveReading(vaultKeyOf(this.app), path, pageId, { hash: entry.hash, text: shown.join("\n") });
   }
 
   /** A finger tapped (or a mouse right-clicked) an underlined word: ask what it says. */
@@ -4456,7 +4480,9 @@ export class InkView extends TextFileView {
    * The word card (word-check.ts) for `word` on `page`, at `at` (client
    * px); `asked` when opened by hand ("Correct"). Its underline turns red
    * while it is open, and an answer is saved and acted on the same way
-   * however the card was opened.
+   * however the card was opened. `after` hooks its answer and its closing;
+   * `after.inHand` false (Beautify asking, which writes the word itself):
+   * the card must not also write the word in the hand.
    */
   private openWordCard(
     page: Page,
@@ -4464,22 +4490,33 @@ export class InkView extends TextFileView {
     suggestion: LexiconSuggestion | null,
     at: { x: number; y: number },
     asked: boolean,
-  ): void {
+    after: { done?: () => void; closed?: () => void; inHand?: boolean } = {},
+  ): boolean {
     const file = this.file;
     const surface = this.surface;
-    if (!file || !surface) return;
+    if (!file || !surface) return false;
     const ids = new Set(word.strokeIds);
     const strokes = page.strokes.filter((stroke) => ids.has(stroke.id));
     surface.setActiveWordFlag(page.id, word.strokeIds);
     const closed = () => {
       if (this.surface === surface) surface.setActiveWordFlag(null);
+      after.closed?.();
     };
     this.wordPopover?.close();
     this.wordPopover = this.plugin.wordCheck.ask(
-      { note: file.path, pageId: page.id, word, strokes, suggestion },
+      {
+        note: file.path,
+        pageId: page.id,
+        word,
+        strokes,
+        suggestion,
+        language: this.pageReadings.get(page.id)?.language ?? "en",
+      },
       at,
       () => {
-        // Answered: underline the page's words again, without this one.
+        after.done?.();
+        // Answered: search finds the answer, and the page is underlined again without it.
+        this.searchAnswered(page.id);
         const checked = this.checkedWords.get(page.id);
         if (!checked || this.surface !== surface) return;
         void this.plugin.wordCheck.flags(file.path, page.id, checked.words).then((flagged) =>
@@ -4491,7 +4528,60 @@ export class InkView extends TextFileView {
       },
       closed,
       asked,
+      // Beautify's own cards (inHand: false) write the word themselves: no second offer here.
+      after.inHand === false
+        ? undefined
+        : wordInHand(
+            this.plugin.writeInHand,
+            surface,
+            page.id,
+            word.strokeIds,
+            at,
+            (card) => {
+              this.wordPopover = card;
+            },
+            // Read-only or damaged: the card answers, but nothing is rewritten (no notice from here).
+            () => this.isDamaged() || isReadOnly(this.doc) || isReadOnly(surface.document),
+          ),
     );
+    return true;
+  }
+
+  /**
+   * The word card for ink on page `pageId`, as Correct opens it, for
+   * Beautify's question about its unsure words (`beautify-ask.ts`): null
+   * when the ink is in no word the page's reading has.
+   */
+  private wordCards(pageId: string): WordCardHost {
+    return {
+      open: async (strokeIds, after) => {
+        const surface = this.surface;
+        const file = this.file;
+        const index = surface?.document.pages.findIndex((p) => p.id === pageId) ?? -1;
+        const page = surface?.document.pages[index];
+        if (!surface || !file || !page) return false;
+        const hash = pageContentHash(page);
+        const found = await this.readWordAt(page, hash, strokeIds).catch(() => null);
+        // Closed, another file, or written on while it was read: the card would be about other ink.
+        const moved =
+          this.surface !== surface ||
+          this.file !== file ||
+          !surface.document.pages.includes(page) ||
+          pageContentHash(page) !== hash;
+        const at = found && !moved ? surface.wordInk(index, found.word.strokeIds) : null;
+        if (!found || !at) return false;
+        const opened = this.openWordCard(page, found.word, found.suggestion, at, true, {
+          ...after,
+          inHand: false,
+        });
+        // A row or a chip tapped: an answer is coming, however long its save takes.
+        activeDocument
+          .querySelector(".goodobsidian-wordcheck")
+          ?.addEventListener("click", () => after.chosen(), { capture: true });
+        return opened;
+      },
+      dialogOpen: () => activeDocument.querySelector(".modal-container") !== null,
+    };
   }
 
   /**
@@ -4633,6 +4723,7 @@ export class InkView extends TextFileView {
     const cached = checked?.hash === entry.hash ? checked.suggestions?.get(key) : undefined;
     if (cached !== undefined) return cached;
     const lexicon = this.plugin.wordCheck.lexicon();
+    // A page in another language: the worker answers from its pack's list, or with nothing.
     if (!lexicon || !word.at) return null;
     if (entry.id === undefined) return undefined;
     const { line, start, end } = word.at;
@@ -5224,6 +5315,21 @@ export class InkView extends TextFileView {
         },
         onFlaggedWord: (index, strokeIds, at) => this.askAboutWord(index, strokeIds, at),
         onCorrectWord: (index, strokeIds) => void this.correctWord(index, strokeIds),
+        onNeaten: (request) =>
+          this.plugin.neaten.run({
+            ...request,
+            note: this.file?.path,
+            ask: (words) => askUnsureWords(this.wordCards(request.pageId), words, request.stop),
+          }),
+        canNeaten: () => this.plugin.neaten.available(),
+        onWriteInHand: (pageId, boxId) =>
+          this.surface
+            ? this.plugin.writeInHand.turnTextBox(this.surface, pageId, boxId, () =>
+                this.isProtected(),
+              )
+            : Promise.resolve(),
+        canWriteInHand: (box) =>
+          this.settings.handwritingOnDevice !== false && this.plugin.writeInHand.canTurn(box),
         canCorrectWords: () => this.settings.handwritingOnDevice !== false,
         onReadingPoint: (index, y) => {
           this.sidebar?.setReadingPoint(index, y);
@@ -6364,8 +6470,22 @@ export class InkView extends TextFileView {
             },
           }
         : {}),
-      targetFor: (pages, format) => exportTarget(note.basename, pages, total, format, taken()),
-      export: async (pages, format, onProgress, cancelled) => {
+      targetFor: (pages, format, typed) => {
+        const target = exportTarget(note.basename, pages, total, format, taken());
+        return format === "pdf" && target.kind === "file"
+          ? { kind: "file", ...pdfName(typed ?? "", target.name, taken()) }
+          : target;
+      },
+      pdfName: exportNamesOf(this.settings.exportNames)[note.path] ?? "",
+      setPdfName: (typed) => {
+        this.settings.exportNames = rememberPdfName(
+          exportNamesOf(this.settings.exportNames),
+          note.path,
+          typed,
+        );
+        void this.plugin.saveSettings();
+      },
+      export: async (pages, format, onProgress, cancelled, typed) => {
         const inFolder = (name: string, dir = folder): string =>
           normalizePath(dir ? `${dir}/${name}` : name);
         const ensureFolder = async (path: string | undefined): Promise<void> => {
@@ -6384,15 +6504,19 @@ export class InkView extends TextFileView {
             { title: stripInkSuffix(note.basename), onProgress, cancelled },
           );
           // Named at save time, not when the dialog opened: another export may
-          // have taken the name since.
-          const name = uniqueFileName(exportBaseName(note.basename, pages, total), ".pdf", taken());
+          // have taken the name since. A typed name replaces its file (#318),
+          // in place, so a link to it or a synced copy stays the same file.
+          const free = uniqueFileName(exportBaseName(note.basename, pages, total), ".pdf", taken());
+          const { name, replaces } = pdfName(typed ?? "", free, taken());
           const path = inFolder(name);
           await ensureFolder(exports);
           const buffer = bytes.buffer.slice(
             bytes.byteOffset,
             bytes.byteOffset + bytes.byteLength,
           ) as ArrayBuffer;
-          await this.app.vault.createBinary(path, buffer);
+          const existing = replaces ? this.app.vault.getFileByPath(path) : null;
+          if (existing) await this.app.vault.modifyBinary(existing, buffer);
+          else await this.app.vault.createBinary(path, buffer);
           // The whole notebook can become its companion PDF (Keep updated).
           const keepUpdated =
             pages.length === total ? this.companion.keepUpdated(path, bytes) : undefined;
@@ -7767,9 +7891,9 @@ export class InkView extends TextFileView {
     const lexicon = this.plugin.wordCheck.lexicon();
     if (!file || !lexicon) return [];
     try {
-      const flagged = (await this.plugin.wordCheck.flags(file.path, page.id, words)).filter(
-        (w) => w.at,
-      );
+      const flagged = (
+        await this.plugin.wordCheck.flags(file.path, page.id, words, entry.language)
+      ).filter((w) => w.at);
       if (flagged.length === 0) return [];
       // The underlines' own suggestions, when this reading was checked already.
       const checked = this.checkedWords.get(page.id);
@@ -7837,8 +7961,10 @@ export class InkView extends TextFileView {
     correcting = false,
   ): void {
     const file = this.file;
-    if (!file || words.length === 0) return;
-    const phrase = correcting ? editedPhrase(words, final) : null;
+    // A title edited without Correct may fix a misread or the writer's own spelling, and
+    // nothing tells which (RESEARCH-LOG 2026-11-25): only Correct teaches Grape.
+    if (!file || words.length === 0 || !correcting) return;
+    const phrase = editedPhrase(words, final);
     // Words joined or split: the whole selection is one labelled line.
     const edits = phrase
       ? [{ word: { text: phrase.read, strokeIds: phrase.strokeIds }, text: phrase.text }]
@@ -7846,11 +7972,9 @@ export class InkView extends TextFileView {
     for (const { word, text } of edits) {
       const ids = new Set(word.strokeIds);
       const strokes = page.strokes.filter((stroke) => ids.has(stroke.id));
-      void this.plugin.wordCheck.record(
-        { note: file.path, pageId: page.id, word, strokes },
-        "misread",
-        text,
-      );
+      void this.plugin.wordCheck
+        .record({ note: file.path, pageId: page.id, word, strokes }, "misread", text)
+        .then(() => this.searchAnswered(page.id));
     }
   }
 
