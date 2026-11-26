@@ -11,6 +11,7 @@
  */
 
 import type { App } from "obsidian";
+import type { InkClipboard } from "../model/clipboard";
 import type { ImageElement } from "../model/document";
 import { cropSourceRect } from "../canvas/image-crop";
 import { MAX_IMAGE_LONG_SIDE, fitLongSide, mimeForExtension } from "../canvas/image-raster";
@@ -55,6 +56,47 @@ export async function writePngToClipboard(png: Promise<Blob>): Promise<boolean> 
   } catch {
     return false;
   }
+}
+
+/** SHA-256 hex digest of a blob, or null when Web Crypto is unavailable. */
+export async function blobSha256(blob: Blob): Promise<string | null> {
+  if (typeof crypto === "undefined" || !crypto.subtle) return null;
+  try {
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", await blob.arrayBuffer()));
+    return Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Put a copied selection's transparent PNG on the system clipboard (best effort)
+ * and record its size + hash on `clipboard` so pasting back inside FineNotes
+ * keeps editable vector elements instead of flattening into an image.
+ */
+export function copySelectionPngToSystemClipboard(
+  clipboard: InkClipboard,
+  version: number,
+  render: () => Promise<Blob | null>,
+): void {
+  const png = render().then(async (blob) => {
+    if (!blob) throw new Error("Selection could not be rendered");
+    const hash = await blobSha256(blob);
+    if (hash) clipboard.noteOwnPng(blob.size, hash, version);
+    return blob;
+  });
+  void writePngToClipboard(png);
+}
+
+/** True when `blob` matches the PNG FineNotes itself wrote for the current copy. */
+export async function isOwnClipboardPng(
+  clipboard: InkClipboard,
+  blob: Blob,
+  withImages: boolean,
+): Promise<boolean> {
+  if (!clipboard.canPaste(withImages) || !clipboard.hasOwnPngSize(blob.size)) return false;
+  const hash = await blobSha256(blob);
+  return hash !== null && clipboard.matchesOwnPng(blob.size, hash);
 }
 
 /** The picture's pixels (at most 2048 px long), its crop and flips applied, as PNG. */

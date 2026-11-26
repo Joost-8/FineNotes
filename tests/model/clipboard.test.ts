@@ -278,3 +278,34 @@ describe("pastePlacement", () => {
     expect(d).toEqual({ dx: PASTE_OFFSET, dy: PASTE_OFFSET });
   });
 });
+
+describe("InkClipboard own-PNG tracking", () => {
+  it("matches only the PNG recorded for the current copy version and resets on new copy or clear", () => {
+    const clip = new InkClipboard();
+    clip.put({ strokes: [stroke("s1")], images: [], textBoxes: [] }, BOUNDS);
+    const v1 = clip.version;
+
+    // Stale version is ignored.
+    clip.noteOwnPng(128, "abc", v1 - 1);
+    expect(clip.hasOwnPngSize(128)).toBe(false);
+
+    // Current version is recorded and matched by size + hash.
+    clip.noteOwnPng(128, "abc", v1);
+    expect(clip.hasOwnPngSize(128)).toBe(true);
+    expect(clip.hasOwnPngSize(129)).toBe(false);
+    expect(clip.matchesOwnPng(128, "abc")).toBe(true);
+    expect(clip.matchesOwnPng(128, "def")).toBe(false);
+
+    // Leaving the window preserves own-PNG matching so pasting back inside FineNotes keeps ink.
+    clip.noteWindowLeft();
+    expect(clip.matchesOwnPng(128, "abc")).toBe(true);
+
+    // A new copy or clear drops the previous PNG signature.
+    clip.put({ strokes: [stroke("s2")], images: [], textBoxes: [] }, BOUNDS);
+    expect(clip.hasOwnPngSize(128)).toBe(false);
+    clip.noteOwnPng(256, "xyz", clip.version);
+    expect(clip.matchesOwnPng(256, "xyz")).toBe(true);
+    clip.clear();
+    expect(clip.hasOwnPngSize(256)).toBe(false);
+  });
+});

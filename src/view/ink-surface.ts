@@ -751,7 +751,11 @@ import { scrollDirectionOf } from "../model/scroll-direction";
 import { joinedPagesOf } from "../model/joined-pages";
 import type { PanelFill, SelectionAction } from "./selection-bar-model";
 import { selectionKind, selectionMenu } from "./selection-kind";
-import { writePngToClipboard } from "./picture-clipboard";
+import {
+  copySelectionPngToSystemClipboard,
+  isOwnClipboardPng,
+  writePngToClipboard,
+} from "./picture-clipboard";
 import { type KeyAction, keyOutcome } from "./surface-keys";
 import {
   type PointerReading,
@@ -16678,13 +16682,19 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
       if (!this.paste({ pageId, at }) && !ink) new Notice(t("surface.notice.nothingToPaste"));
       return;
     }
-    void readSystemClipboard().then((found) => {
+    void readSystemClipboard().then(async (found) => {
       const index = this.doc.pages.findIndex((page) => page.id === pageId);
       if (index < 0 || this.callbacks.isLocked?.()) return;
       const onImage = this.imagesShown ? this.callbacks.onPasteImage : undefined;
-      if (found.kind === "image" && onImage) {
-        onImage(found.file, { pageIndex: index, x: at.x, y: at.y });
-        return;
+      if (found.kind === "image") {
+        if (await isOwnClipboardPng(clipboard, found.file, this.imagesShown)) {
+          this.paste({ pageId, at });
+          return;
+        }
+        if (onImage) {
+          onImage(found.file, { pageIndex: index, x: at.x, y: at.y });
+          return;
+        }
       }
       if (found.kind === "text") {
         this.addPastedText(index, at, found.text);
@@ -16881,16 +16891,19 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     if (group) {
       const bounds = this.groupBounds(group);
       if (!bounds) return false;
-      clipboard.put(
-        {
-          strokes: group.strokes,
-          images: group.images.filter((image) => image.locked !== true),
-          textBoxes: group.textBoxes,
-          tables: group.tables,
-          graphs: group.graphs,
-          equations: group.equations,
-        },
-        bounds,
+      const copied = {
+        strokes: group.strokes,
+        images: group.images.filter((image) => image.locked !== true),
+        textBoxes: group.textBoxes,
+        tables: group.tables,
+        graphs: group.graphs,
+        equations: group.equations,
+      };
+      clipboard.put(copied, bounds);
+      copySelectionPngToSystemClipboard(clipboard, clipboard.version, () =>
+        this.selectionPicture({ ...group, images: copied.images }, null).then(
+          (shot) => shot?.blob ?? null,
+        ),
       );
       this.syncActionBar();
       return true;
@@ -17036,7 +17049,7 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     }
     const inkOnly = this.practice !== null || this.fixedPages;
     const onImage = this.imagesShown && !inkOnly ? this.callbacks.onPasteImage : undefined;
-    const file = onImage ? imageFileOf(event.clipboardData) : null;
+    const file = !inkOnly ? imageFileOf(event.clipboardData) : null;
     const text = inkOnly ? "" : cleanPastedText(event.clipboardData?.getData("text/plain") ?? "");
     const systemFirst =
       (file !== null || text !== "") &&
@@ -17045,10 +17058,20 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
       event.preventDefault();
       return true;
     }
-    if (file && onImage) {
-      event.preventDefault();
-      onImage(file);
-      return true;
+    if (file) {
+      if (clipboard.canPaste(this.imagesShown) && clipboard.hasOwnPngSize(file.size)) {
+        event.preventDefault();
+        void isOwnClipboardPng(clipboard, file, this.imagesShown).then((own) => {
+          if (own) this.paste();
+          else onImage?.(file);
+        });
+        return true;
+      }
+      if (onImage) {
+        event.preventDefault();
+        onImage(file);
+        return true;
+      }
     }
     // Text, as the press menu's Paste takes it: a text box in the middle of
     // the page in view.

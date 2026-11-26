@@ -65,10 +65,12 @@ export class InkClipboard {
   private entry: ClipboardEntry | null = null;
   private left = false;
   private stamp = 0;
+  private ownPng: { size: number; hash: string } | null = null;
 
   /** Hold deep copies of `elements`. An empty selection clears the clipboard. */
   put(elements: PageElements, bounds: Bounds): void {
     this.left = false;
+    this.ownPng = null;
     this.stamp++;
     if (isEmptySelection(elements)) {
       this.entry = null;
@@ -141,9 +143,28 @@ export class InkClipboard {
     return this.left;
   }
 
+  /**
+   * Remember the PNG written to the system clipboard for this copy, so pasting
+   * back inside FineNotes after leaving the window still pastes editable ink.
+   */
+  noteOwnPng(size: number, hash: string, version: number): void {
+    if (version === this.stamp && this.entry) {
+      this.ownPng = { size, hash };
+    }
+  }
+
+  hasOwnPngSize(size: number): boolean {
+    return this.ownPng !== null && this.ownPng.size === size;
+  }
+
+  matchesOwnPng(size: number, hash: string): boolean {
+    return this.ownPng !== null && this.ownPng.size === size && this.ownPng.hash === hash;
+  }
+
   clear(): void {
     this.entry = null;
     this.left = false;
+    this.ownPng = null;
     this.stamp++;
   }
 }
