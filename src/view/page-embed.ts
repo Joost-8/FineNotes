@@ -53,6 +53,7 @@ import {
   notebookIdOf,
 } from "../model/device-pages";
 import {
+  devicePagesFolderFor,
   devicePagesFolderPath,
   notebookStatOf,
   readDevicePagesFolder,
@@ -158,6 +159,9 @@ interface EmbedNotebook {
 
 /** Quiet time after a notebook is saved before its embeds repaint. */
 const CHANGE_DEBOUNCE_MS = 300;
+/** How long a block Handwrite here just put in waits to open for writing (ms). */
+const PENDING_INLINE_MS = 5000;
+
 /** How long the next page waits for a slow one to finish painting. */
 const SLOW_PAINT_MS = 1500;
 
@@ -186,7 +190,7 @@ export class PageEmbeds extends Component {
   private workerHeld = false;
   private readonly changeTimers = new Map<string, number>();
   private active = false;
-  private pendingInline: { path: string; pageId: string } | null = null;
+  private pendingInline: { path: string; pageId: string; at: number } | null = null;
   /**
    * Obsidian's Markdown embed creator, which this one stands in front of:
    * an embed whose subpath names no region of its notebook goes back to it.
@@ -406,10 +410,14 @@ export class PageEmbeds extends Component {
     const version = notebookStatOf(this.host.app, file).mtime;
     if (embed.version === version) return !embed.isLink;
     const { target } = embed;
-    // One page is read alone: by its number, or a block by its id.
+    // One page is read alone: by its number, or a block by its id. A block of
+    // a single-file notebook shares the one decode of the whole file with
+    // every other block of it: the file is read whole either way.
     const onePage =
       target.pageId !== undefined
-        ? target.pageId
+        ? devicePagesFolderFor(this.host.app, file)
+          ? target.pageId
+          : undefined
         : !target.whole && target.region === undefined
           ? target.page - 1
           : undefined;
@@ -429,6 +437,10 @@ export class PageEmbeds extends Component {
       return false;
     }
     embed.showPages();
+    // Asked for a moment ago, by Handwrite here; later (the note was in source mode) it is stale.
+    if (this.pendingInline && performance.now() - this.pendingInline.at > PENDING_INLINE_MS) {
+      this.pendingInline = null;
+    }
     if (
       this.pendingInline &&
       this.pendingInline.path === embed.file.path &&
@@ -449,7 +461,7 @@ export class PageEmbeds extends Component {
    * one) to enter inline editing immediately — used by "Handwrite here".
    */
   activateInline(file: TFile, pageId: string): void {
-    this.pendingInline = { path: file.path, pageId };
+    this.pendingInline = { path: file.path, pageId, at: performance.now() };
     for (const embed of this.live) {
       if (embed.file.path === file.path && embed.target.pageId === pageId) {
         const slot = embed.slots[0];
@@ -503,9 +515,7 @@ export class PageEmbeds extends Component {
     const effectivePaper: PaperTheme =
       isTransparent && !slot.embed.containerEl.closest(PRINT_LAYOUT)
         ? { ...(document.body.hasClass("theme-dark") ? DARK_PAPER : LIGHT_PAPER), seeThrough: true }
-        : !isTransparent && slot.embed.target.pageId !== undefined
-          ? LIGHT_PAPER
-          : paper;
+        : paper;
     const look =
       (effectivePaper.night ? (effectivePaper.keepPdf ? "|dark-keep-pdf" : "|dark") : "") +
       (effectivePaper.seeThrough ? "|clear" : "");
@@ -1042,12 +1052,10 @@ class PageSlot {
         event.stopPropagation();
         return;
       }
-      if (this.isLivePreviewEditable() && !Keymap.isModEvent(event)) {
-        event.preventDefault();
-        event.stopPropagation();
-        this.embed.embeds.startInline(this);
-        return;
-      }
+      // In Live Preview a block opens for writing with the Pencil or its
+      // pencil button only: a finger on it scrolls the note, and a click
+      // does nothing (Joost, 2026-11-26).
+      if (this.isLivePreviewEditable() && !Keymap.isModEvent(event)) return;
       this.embed.open(event, this.number);
     });
     this.el.addEventListener("keydown", (event) => {

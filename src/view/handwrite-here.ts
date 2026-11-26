@@ -17,11 +17,12 @@ import {
   INLINE_SKETCH_PREFIX,
   createInlineSketchPage,
   findLinkedNotebookInMarkdown,
+  reusableNoteNotebook,
 } from "../model/inline-sketch";
 import { cleanTitle, newNoteBody, stripInkSuffix } from "../model/new-notebook";
 import { InlineNotebookPickerModal } from "./handwrite-modals";
 import { embedInsertion } from "./page-embed-model";
-import { editClosedNotebook, notebookIsOpen } from "./notebook-transaction";
+import { editClosedNotebook, notebookIsOpen, readClosedNotebook } from "./notebook-transaction";
 import { EmbedInlineEditor, type EmbedInlineEditRequest } from "./embed-inline-editor";
 import { closeAnyInlineEditor, closeInlineEditorIn } from "./inline-editor-registry";
 
@@ -81,7 +82,10 @@ async function notebookFor(
   const existing = app.vault.getFileByPath(
     normalizePath(folder ? `${folder}/${fileName}` : fileName),
   );
-  if (existing && plugin.isInkFile(existing)) return { file: existing, created: false };
+  if (existing && plugin.isInkFile(existing) && (await isNotesOwn(plugin, existing, sourcePath))) {
+    return { file: existing, created: false };
+  }
+  // Someone's own notebook of that name, or another note's: a free name beside it.
   await ensureFolder(plugin, folder);
   const doc = emptyDocument(plugin.settings.paperWidth);
   doc.pages = [initialPage];
@@ -89,6 +93,26 @@ async function notebookFor(
   const body = newNoteBody(base, new Date().toISOString());
   const file = await app.vault.create(available, devicePagesNotebookText(body, doc));
   return { file, created: true };
+}
+
+/**
+ * Whether `file` is the notebook Handwrite here made for the note at
+ * `sourcePath`: only blocks in it, and no other note embeds it.
+ */
+async function isNotesOwn(
+  plugin: GoodObsidianPlugin,
+  file: TFile,
+  sourcePath: string,
+): Promise<boolean> {
+  let pages: readonly Pick<Page, "id">[];
+  try {
+    pages = (await readClosedNotebook(plugin.app, file, plugin.settings.paperWidth)).pages;
+  } catch {
+    return false;
+  }
+  const links = plugin.app.metadataCache.resolvedLinks ?? {};
+  const linking = Object.keys(links).filter((note) => (links[note]?.[file.path] ?? 0) > 0);
+  return reusableNoteNotebook(pages, linking, sourcePath);
 }
 
 async function resolveBackingNotebook(

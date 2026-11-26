@@ -484,9 +484,12 @@ describe("Notebook embeds' pages", () => {
     expect(click.preventDefault).toHaveBeenCalledOnce();
     expect(block.opened).toEqual([]);
 
-    // Closed: a click starts writing again.
+    // Closed: a click (a finger, the mouse) does nothing to it; the Pencil writes again.
     (openInlineEditor.mock.calls[0]![0] as { onClosed: () => void }).onClosed();
     block.dispatch("click", event());
+    expect(openInlineEditor).toHaveBeenCalledOnce();
+    expect(block.opened).toEqual([]);
+    block.dispatch("pointerdown", event({ pointerType: "pen" }));
     expect(openInlineEditor).toHaveBeenCalledTimes(2);
   });
 

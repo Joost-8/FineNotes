@@ -33,6 +33,25 @@ export function isInlineSketchPage(page: Pick<Page, "id">): boolean {
   return isInlineSketchId(page.id);
 }
 
+/**
+ * Whether the notebook named after a note can take that note's next block:
+ * only when Handwrite here made it, so it holds blocks alone, and no note but
+ * this one (`notePath`) embeds it. A notebook of the user's own that happens
+ * to share the note's name, or one another note of that name uses, is left
+ * alone.
+ */
+export function reusableNoteNotebook(
+  pages: readonly Pick<Page, "id">[],
+  linkingNotes: readonly string[],
+  notePath: string,
+): boolean {
+  return (
+    pages.length > 0 &&
+    pages.every(isInlineSketchPage) &&
+    linkingNotes.every((note) => note === notePath)
+  );
+}
+
 /** Creates a compact, expandable inline sketch page (transparent by default). */
 export function createInlineSketchPage(
   id: string,
