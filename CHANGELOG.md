@@ -10,6 +10,12 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Changed
 
+- **Grape remembers the words you correct.** Every word you answer about
+  (a correction, "It says", Add to dictionary, or Beautify's question)
+  joins your word list: it is not underlined again, Beautify does not ask
+  about it again, and the next time a page is read Grape no longer changes
+  it into a dictionary word. Your earlier answers count too.
+
 - **Beautify this word.** A long press on a word now rewrites only that word,
   a word alone on its line included; the lasso's Beautify still does whole
   lines.

@@ -29,7 +29,6 @@ import {
   answeredOn,
   emptyCorrections,
   flagWords,
-  ignoredWords,
   mergeCorrections,
   parseCorrections,
   parseWordList,
@@ -37,6 +36,7 @@ import {
   serializeCorrections,
 } from "../recognition/hwr/corrections";
 import { type LexiconSuggestion, SUGGEST_MARGIN, replaceCore } from "../recognition/hwr/lexicon";
+import { personalWords, withPersonal } from "../recognition/hwr/personal-words";
 import { offersSpelling } from "../recognition/hwr/spelling-offer";
 import type { Stroke } from "../model/document";
 import type { PageLanguage } from "../recognition/hwr/page-language";
@@ -86,7 +86,11 @@ export interface WriteWordInHand {
 
 export class WordCheck {
   private words: Set<string> | null = null;
-  /** Counts the times the word list was read, so the reader knows when to send it again. */
+  /** The words the writer's answers add (personal-words.ts), from every answer in the file. */
+  private personal: Set<string> = new Set();
+  /** The word list with the writer's words: what reading, underlining and Beautify go by. */
+  private listed: ReadonlySet<string> | null = null;
+  /** Counts the times that list changed, so the reader knows when to send it again. */
   private version = 0;
   private corrections: CorrectionsFile = emptyCorrections();
   private loading: Promise<void> | null = null;
@@ -125,12 +129,27 @@ export class WordCheck {
     const text = await this.bundled().catch(() => null);
     const shared = text === null ? null : parseWordList(text);
     this.words = own && shared ? new Set([...shared, ...own]) : (own ?? shared);
-    this.version++;
     const file = correctionsPath();
     this.corrections = (await adapter.exists(file))
       ? parseCorrections(await adapter.read(file))
       : emptyCorrections();
     await this.moveLegacy();
+    this.relist(true);
+  }
+
+  /**
+   * Take the answers' words into the list again (after a read, or an answer
+   * here or synced from another device); the version moves when the list
+   * did, or always when `changed`.
+   */
+  private relist(changed = false): void {
+    const personal = personalWords(this.corrections);
+    const same =
+      personal.size === this.personal.size && [...personal].every((w) => this.personal.has(w));
+    this.personal = personal;
+    if (!changed && same) return;
+    this.listed = this.words ? withPersonal(this.words, personal) : null;
+    this.version++;
   }
 
   /**
@@ -206,7 +225,7 @@ export class WordCheck {
       return flagWords(
         words,
         pack.words,
-        ignoredWords(this.corrections),
+        this.personal,
         answeredOn(this.corrections, note, pageId),
       );
     }
@@ -217,12 +236,7 @@ export class WordCheck {
       }
       return [];
     }
-    return flagWords(
-      words,
-      this.words,
-      ignoredWords(this.corrections),
-      answeredOn(this.corrections, note, pageId),
-    );
+    return flagWords(words, this.words, this.personal, answeredOn(this.corrections, note, pageId));
   }
 
   /** The answers given on page `pageId` of `note`: what each answered word is, by its strokes (Neaten). */
@@ -250,11 +264,20 @@ export class WordCheck {
     return shownAnswers(this.corrections, note, pageId);
   }
 
-  /** The word list, for suggestions (lexicon.ts); null without one. */
-  lexicon(): { version: number; words: () => string[] } | null {
-    const words = this.words;
-    if (!words || words.size === 0) return null;
-    return { version: this.version, words: () => [...words] };
+  /**
+   * The word list with the writer's own words, for the reread and the
+   * suggestions (lexicon.ts) and for Beautify; null without a list.
+   * `answered` is the writer's words alone.
+   */
+  lexicon(): {
+    version: number;
+    words: () => string[];
+    answered: () => ReadonlySet<string>;
+  } | null {
+    const words = this.listed;
+    if (!this.words || this.words.size === 0 || !words) return null;
+    const personal = this.personal;
+    return { version: this.version, words: () => [...words], answered: () => personal };
   }
 
   /** How many answers there are, for the settings. */
@@ -373,15 +396,15 @@ export class WordCheck {
   private listedFor(language: PageLanguage): ((word: string) => boolean) | null {
     const list = language === "en" ? this.words : this.packLists.get(language);
     if (!list) return null;
-    const ignored = ignoredWords(this.corrections);
-    return (word) => list.has(word) || ignored.has(word);
+    const personal = this.personal;
+    return (word) => list.has(word) || personal.has(word);
   }
 
   /** Whether a word as read is one `flags` never underlines: listed, answered as right, or no plain word. */
   private unflagged(read: string, language: PageLanguage = "en"): boolean {
     const word = plainWord(read);
     if (!word) return true;
-    if (ignoredWords(this.corrections).has(word)) return true;
+    if (this.personal.has(word)) return true;
     if (language === "en") return this.words?.has(word) === true;
     // Another language: its pack's list, as `flags` last read it; none known, nothing to judge by.
     const list = this.packLists.get(language);
@@ -432,6 +455,8 @@ export class WordCheck {
       new Notice(t("ai.word.saveFailed", { message: errorMessage(error) }), 8000);
       return;
     }
+    // The answer (and any another device synced) joins the list the reader and Beautify use.
+    this.relist();
     this.answered(this.count);
   }
 }
