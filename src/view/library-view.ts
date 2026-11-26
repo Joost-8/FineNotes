@@ -2728,16 +2728,22 @@ export class LibraryView extends ItemView {
     this.paintNow();
   }
 
-  /** A card held: picking several starts (if it had not) with that card picked. */
+  /**
+   * A card held: picking several starts (if it had not) with that card picked.
+   * Marks by class only: a repaint would take the card from under the finger
+   * and end a drag the hold turns into.
+   */
   private pickByHold(path: string): void {
     if (!this.selecting) {
       this.selecting = true;
       this.selected.clear();
-      this.contentEl.toggleClass("is-selecting", true);
+      this.contentEl.addClass("is-selecting");
     }
     this.selected.add(path);
+    this.contentEl.querySelectorAll<HTMLElement>("[data-hold-key]").forEach((card) => {
+      if (card.dataset.holdKey === path) card.addClass("is-selected");
+    });
     this.syncBar();
-    this.paintNow();
   }
 
   /** A tap in picking mode: the item is in or out; the card shows a tick. */

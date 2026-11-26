@@ -1,47 +1,43 @@
 import { describe, expect, it } from "vitest";
-import { HOLD_SLOP, HoldPress } from "../../src/view/hold-press";
+import { HOLD_CANCELLED_MS, HOLD_SLOP, HoldPress } from "../../src/view/hold-press";
 
 describe("HoldPress", () => {
-  it("a finger held still is a hold, and the lift's click is the hold's once", () => {
+  it("a touch held still is a hold, and the long press's menu right after is the hold's", () => {
     const press = new HoldPress();
-    expect(press.down(1, "touch", 100, 100, "A")).toBe(true);
+    press.down(1, 100, 100, "A", 0);
     press.move(1, 104, 103);
-    expect(press.fire(1000)).toBe("A");
-    expect(press.justHeld(1100)).toBe(true);
-    expect(press.takeClick(1200)).toBe(true);
-    expect(press.justHeld(1300)).toBe(false);
-    expect(press.takeClick(1300)).toBe(false);
+    expect(press.fire(350)).toBe("A");
+    expect(press.justHeld(900)).toBe(true);
+    expect(press.justHeld(1200)).toBe(false);
   });
 
-  it("the Pencil holds too; a mouse never does", () => {
+  it("moving past the slop, lifting, or a second finger is no hold", () => {
     const press = new HoldPress();
-    expect(press.down(1, "pen", 0, 0, "A")).toBe(true);
-    expect(press.down(2, "mouse", 0, 0, "B")).toBe(false);
-    expect(press.fire(10)).toBeNull();
-  });
-
-  it("moving past the slop, or lifting, is no hold", () => {
-    const press = new HoldPress();
-    press.down(1, "touch", 0, 0, "A");
+    press.down(1, 0, 0, "A", 0);
     press.move(1, HOLD_SLOP + 1, 0);
-    expect(press.fire(10)).toBeNull();
-    press.down(1, "touch", 0, 0, "A");
+    expect(press.fire(350)).toBeNull();
+    press.down(1, 0, 0, "A", 0);
     press.end();
-    expect(press.fire(10)).toBeNull();
+    expect(press.fire(350)).toBeNull();
   });
 
-  it("another finger's move does not cancel the press", () => {
+  it("another touch's move does not cancel the press", () => {
     const press = new HoldPress();
-    press.down(1, "touch", 0, 0, "A");
+    press.down(1, 0, 0, "A", 0);
     press.move(2, 50, 50);
-    expect(press.fire(10)).toBe("A");
+    expect(press.fire(350)).toBe("A");
   });
 
-  it("a tap long after a hold is a tap", () => {
+  it("a still touch the platform cancels is a hold once it has rested", () => {
     const press = new HoldPress();
-    press.down(1, "touch", 0, 0, "A");
-    press.fire(0);
-    expect(press.takeClick(5000)).toBe(false);
-    expect(new HoldPress().takeClick(0)).toBe(false);
+    press.down(1, 0, 0, "A", 0);
+    expect(press.cancelled(HOLD_CANCELLED_MS - 1)).toBeNull();
+    press.down(1, 0, 0, "A", 0);
+    expect(press.cancelled(HOLD_CANCELLED_MS)).toBe("A");
+    expect(press.fire(400)).toBeNull();
+  });
+
+  it("no hold, no swallowed menu", () => {
+    expect(new HoldPress().justHeld(0)).toBe(false);
   });
 });
