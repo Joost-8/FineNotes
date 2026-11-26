@@ -128,6 +128,16 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- **Quick handwriting keeps its letters (#275).** A letter started soon
+  after the last one could lose its first strokes or come out as a line,
+  most of all on handwriting practice sheets and with the page sidebar
+  open: every lift of the pen set off work (re-reading the other practice
+  sheets, repainting thumbnails) that landed inside the next letter. That
+  work now waits until the pen rests.
+- **Finishing a practice sheet asks once whether you would share it** to
+  help improve Grape, as meant since Help improve Grape arrived: the
+  question never came, because the sheet's count was reset after every
+  stroke.
 - **Select all in the page sidebar works across the whole button.** The
   title next to it was drawn over its right half and took those taps.
 - **Pinching a selected picture no longer raises an error** in the
