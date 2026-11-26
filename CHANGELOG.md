@@ -19,6 +19,12 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Export: a PDF name of your own (#318).** The Export dialog has a name
+  field for the PDF. Type a name and the export replaces the file of that
+  name (the button says Replace), so a link to it, or a copy synced to a
+  drive, always shows the newest version; the notebook remembers the name for
+  next time. Left empty, every export makes a new file, as before.
+
 - **Corrections tell Grape's misreads from your own mistakes.** On the word
   card, **Should be “…”** (offered only for a word that is very likely
   misspelled, never for a listed word, a number, a code or maths) says you

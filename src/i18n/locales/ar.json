@@ -1622,6 +1622,8 @@
   "notebooks.export.cancelHint": "إغلاق دون تصدير.",
   "notebooks.export.go": "تصدير",
   "notebooks.export.goHint": "أنشئ الملفات واحفظها في المخزن.",
+  "notebooks.export.replace": "استبدال",
+  "notebooks.export.nameLabel": "اسم الملف؛ فارغ: ملف جديد في كل مرة",
   "notebooks.export.tapPages": "اضغط على الصفحات المراد تصديرها.",
   "notebooks.export.rendering": "جارٍ إنشاء الصفحة {page} من {total}…",
   "notebooks.export.saving": "جارٍ الحفظ…",

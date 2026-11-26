@@ -1486,6 +1486,8 @@
   "notebooks.export.cancelHint": "Zamknij bez eksportowania.",
   "notebooks.export.go": "Eksportuj",
   "notebooks.export.goHint": "Utwórz pliki i zapisz je w skarbcu.",
+  "notebooks.export.replace": "Zastąp",
+  "notebooks.export.nameLabel": "Nazwa pliku; puste: za każdym razem nowy plik",
   "notebooks.export.tapPages": "Stuknij strony do eksportu.",
   "notebooks.export.rendering": "Renderowanie strony {page} z {total}…",
   "notebooks.export.saving": "Zapisywanie…",

@@ -475,6 +475,8 @@ export interface GoodObsidianSettings {
   exportFormat: ExportFormat;
   /** Which page margins an export keeps, as last picked. Checked where it is read. */
   exportMargins: ExportMargins;
+  /** PDF names typed in the export dialog, by notebook path (FineNotes#318). Checked where it is read. */
+  exportNames: Record<string, string>;
 
   // Pens and shortcuts (FineNotes#24, #25).
   /** Up to eight saved pens, for the toolbar's favourites and the keys 1 to 8. Checked where read. */
@@ -701,6 +703,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   exportPlainPaper: false,
   exportFormat: "pdf",
   exportMargins: "all",
+  exportNames: {},
 
   savedPens: defaultSavedPens(),
   toolbarLayout: defaultLayout(),

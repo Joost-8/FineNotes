@@ -1486,6 +1486,8 @@
   "notebooks.export.cancelHint": "Закрыць без экспарту.",
   "notebooks.export.go": "Экспарт",
   "notebooks.export.goHint": "Стварыць файлы і захаваць іх у сховішчы.",
+  "notebooks.export.replace": "Замяніць",
+  "notebooks.export.nameLabel": "Назва файла; пуста: кожны раз новы файл",
   "notebooks.export.tapPages": "Націсніце на старонкі для экспарту.",
   "notebooks.export.rendering": "Апрацоўка старонкі {page} з {total}…",
   "notebooks.export.saving": "Захаванне…",

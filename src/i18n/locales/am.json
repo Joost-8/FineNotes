@@ -1350,6 +1350,8 @@
   "notebooks.export.cancelHint": "ሳይልኩ ዝጋ።",
   "notebooks.export.go": "ላክ",
   "notebooks.export.goHint": "ፋይሎቹን ሥራ እና በቮልቱ ውስጥ አስቀምጥ።",
+  "notebooks.export.replace": "ተካ",
+  "notebooks.export.nameLabel": "የፋይል ስም፤ ባዶ ከሆነ፦ በእያንዳንዱ ጊዜ አዲስ ፋይል",
   "notebooks.export.tapPages": "የሚላኩትን ገጾች ይንኩ።",
   "notebooks.export.rendering": "ገጽ {page} ከ{total} በመሳል ላይ…",
   "notebooks.export.saving": "በማስቀመጥ ላይ…",

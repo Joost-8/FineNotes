@@ -1350,6 +1350,8 @@
   "notebooks.export.cancelHint": "এক্সপোর্ট না করেই বন্ধ করুন।",
   "notebooks.export.go": "এক্সপোর্ট",
   "notebooks.export.goHint": "ফাইল বানিয়ে ভল্টে সংরক্ষণ করুন।",
+  "notebooks.export.replace": "প্রতিস্থাপন",
+  "notebooks.export.nameLabel": "ফাইলের নাম; খালি থাকলে: প্রতিবার নতুন ফাইল",
   "notebooks.export.tapPages": "এক্সপোর্টের পাতাগুলোতে ট্যাপ করুন।",
   "notebooks.export.rendering": "{total}-এর মধ্যে পাতা {page} রেন্ডার হচ্ছে…",
   "notebooks.export.saving": "সংরক্ষণ হচ্ছে…",

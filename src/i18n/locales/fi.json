@@ -1350,6 +1350,8 @@
   "notebooks.export.cancelHint": "Sulje viemättä.",
   "notebooks.export.go": "Vie",
   "notebooks.export.goHint": "Tee tiedostot ja tallenna ne holviin.",
+  "notebooks.export.replace": "Korvaa",
+  "notebooks.export.nameLabel": "Tiedostonimi; tyhjä: uusi tiedosto joka kerta",
   "notebooks.export.tapPages": "Napauta vietäviä sivuja.",
   "notebooks.export.rendering": "Renderöidään sivua {page} / {total}…",
   "notebooks.export.saving": "Tallennetaan…",
