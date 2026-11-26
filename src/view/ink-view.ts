@@ -541,6 +541,7 @@ import {
   exportPagesToImages,
   exportPagesToPdf,
   keepsMargins,
+  withExportSwitches,
   paintPagePreview,
 } from "./pdf-export";
 import { exportBaseName } from "../export/page-range";
@@ -2593,7 +2594,7 @@ export class InkView extends TextFileView {
         doc: () => this.doc,
         paperWidth: () => this.settings.paperWidth,
         snapshot: () => this.encoder.snapshot(this.doc),
-        options: () => this.pdfExportSources(),
+        options: () => withExportSwitches(this.previewSources(), this.settings),
         crop: (page) => this.boardDrawing(page),
         exportsFolder: () => this.attachmentFolder("exports"),
         saveNow: () => this.saveNow(false, true),
@@ -2608,16 +2609,6 @@ export class InkView extends TextFileView {
       },
       this.plugin.companionPdfs,
     );
-  }
-
-  /** The export dialog's switches, as last left, over `preview`. */
-  private pdfExportSources(preview = this.previewSources()): PdfExportSources {
-    return {
-      ...preview,
-      plainPaper: this.settings.exportPlainPaper === true,
-      withoutTapes: this.settings.exportWithoutTapes === true,
-      margins: exportMarginsOf(this.settings.exportMargins),
-    };
   }
 
   /** A text box's height as the page paints it (`paintedTextHeight`). */
@@ -6573,7 +6564,7 @@ export class InkView extends TextFileView {
     const preview = this.previewSources();
     // Plain paper or with the template, with the tapes or without, as the
     // dialog's switches were last left.
-    const exported = (): PdfExportSources => this.pdfExportSources(preview);
+    const exported = (): PdfExportSources => withExportSwitches(preview, this.settings);
     const taped = doc.pages.some((page) => page.strokes.some(isTape));
     new ExportPdfModal(this.app, {
       noun: this.isSinglePage ? "page" : "notebook",

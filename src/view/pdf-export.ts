@@ -40,9 +40,23 @@ import type { VaultImageCache } from "./image-cache";
 import { releaseCanvas } from "./image-import";
 import type { PdfBackdropCache } from "./pdf-backdrop";
 import { t } from "../i18n/translate";
+import { exportMarginsOf } from "../export/export-choice";
 
 /** JPEG quality, in a PDF and a JPG: ink edges stay clean, a PDF slide stays small. */
 const JPEG_QUALITY = 0.9;
+
+/** The export dialog's switches, as last left in `settings`, over `preview`. */
+export function withExportSwitches(
+  preview: PdfExportSources,
+  settings: { exportPlainPaper?: boolean; exportWithoutTapes?: boolean; exportMargins?: unknown },
+): PdfExportSources {
+  return {
+    ...preview,
+    plainPaper: settings.exportPlainPaper === true,
+    withoutTapes: settings.exportWithoutTapes === true,
+    margins: exportMarginsOf(settings.exportMargins),
+  };
+}
 
 export interface PdfExportSources {
   /** Read the original PDF bytes without modifying the source. */
