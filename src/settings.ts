@@ -63,7 +63,7 @@ import {
   type HandwriteBlocks,
   handwriteBlocksOf,
 } from "./model/handwrite-blocks";
-import { InlineNotebookPickerModal, handwriteBlocksLabel } from "./view/handwrite-modals";
+import { InlineNotebookPickerModal } from "./view/handwrite-modals";
 import {
   ASSETS_FOLDER,
   DEFAULT_STICKER_FOLDER,
@@ -279,7 +279,7 @@ function stylusClickNames(): Record<StylusClickAction, string> {
 }
 
 /** The sections, as the list names them. */
-/** The link forms the ⓘ of "Embedding a notebook" lists, one line each. */
+/** The link forms the ⓘ of "How to embed a notebook" lists, one line each. */
 const EMBED_HELP_LINES = [
   "settings.notes.syntaxWhole",
   "settings.notes.syntaxPage",
@@ -1783,7 +1783,7 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
     ]);
   }
 
-  /** The ⓘ of "Embedding a notebook": the link forms, and where Handwrite here is. */
+  /** The ⓘ of "How to embed a notebook": the link forms, and where Handwrite here is. */
   private drawEmbedHelp(setting: Setting): void {
     const panel = setting.descEl.createDiv({ cls: "goodobsidian-embed-help is-hidden" });
     for (const key of EMBED_HELP_LINES) {
@@ -3193,7 +3193,8 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   /** Where Handwrite here keeps a new block: the same three as its first-use question. */
   private drawHandwriteBlocks(setting: Setting): void {
     setting.addDropdown((dropdown) => {
-      for (const mode of HANDWRITE_BLOCKS) dropdown.addOption(mode, handwriteBlocksLabel(mode));
+      // The short names, as in the section list, so the dropdown keeps to its row.
+      for (const mode of HANDWRITE_BLOCKS) dropdown.addOption(mode, notesStatus(mode));
       dropdown.setValue(this.plugin.settings.handwriteBlocks).onChange(async (value) => {
         this.plugin.settings.handwriteBlocks = handwriteBlocksOf(value);
         // Chosen here: the first-use question is answered.

@@ -536,9 +536,9 @@ describe("the rows", () => {
         "Show notebook folders as notebooks",
         "toggle:folderNotebooks",
       ],
-      ["notes", "In Markdown notes", "Handwriting in notes", "render"],
-      ["notes", "In Markdown notes", "Notebook for all sketches", "render"],
-      ["notes", "In Markdown notes", "Embedding a notebook", "render"],
+      ["notes", "Ink inside Markdown notes", "Where Handwrite here saves", "render"],
+      ["notes", "Ink inside Markdown notes", "Notebook for every sketch", "render"],
+      ["notes", "Ink inside Markdown notes", "How to embed a notebook", "render"],
       ...SHORTCUT_ROWS.map(([heading, name, what]) => ["shortcuts", heading, name, what]),
       ...READING_ROWS.map(([name, what]) => ["reading", "Your handwriting", name, what]),
       ...MODEL_ROWS.map(([name, what]) => ["reading", MODELS, name, what]),
@@ -1808,7 +1808,7 @@ describe("the section list", () => {
       "General",
       "Writing",
       "Pages",
-      "Notebooks in notes",
+      "Embeds in notes",
       "Shortcuts",
       "Reading and voice",
       "AI",
@@ -1832,7 +1832,7 @@ describe("the section list", () => {
       "English",
       "Highlighter · 4.1 mm",
       "Light · 900 px",
-      "One per note",
+      "Notebook per note",
       "",
       "VoiceHandwriting",
       "AI not set up",
@@ -2258,7 +2258,7 @@ describe("the learned handwriting model", () => {
   });
 });
 
-describe("Notebooks in notes (PR #312)", () => {
+describe("Embeds in notes (PR #312)", () => {
   it("is a section the stylesheet shows, as every section must be", () => {
     const css = readFileSync(join(__dirname, "../../styles.css"), "utf8").replace(/\s+/g, " ");
     for (const section of SETTINGS_SECTIONS) {
@@ -2273,18 +2273,18 @@ describe("Notebooks in notes (PR #312)", () => {
     const { tab } = makeTab(plugin);
     const notes = inSection(rows(tab), "notes").map((r) => r.def.name);
     expect(notes).toEqual([
-      "Handwriting in notes",
-      "Notebook for all sketches",
-      "Embedding a notebook",
+      "Where Handwrite here saves",
+      "Notebook for every sketch",
+      "How to embed a notebook",
     ]);
-    const row = renderRow(named(rows(tab), "Handwriting in notes"));
+    const row = renderRow(named(rows(tab), "Where Handwrite here saves"));
     expect(row.dropdowns[0].value).toBe("ask");
     expect(Object.keys(row.dropdowns[0].options)).toEqual(["note", "ask", "one"]);
     await row.dropdowns[0].pick("one");
     expect(plugin.settings.handwriteBlocks).toBe("one");
     expect(plugin.settings.handwriteBlocksChosen).toBe(true);
     // The second row only while every sketch goes to one notebook.
-    const second = named(rows(tab), "Notebook for all sketches");
+    const second = named(rows(tab), "Notebook for every sketch");
     expect(typeof second.visible === "function" && second.visible()).toBe(true);
     plugin.settings.handwriteBlocks = "note";
     expect(typeof second.visible === "function" && second.visible()).toBe(false);
