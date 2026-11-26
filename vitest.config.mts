@@ -91,6 +91,7 @@ export default defineConfig({
         "src/view/inline-editor-registry.ts",
         "src/view/inline-surface-model.ts",
         "src/view/pending-page.ts",
+        "src/view/inline-editor-keys.ts",
         "src/canvas/align-snap.ts",
         "src/canvas/paper-style.ts",
         "src/canvas/margin-paper.ts",

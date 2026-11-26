@@ -1031,7 +1031,8 @@ export interface ToolbarOptions {
   allowedItems?: ReadonlySet<BarItemId>;
   /** Page area available to menus when the toolbar lives in a separate host. */
   popoverBounds?: HTMLElement;
-  resetLayout?: ToolbarLayout;
+  /** Where a press closes an open popover, when the page is outside the bar's host. */
+  dismissRoot?: HTMLElement;
   /** The pen width the width popover's reset returns to; default the middle preset. */
   defaultSize?: number;
   /**
@@ -7142,10 +7143,11 @@ export class Toolbar {
       if (event.key === "Escape") this.closePopover();
     };
     // Capture phase: the drawing surface handles its own input below us.
-    this.host.addEventListener("pointerdown", onDown, true);
+    const pressRoot = this.options.dismissRoot ?? this.host;
+    pressRoot.addEventListener("pointerdown", onDown, true);
     this.host.addEventListener("keydown", onKey);
     this.disposers.push(() => {
-      this.host.removeEventListener("pointerdown", onDown, true);
+      pressRoot.removeEventListener("pointerdown", onDown, true);
       this.host.removeEventListener("keydown", onKey);
     });
   }

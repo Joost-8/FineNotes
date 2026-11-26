@@ -1051,6 +1051,11 @@ export interface InkSurfaceCallbacks {
   onChange: (pages?: readonly string[]) => void;
   /** Reserve room below the live ink on a dedicated embedded page. */
   growInlinePage?: (y: number, buffer: number) => boolean;
+  /**
+   * A finger on the page is the host's to scroll with (a "Handwrite here"
+   * block in pen-only mode): its touches are neither cancelled nor stopped.
+   */
+  fingerScrollsHost?: () => boolean;
   /** Something the host may display changed (stroke count, zoom, current page). */
   onStatus?: () => void;
   /** The Zoom box opened from a marquee or closed with its ×: the toolbar's switch follows. */
@@ -3524,6 +3529,7 @@ export class InkSurface {
         if (cancelsStylusTouch(event.type, event.changedTouches)) event.preventDefault();
         return;
       }
+      if (this.callbacks.fingerScrollsHost?.() === true) return;
       if (onTextBox(event.target)) return;
       // The lasso's menu scrolls by itself when it is taller than the view
       // (the custom colour picker): a finger there must not be cancelled.

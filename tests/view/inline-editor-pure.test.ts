@@ -5,17 +5,21 @@ import {
   claimInlineEditor,
   closeAnyInlineEditor,
   closeInlineEditorIn,
+  closeInlineEditorsOf,
   makeRoomFor,
   releaseInlineEditor,
 } from "../../src/view/inline-editor-registry";
 import { flashRing, inGrowBand } from "../../src/view/inline-surface-model";
+import { type InlineKeyFacts, inlineKeyVerdict } from "../../src/view/inline-editor-keys";
+import { reusableNoteNotebook } from "../../src/model/inline-sketch";
 import { PAGE_ID_ATTEMPTS, pageIdStep } from "../../src/view/pending-page";
 import { DARK_PAPER, LIGHT_PAPER, fillPaper, pageLook } from "../../src/canvas/backdrop";
 
 /** An editor over `slot` whose save works (`saves`) or fails. */
-function editor(slot: { isConnected: boolean }, saves = true) {
+function editor(slot: { isConnected: boolean }, saves = true, filePath = "Note.notebook.md") {
   const handle: InlineEditorHandle & { closed: boolean; forced: boolean[] } = {
     hostSlot: slot as unknown as HTMLElement,
+    filePath,
     closed: false,
     forced: [],
     close: vi.fn((force = false) => {
@@ -75,6 +79,16 @@ describe("an editor's block going away (#312)", () => {
     expect(open.closed).toBe(true);
     expect(open.forced).toEqual([true]);
     expect(activeInlineEditor()).toBeNull();
+  });
+
+  it("closes the block of a notebook that opens in its own view, and only that one", async () => {
+    const open = editor({ isConnected: true }, false, "Lecture.notebook.md");
+    await closeInlineEditorsOf("Other.notebook.md");
+    expect(open.closed).toBe(false);
+    // Saved and closed even if the save fails: the view must not mint the same ids.
+    await closeInlineEditorsOf("Lecture.notebook.md");
+    expect(open.closed).toBe(true);
+    expect(open.forced).toEqual([true]);
   });
 
   it("closes whatever is open when the plugin unloads", async () => {
@@ -148,5 +162,64 @@ describe("transparent paper outside its note (#312)", () => {
     const ctx = { save() {}, restore() {}, fillRect: vi.fn(), fillStyle: "" };
     fillPaper(ctx as never, { width: 10, height: 10 }, note, "transparent");
     expect(ctx.fillRect).not.toHaveBeenCalled();
+  });
+});
+
+describe("the keys that finish a block (#312)", () => {
+  const key = (extra: Partial<InlineKeyFacts>): InlineKeyFacts => ({
+    key: "Escape",
+    mod: false,
+    shift: false,
+    alt: false,
+    prevented: false,
+    composing: false,
+    modalOpen: false,
+    inside: true,
+    editable: false,
+    popoverOpen: false,
+    ...extra,
+  });
+
+  it("finishes on Esc and Mod+Enter pressed in the block", () => {
+    expect(inlineKeyVerdict(key({}))).toBe("surface");
+    expect(inlineKeyVerdict(key({ key: "Enter", mod: true }))).toBe("finish");
+    expect(inlineKeyVerdict(key({ key: "Enter" }))).toBe("pass");
+    expect(inlineKeyVerdict(key({ key: "z", mod: true }))).toBe("pass");
+  });
+
+  it("leaves Esc to an open popover: it closes the popover only", () => {
+    expect(inlineKeyVerdict(key({ popoverOpen: true }))).toBe("pass");
+    // Mod+Enter still finishes: no popover takes it.
+    expect(inlineKeyVerdict(key({ key: "Enter", mod: true, popoverOpen: true }))).toBe("finish");
+  });
+
+  it("does nothing to the block for a key pressed outside it", () => {
+    expect(inlineKeyVerdict(key({ inside: false }))).toBe("pass");
+    expect(inlineKeyVerdict(key({ key: "Enter", mod: true, inside: false }))).toBe("pass");
+  });
+
+  it("leaves keys to text boxes, menus, dialogs and anyone who took them first", () => {
+    expect(inlineKeyVerdict(key({ editable: true }))).toBe("pass");
+    expect(inlineKeyVerdict(key({ modalOpen: true }))).toBe("pass");
+    expect(inlineKeyVerdict(key({ prevented: true }))).toBe("pass");
+    expect(inlineKeyVerdict(key({ composing: true }))).toBe("pass");
+  });
+});
+
+describe("reusing the notebook named after a note (#312)", () => {
+  const blocks = [{ id: "hw-1" }, { id: "hw-2" }];
+
+  it("reuses the one Handwrite here made for this note", () => {
+    expect(reusableNoteNotebook(blocks, [], "A/Lecture.md")).toBe(true);
+    expect(reusableNoteNotebook(blocks, ["A/Lecture.md"], "A/Lecture.md")).toBe(true);
+  });
+
+  it("leaves a notebook of the user's own that shares the name", () => {
+    expect(reusableNoteNotebook([{ id: "p1" }, { id: "hw-1" }], [], "Physics.md")).toBe(false);
+    expect(reusableNoteNotebook([], [], "Physics.md")).toBe(false);
+  });
+
+  it("leaves the notebook another note of the same name uses", () => {
+    expect(reusableNoteNotebook(blocks, ["B/Lecture.md"], "A/Lecture.md")).toBe(false);
   });
 });

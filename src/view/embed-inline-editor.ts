@@ -10,7 +10,7 @@
 import { type App, type TFile, Notice, Scope, setIcon } from "obsidian";
 import type GoodObsidianPlugin from "../main";
 import { t } from "../i18n/translate";
-import { attachmentDefaults, penPreferencesOf } from "../settings-data";
+import { attachmentDefaults, penPreferencesOf, shownPaperTheme } from "../settings-data";
 import { PALETTE, SIZES, VIEW_TYPE_INK } from "../constants";
 import { pushRecentColor } from "../model/colors";
 import { InsertImage, SetBackdrop } from "../model/commands";
@@ -31,6 +31,8 @@ import {
   mergeInlinePageEdits,
 } from "../model/inline-sketch";
 import { DARK_PAPER, LIGHT_PAPER, type PaperTheme } from "../canvas/backdrop";
+import { inlineKeyVerdict } from "./inline-editor-keys";
+import { WriteHold } from "./write-hold";
 import { TemplatePickerModal } from "./template-picker";
 import { ConfirmModal } from "../ui/confirm-modal";
 import { pickImageFiles, prepareImageBytes, saveImageAttachment } from "./image-import";
@@ -123,6 +125,10 @@ export class EmbedInlineEditor implements InlineEditorHandle {
   private imageFolder: string | undefined;
   private cleanups: Array<() => void> = [];
   private disposed = false;
+  /** Saves wait for a pause in the writing, never mid-stroke (write-hold.ts). */
+  private readonly hold = new WriteHold();
+  /** The paper the surface and the block show now; another (an undo) re-themes them. */
+  private shownBackdrop: unknown = null;
 
   constructor(private readonly req: EmbedInlineEditRequest) {
     this.onlyStylus = req.plugin.stylusOnly;
@@ -142,6 +148,11 @@ export class EmbedInlineEditor implements InlineEditorHandle {
 
   get hostSlot(): HTMLElement {
     return this.req.slotEl;
+  }
+
+  /** The notebook this block is a page of. */
+  get filePath(): string {
+    return this.req.notebookFile.path;
   }
 
   async start(): Promise<void> {
@@ -224,7 +235,21 @@ export class EmbedInlineEditor implements InlineEditorHandle {
       const base = this.paperIsDark ? DARK_PAPER : LIGHT_PAPER;
       return { ...base, desk: "transparent", seeThrough: true };
     }
-    return { ...LIGHT_PAPER, desk: "transparent" };
+    // Paper follows the dark-pages setting, as in the notebook view.
+    const shown = shownPaperTheme(this.req.plugin.settings, this.paperIsDark);
+    return { ...shown, desk: "transparent" };
+  }
+
+  /** The page's paper changed (picked, or undone): the surface, the bar and the block follow. */
+  private syncPaper(): void {
+    const page = this.doc?.pages[0];
+    if (!page || page.backdrop === this.shownBackdrop) return;
+    this.shownBackdrop = page.backdrop;
+    const theme = this.effectivePaperTheme();
+    this.surface?.setPaperTheme(theme);
+    this.toolbar?.setNight(theme.night === true);
+    this.syncStageAspect();
+    this.surface?.refreshInlinePage(page.id);
   }
 
   private mount(): void {
@@ -429,6 +454,8 @@ export class EmbedInlineEditor implements InlineEditorHandle {
         layout: inlineLayoutFrom(plugin.settings.toolbarLayout, savedPenIds),
         allowedItems,
         popoverBounds: slotEl,
+        // A press anywhere in the block, the page included, closes a popover.
+        dismissRoot: slotEl,
         pillRow: true,
         startOptionsTucked: true,
         onlyStylusMode: plugin.stylusOnly,
@@ -464,11 +491,7 @@ export class EmbedInlineEditor implements InlineEditorHandle {
             plugin.settings.inlineLastBackdrop = structuredClone(backdrop);
             void plugin.saveSettings();
             this.revision++;
-            const theme = this.effectivePaperTheme();
-            this.surface?.setPaperTheme(theme);
-            this.toolbar?.setNight(theme.night === true);
-            this.syncStageAspect();
-            this.surface?.refreshInlinePage(p.id);
+            this.syncPaper();
             this.scheduleSave();
           },
         }).open();
@@ -540,8 +563,19 @@ export class EmbedInlineEditor implements InlineEditorHandle {
           if (!expandable) return false;
           return this.maybeGrowHeight(y, buffer);
         },
+        // With the pen only, a finger scrolls the note: the surface leaves its touches alone.
+        fingerScrollsHost: () => this.onlyStylus,
+        onPen: (down) => {
+          const now = performance.now();
+          if (down) this.hold.penDown(now);
+          else {
+            this.hold.penUp(now);
+            if (this.revision !== this.savedRevision) this.scheduleSave();
+          }
+        },
         onChange: () => {
           this.revision++;
+          this.syncPaper();
           if (expandable) this.maybeGrowHeight();
           this.syncUndoRedo();
           this.scheduleSave();
@@ -556,29 +590,19 @@ export class EmbedInlineEditor implements InlineEditorHandle {
     this.surface.setTool(this.toolState.tool);
     this.toolbar.setNight(this.effectivePaperTheme().night === true);
     this.syncUndoRedo();
+    this.shownBackdrop = page.backdrop;
+    const tabIndex = slotEl.tabIndex;
     slotEl.tabIndex = -1;
+    this.cleanups.push(() => {
+      slotEl.tabIndex = tabIndex;
+    });
     slotEl.focus({ preventScroll: true });
 
-    // Esc and Mod+Enter finish. Obsidian's hotkeys take Mod+Enter at the
-    // window before a keydown here would hear it, so both go through a scope
-    // of the editor's own, asked before the app's (obsidian-host.md).
-    const keymap = (app as { keymap?: { pushScope(s: Scope): void; popScope(s: Scope): void } })
-      .keymap;
-    if (keymap) {
-      const scope = new Scope((app as { scope?: Scope }).scope);
-      const finish = (e: KeyboardEvent): false => {
-        // Esc first leaves what the surface is in the middle of (a text box, a selection).
-        if (e.key === "Escape" && this.surface?.handleKeyDown(e)) return false;
-        void this.close();
-        return false;
-      };
-      scope.register([], "Escape", finish);
-      scope.register(["Mod"], "Enter", finish);
-      keymap.pushScope(scope);
-      this.cleanups.push(() => keymap.popScope(scope));
-    }
+    this.bindFinishKeys();
     const onKey = (e: KeyboardEvent): void => {
       if (e.defaultPrevented) return;
+      // Esc and Mod+Enter are the scope's (bindFinishKeys): a popover's Esc must reach it.
+      if (e.key === "Escape" || (e.key === "Enter" && (e.metaKey || e.ctrlKey))) return;
       if (this.surface?.handleKeyDown(e)) {
         e.stopPropagation();
       }
@@ -592,6 +616,60 @@ export class EmbedInlineEditor implements InlineEditorHandle {
     slotEl.addEventListener("paste", onPaste, true);
     this.cleanups.push(() => slotEl.removeEventListener("keydown", onKey, true));
     this.cleanups.push(() => slotEl.removeEventListener("paste", onPaste, true));
+  }
+
+  /**
+   * Esc and Mod+Enter finish the block. Obsidian's hotkeys take Mod+Enter at
+   * the window before a keydown here would hear it, so they go through a
+   * scope (obsidian-host.md), built as the notebook view's is
+   * (`notebookKeyScope`): one handler for every key, which acts only on a key
+   * pressed in the block that nothing in it wants (inline-editor-keys.ts),
+   * and otherwise leaves it to the note's own scope, its parent. The scope
+   * goes back on top whenever the note's tab becomes active again.
+   */
+  private bindFinishKeys(): void {
+    const { app, slotEl } = this.req;
+    const keymap = (app as { keymap?: { pushScope(s: Scope): void; popScope(s: Scope): void } })
+      .keymap;
+    if (!keymap) return;
+    const doc = slotEl.ownerDocument;
+    const noteView = app.workspace
+      .getLeavesOfType("markdown")
+      .map((leaf) => leaf.view)
+      .find((view) => view.containerEl.contains(slotEl));
+    const scope = new Scope(noteView?.scope ?? app.scope);
+    scope.register(null, null, (event) => {
+      const target = event.target instanceof Node ? event.target : null;
+      const verdict = inlineKeyVerdict({
+        key: event.key,
+        mod: event.metaKey || event.ctrlKey,
+        shift: event.shiftKey,
+        alt: event.altKey,
+        prevented: event.defaultPrevented,
+        composing: event.isComposing,
+        modalOpen: doc.querySelector(".modal-container, .menu") !== null,
+        inside: target !== null && slotEl.contains(target),
+        editable:
+          target instanceof HTMLElement &&
+          (target.isContentEditable || target.closest("input, textarea, select") !== null),
+        popoverOpen: slotEl.querySelector(".goodobsidian-popover") !== null,
+      });
+      if (verdict === "pass") return undefined;
+      if (verdict === "surface" && this.surface?.handleKeyDown(event)) return false;
+      void this.close();
+      return false;
+    });
+    keymap.pushScope(scope);
+    const ref = app.workspace.on("active-leaf-change", (leaf) => {
+      if (leaf?.view.containerEl.contains(slotEl)) {
+        keymap.popScope(scope);
+        keymap.pushScope(scope);
+      }
+    });
+    this.cleanups.push(() => {
+      app.workspace.offref(ref);
+      keymap.popScope(scope);
+    });
   }
 
   /** With the pen only, a finger scrolls the note across the block; else it draws. */
@@ -716,12 +794,19 @@ export class EmbedInlineEditor implements InlineEditorHandle {
     }
   }
 
+  /**
+   * A save rewrites the notebook on the main thread: it waits until the pen
+   * has been up a moment, and is never made mid-stroke (write-hold.ts, and
+   * ipad-input.md "Obsidian saved mid-stroke"). Done saves at once.
+   */
   private scheduleSave(): void {
     if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
+    const wait = Math.max(500, this.hold.quietIn(performance.now()));
     this.saveTimer = window.setTimeout(() => {
       this.saveTimer = null;
-      void this.flushSave();
-    }, 500);
+      if (this.hold.writing(performance.now())) this.scheduleSave();
+      else void this.flushSave();
+    }, wait);
   }
 
   private flushSave(finishing = false): Promise<boolean> {

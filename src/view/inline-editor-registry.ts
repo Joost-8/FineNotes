@@ -10,6 +10,8 @@
 export interface InlineEditorHandle {
   /** The block's element the editor is mounted in. */
   readonly hostSlot: HTMLElement;
+  /** The notebook the block is a page of. */
+  readonly filePath: string;
   /**
    * Save, then take the editor down. False when the save failed and the
    * editor stayed open; `force` takes it down even then (its block is gone).
@@ -58,6 +60,17 @@ export async function makeRoomFor(slot: HTMLElement): Promise<boolean> {
 export function closeInlineEditorIn(slot: HTMLElement): Promise<boolean> {
   const open = active;
   if (!open || open.hostSlot !== slot) return Promise.resolve(true);
+  return open.close(true);
+}
+
+/**
+ * The notebook at `path` is opening in its own view: an editor of one of its
+ * blocks saves and closes first, whatever the save did, so the view reads
+ * what the block wrote and the two never hand out the same ids.
+ */
+export function closeInlineEditorsOf(path: string): Promise<boolean> {
+  const open = active;
+  if (!open || open.filePath !== path) return Promise.resolve(true);
   return open.close(true);
 }
 

@@ -17,6 +17,7 @@
  */
 
 import { pageIdStep } from "./pending-page";
+import { closeInlineEditorsOf } from "./inline-editor-registry";
 import { SetFurniture, furnitureText } from "../model/furniture";
 import { SetPageTab, nextTabColor } from "../model/page-tabs";
 import { SAVED_STICKERS_COLLECTION } from "./sticker-modal";
@@ -1716,6 +1717,14 @@ export class InkView extends TextFileView {
    * Before the note goes (the tab closes, or opens another file), finish a
    * running recording so it joins *this* note, and save that.
    */
+  override async onLoadFile(file: TFile): Promise<void> {
+    // A block of this notebook written in a note saves and closes first: the
+    // two would otherwise hand out the same ids, and the view would load
+    // what the block had not saved yet.
+    await closeInlineEditorsOf(file.path);
+    await super.onLoadFile(file);
+  }
+
   override async onUnloadFile(file: TFile): Promise<void> {
     // Leaving the scratch page any other way ends the try without going back.
     this.tryHint?.destroy();
