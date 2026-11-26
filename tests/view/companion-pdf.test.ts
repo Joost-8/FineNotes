@@ -738,10 +738,14 @@ describe("the reviewer's second pass", () => {
     const names = new Map<string, { name: string; file?: string }>([
       [NOTE, { name: "Cell biology" }],
     ]);
-    s.manager.register({ app: s.app, registerEvent: vi.fn(), register: vi.fn() } as never, () => [], {
-      get: (path) => names.get(path),
-      setFile: (path, file) => names.set(path, { name: names.get(path)!.name, file }),
-    });
+    s.manager.register(
+      { app: s.app, registerEvent: vi.fn(), register: vi.fn() } as never,
+      () => [],
+      {
+        get: (path) => names.get(path),
+        setFile: (path, file) => names.set(path, { name: names.get(path)!.name, file }),
+      },
+    );
     const id = await s.manager.enable(s.note as never, s.texts.get(NOTE)!, "School/Exports");
     // Nothing written yet: nothing recorded.
     expect(names.get(NOTE)?.file).toBeUndefined();
