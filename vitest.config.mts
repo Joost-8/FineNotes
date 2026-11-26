@@ -221,6 +221,7 @@ export default defineConfig({
         "src/recognition/ask-session.ts",
         "src/recognition/ask-note.ts",
         "src/recognition/ask-attachments.ts",
+        "src/recognition/ask-pdf-tabs.ts",
         "src/recognition/ask-tools.ts",
         "src/recognition/vault-context.ts",
         "src/recognition/ask-usage.ts",

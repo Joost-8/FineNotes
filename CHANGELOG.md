@@ -19,6 +19,11 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Ask AI knows the PDFs in your tabs.** The AI button now works on a PDF's
+  tab: Ask opens over the slide, and "explain this slide" means the one in
+  view (or the one you read last before going back to the notes). It can
+  read the other pages of any tab, and looks at slides that are mostly
+  pictures. Anything it writes goes into the notes.
 - **Export: a PDF name of your own (#318).** The Export dialog has a name
   field for the PDF. Type a name and the next export replaces the file the
   last one wrote under it (the button says Replace), so a link to it, or a copy synced to a

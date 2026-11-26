@@ -158,6 +158,11 @@ export class AskSession {
   }
 
   /** Attach `file` to the next question; resolves to why it cannot be, or null once it is. */
+  /** Which chat this is: a new chat or a loaded one gets another number. */
+  get chatId(): number {
+    return this.generation;
+  }
+
   attach(file: ChatFile): string | null {
     const refusal = attachRefusal(file, [...this.attachments, ...this.sentFiles]);
     if (refusal) return refusal;
