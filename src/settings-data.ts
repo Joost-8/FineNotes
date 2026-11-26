@@ -32,6 +32,7 @@ import {
   withDesk,
 } from "./canvas/backdrop";
 import { DEFAULT_LASSO_FILTER, type LassoFilter, type LassoMode } from "./canvas/lasso";
+import { NEATNESS_DEFAULT } from "./recognition/writer/neatness";
 import { DEFAULT_PEN_GESTURES, type PenGestures } from "./ink/pen-gestures";
 import type { BarrelAction } from "./input/pen-modifiers";
 import type { ExportFormat, ExportMargins } from "./export/export-choice";
@@ -106,6 +107,8 @@ export interface GoodObsidianSettings {
   lassoMode: LassoMode;
   /** What the lasso picks up (0.5). May hold anything; checked where it is read. */
   lassoFilter: LassoFilter;
+  /** Beautify's neatness slider, 0 (most like the writer's ink) to 1 (neatest); checked where it is read. */
+  beautifyNeatness: number;
   /**
    * The lasso takes a stroke when any part of it is inside the loop, as
    * Notability does (the default); off, at least half of it (Goodnotes,
@@ -613,6 +616,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   eraserFilter: "all",
   lassoMode: "freehand",
   lassoFilter: { ...DEFAULT_LASSO_FILTER },
+  beautifyNeatness: NEATNESS_DEFAULT,
   lassoTouches: true,
   highlighterAlpha: DEFAULT_HIGHLIGHTER_ALPHA,
   paperWidth: DEFAULT_PAPER_WIDTH,

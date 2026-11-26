@@ -261,6 +261,8 @@ export class OcrService {
   /** Pages with text of their own that were left because the model was not here: read once it is. */
   private readonly waitingForModel = new Map<string, PageRef & { native: NativeInfo }>();
   private pumping = false;
+  /** Callers of `pause` not yet resumed (Neaten): nothing is read meanwhile. */
+  private paused = 0;
   private parked = false;
   private lastActivity = Number.NEGATIVE_INFINITY;
   private running: PageRef | null = null;
@@ -560,6 +562,24 @@ export class OcrService {
     this.pump();
   }
 
+  /**
+   * Another model needs the memory (Neaten's writer): the page being read
+   * finishes, the model is let go, and nothing is read or loaded until the
+   * returned function is called.
+   */
+  async pause(): Promise<() => void> {
+    this.paused++;
+    while (this.running) await this.deps.sleep(50);
+    this.releaseModel();
+    let resumed = false;
+    return () => {
+      if (resumed) return;
+      resumed = true;
+      this.paused = Math.max(0, this.paused - 1);
+      if (this.paused === 0) this.pump();
+    };
+  }
+
   /** The model's files are being removed or replaced. */
   releaseModel(): void {
     this.client?.dispose();
@@ -604,7 +624,7 @@ export class OcrService {
     try {
       for (;;) {
         if (!this.enabled || this.owners.size === 0) return;
-        if (this.holders.size > 0) return;
+        if (this.holders.size > 0 || this.paused > 0) return;
         if (this.parked) {
           if (this.deps.store.state.kind !== "ready") return;
           this.parked = false;

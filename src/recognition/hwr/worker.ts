@@ -12,9 +12,12 @@ import { simdAvailable } from "./blstm";
 import { type HwrBundle, parseBundle } from "./bundle";
 import { type LineLogp, Lexicon, suggest } from "./lexicon";
 import { HWR_TAG, type HwrReply, type HwrRequest, type HwrResult } from "./protocol";
-import { readLine, readPage } from "./recognizer";
+import { type LanguageModel, readLine, readPage } from "./recognizer";
+import { parseLanguagePack } from "./language-pack";
+import type { PageLanguage } from "./page-language";
 import { writeBundle } from "./bundle-write";
 import { tune } from "./tune";
+import { readRowsSure, rowsMatch, tagLine } from "../writer/grape-rows";
 
 interface WorkerScope {
   onmessage: ((event: MessageEvent<{ [HWR_TAG]: true; id: number } & HwrRequest>) => void) | null;
@@ -27,8 +30,10 @@ const now = (): number => performance.now();
 let lexicon: Lexicon | null = null;
 /** The list's own words (lower case), for telling which words of a reading are in it. */
 let lexiconWords: Set<string> = new Set();
-/** The log-probabilities of the last pages read with `keep`, by reading id. */
-const kept = new Map<number, LineLogp[]>();
+/** The language packs given (language-pack.ts): each language's model and list. */
+const packs = new Map<PageLanguage, LanguageModel & { lexicon: Lexicon }>();
+/** The log-probabilities of the last pages read with `keep`, by reading id, and the page's language. */
+const kept = new Map<number, { lines: LineLogp[]; language: PageLanguage }>();
 /** Pages kept: the one just checked, and the one before (a few MB each). */
 const KEEP_PAGES = 2;
 let nextReading = 1;
@@ -86,11 +91,23 @@ function handle(request: HwrRequest, id: number): HwrResult {
     lexiconWords = new Set(request.words.map((w) => w.toLowerCase()));
     return { type: "lexicon", size: lexicon.size };
   }
+  if (request.type === "pack") {
+    const pack = parseLanguagePack(request.bytes);
+    const packLexicon = new Lexicon(pack.words, false);
+    packs.set(pack.meta.language, {
+      lm: pack.lm,
+      lexicon: packLexicon,
+      rereadList: { lexicon: packLexicon, words: new Set(pack.words) },
+    });
+    return { type: "pack", language: pack.meta.language, words: pack.words.length };
+  }
   if (!bundle) throw new Error("no model loaded");
   if (request.type === "page") {
     const context = {
       pageWords: request.words ?? null,
       rereadList: request.reread !== false && lexicon ? { lexicon, words: lexiconWords } : null,
+      reread: request.reread,
+      languageModels: packs,
     };
     if (!request.keep) {
       return {
@@ -106,28 +123,41 @@ function handle(request: HwrRequest, id: number): HwrResult {
       logp: (line, logp, frames) => (lines[line] = { logp, frames }),
     });
     const readingId = nextReading++;
-    kept.set(readingId, lines);
+    kept.set(readingId, { lines, language: reading.language ?? "en" });
     for (const old of kept.keys()) if (kept.size > KEEP_PAGES) kept.delete(old);
     return { type: "page", reading: { ...reading, id: readingId } };
   }
   if (request.type === "suggest") {
-    const lines = kept.get(request.reading);
-    const list = lexicon;
+    const page = kept.get(request.reading);
     const model = bundle;
     const alpha = model.meta.decoder.alpha;
-    if (!lines) return { type: "suggest", results: null };
+    if (!page) return { type: "suggest", results: null };
+    // A page in another language: its pack's list and model, or no list at all.
+    const pack = page.language === "en" ? null : packs.get(page.language);
+    const list = page.language === "en" ? lexicon : (pack?.lexicon ?? null);
+    const lm = pack ? pack.lm : model.lm;
     return {
       type: "suggest",
       results: request.items.map((item) => {
-        const line = lines[item.line];
+        const line = page.lines[item.line];
         if (!line || !list) return null;
         const t0 = now();
-        const found = suggest(line, model.meta.alphabet, model.lm, alpha, item, list);
+        const found = suggest(line, model.meta.alphabet, lm, alpha, item, list);
         return found && { ...found, ms: now() - t0 };
       }),
     };
   }
   const model = bundle;
+  if (request.type === "tag") {
+    if (!rowsMatch(model, request.rows)) return { type: "tag", lines: [], rowsMatch: false };
+    return {
+      type: "tag",
+      lines: request.lines.map((line) => tagLine(model, line.strokes, line.text)),
+      rowsMatch: true,
+    };
+  }
+  if (request.type === "rows") return { type: "rows", ...readRowsSure(model, request.rows) };
+  const rereadList = request.reread && lexicon ? { lexicon, words: lexiconWords } : null;
   return {
     type: "lines",
     readings: request.lines.map((line) =>
@@ -135,6 +165,8 @@ function handle(request: HwrRequest, id: number): HwrResult {
         useLm: request.useLm,
         chars: request.chars === true,
         math: request.math === true,
+        wordInk: request.wordInk === true,
+        rereadList,
         now,
       }),
     ),
