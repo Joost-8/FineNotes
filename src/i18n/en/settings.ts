@@ -494,4 +494,9 @@ export const settings = {
   "settings.assetsFolder.line": "Your Stickers and Templates folders go in it.",
   "settings.folders.ownLine": "A folder of your own. Clear it to use the default.",
   "settings.folders.recordings.line": "Recordings, with their transcripts beside them.",
+  "settings.handwriteBlocks.name": "Handwriting blocks",
+  "settings.handwriteBlocks.line": "Where Handwrite here keeps a new block.",
+  "settings.handwriteNotebook.name": "Notebook for all blocks",
+  "settings.handwriteNotebook.line": "Every block goes into this notebook.",
+  "settings.handwriteNotebook.choose": "Choose…",
 } as const;

@@ -20,7 +20,8 @@ import {
   reusableNoteNotebook,
 } from "../model/inline-sketch";
 import { cleanTitle, newNoteBody, stripInkSuffix } from "../model/new-notebook";
-import { InlineNotebookPickerModal } from "./handwrite-modals";
+import { HandwriteBlocksModal, InlineNotebookPickerModal } from "./handwrite-modals";
+import { type BlockTarget, blockTarget, followHandwriteNotebook } from "../model/handwrite-blocks";
 import { embedInsertion } from "./page-embed-model";
 import { editClosedNotebook, notebookIsOpen, readClosedNotebook } from "./notebook-transaction";
 import { EmbedInlineEditor, type EmbedInlineEditRequest } from "./embed-inline-editor";
@@ -122,25 +123,66 @@ async function resolveBackingNotebook(
   pick: boolean,
   initialPage: Page,
 ): Promise<{ file: TFile; created: boolean } | null> {
-  const { app } = plugin;
+  const { app, settings } = plugin;
   const linked = findLinkedNotebookInMarkdown(markdown);
   const linkedDest = linked ? app.metadataCache.getFirstLinkpathDest(linked, source.path) : null;
   const currentNotebook = linkedDest instanceof TFile ? linkedDest : null;
   const noteName = cleanTitle(stripInkSuffix(source.basename)) || source.basename;
-
-  if (pick) {
-    const choice = await InlineNotebookPickerModal.pick(app, {
-      defaultCreateName: noteName,
-      currentNotebook,
-      placeholder: t("notebooks.handwrite.pickPlaceholder"),
+  const where = (): BlockTarget =>
+    blockTarget(settings, {
+      choose: pick,
+      linked: currentNotebook?.path ?? null,
+      exists: (path) => app.vault.getFileByPath(path) !== null,
     });
-    if (!choice) return null;
-    if (choice.kind === "existing") return { file: choice.file, created: false };
-    return notebookFor(plugin, source.path, choice.name, initialPage);
+
+  let target = where();
+  if (target.kind === "first-use") {
+    // Asked once; Esc keeps "One notebook per note", and the block goes on.
+    settings.handwriteBlocks = await HandwriteBlocksModal.choose(app);
+    settings.handwriteBlocksChosen = true;
+    if (settings.handwriteBlocks === "one") {
+      const choice = await InlineNotebookPickerModal.pick(app, {
+        defaultCreateName: t("notebooks.handwrite.blockName"),
+        placeholder: t("notebooks.handwrite.pickFixedPlaceholder"),
+      });
+      if (choice?.kind === "existing") settings.handwriteNotebook = choice.file.path;
+      else if (choice?.kind === "create") {
+        const made = await notebookFor(plugin, source.path, choice.name, initialPage);
+        settings.handwriteNotebook = made.file.path;
+        await plugin.saveSettings();
+        return made;
+      }
+    }
+    await plugin.saveSettings();
+    target = where();
   }
-  // One notebook per note: the one its blocks use, else the note's own.
-  if (currentNotebook) return { file: currentNotebook, created: false };
-  return notebookFor(plugin, source.path, noteName, initialPage);
+  if (target.kind === "fixed-missing") {
+    // Said, never silent: blocks go to each note's own notebook from now on.
+    new Notice(t("notebooks.handwrite.fixedMissing"));
+    settings.handwriteBlocks = "note";
+    settings.handwriteNotebook = "";
+    await plugin.saveSettings();
+    target = where();
+  }
+  switch (target.kind) {
+    case "notebook": {
+      const file = app.vault.getFileByPath(target.path);
+      if (file) return { file, created: false };
+      return notebookFor(plugin, source.path, noteName, initialPage);
+    }
+    case "pick": {
+      const choice = await InlineNotebookPickerModal.pick(app, {
+        defaultCreateName: noteName,
+        currentNotebook,
+        placeholder: t("notebooks.handwrite.pickPlaceholder"),
+      });
+      if (!choice) return null;
+      if (choice.kind === "existing") return { file: choice.file, created: false };
+      return notebookFor(plugin, source.path, choice.name, initialPage);
+    }
+    default:
+      return notebookFor(plugin, source.path, noteName, initialPage);
+  }
 }
 
 export async function insertInlineHandwriting(
@@ -266,6 +308,13 @@ export function registerHandwriteHere(plugin: GoodObsidianPlugin): void {
       return true;
     },
   });
+
+  // The notebook of "One notebook for everything" is followed when it moves.
+  plugin.registerEvent(
+    plugin.app.vault.on("rename", (file, oldPath) => {
+      if (followHandwriteNotebook(plugin.settings, oldPath, file.path)) void plugin.saveSettings();
+    }),
+  );
 
   // Plugin off: an open block saves and closes, and lets go of its canvases.
   plugin.register(() => void closeAnyInlineEditor());

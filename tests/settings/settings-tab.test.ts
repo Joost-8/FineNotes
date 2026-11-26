@@ -517,6 +517,8 @@ describe("the rows", () => {
       ["pages", "Paper", "Page appearance", "dropdown:pageAppearance"],
       ["pages", "Paper", "Paper width", "render"],
       ["pages", "New notebooks", "New notebooks go in", "render"],
+      ["pages", "New notebooks", "Handwriting blocks", "render"],
+      ["pages", "New notebooks", "Notebook for all blocks", "render"],
       ["pages", "New notebooks", "Each notebook gets its own folder", "toggle:notebookOwnFolder"],
       [
         "pages",

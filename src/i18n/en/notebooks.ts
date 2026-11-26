@@ -1592,4 +1592,13 @@ export const notebooks = {
   "notebooks.handwrite.errOpenFallback": "Could not open the handwriting.",
   "notebooks.handwrite.errAddImage": "FineNotes: could not add the picture ({error}).",
   "notebooks.handwrite.errSaveFailed": "FineNotes: could not save the handwriting ({error}).",
+  "notebooks.handwrite.firstUseTitle": "Where should handwriting blocks go?",
+  "notebooks.handwrite.modeNote": "One notebook per note",
+  "notebooks.handwrite.modeAsk": "Ask each time",
+  "notebooks.handwrite.modeOne": "One notebook for everything",
+  "notebooks.handwrite.firstUseHint": "You can change this in FineNotes settings.",
+  "notebooks.handwrite.continue": "Continue",
+  "notebooks.handwrite.pickFixedPlaceholder": "Choose the notebook for all handwriting…",
+  "notebooks.handwrite.fixedMissing":
+    "FineNotes: the notebook for all handwriting is gone, so each note gets its own again.",
 } as const;

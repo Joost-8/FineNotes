@@ -25748,6 +25748,51 @@ button.clickable-icon.goodobsidian-ask-window-button {
     opacity: 0;
   }
 }
+/* The first Handwrite here: where blocks go, three rows and Continue. */
+.goodobsidian-hw-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-2);
+}
+.goodobsidian-hw-blocks-row {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  width: 100%;
+  height: auto;
+  min-height: 44px;
+  padding: var(--size-2-3) var(--size-4-3);
+  justify-content: flex-start;
+  text-align: start;
+  white-space: normal;
+  border-radius: var(--radius-m);
+  box-shadow: none;
+  background: transparent;
+  color: var(--text-normal);
+}
+.goodobsidian-hw-blocks-row.is-active {
+  background: var(--background-modifier-hover);
+}
+.goodobsidian-hw-blocks-icon {
+  display: flex;
+  color: var(--text-muted);
+}
+.goodobsidian-hw-blocks-name {
+  flex: 1 1 auto;
+}
+.goodobsidian-hw-blocks-check {
+  display: flex;
+  color: var(--interactive-accent);
+  visibility: hidden;
+}
+.goodobsidian-hw-blocks-row.is-active .goodobsidian-hw-blocks-check {
+  visibility: visible;
+}
+.goodobsidian-hw-blocks-hint {
+  margin-top: var(--size-4-3);
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+}
 .goodobsidian-hw-pick-row {
   display: flex;
   align-items: center;

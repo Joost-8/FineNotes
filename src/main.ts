@@ -206,6 +206,7 @@ import {
   recordUse,
 } from "./model/nudges";
 import { inlineEditorHost, registerHandwriteHere } from "./view/handwrite-here";
+import { cleanHandwriteSettings } from "./model/handwrite-blocks";
 import { InkView } from "./view/ink-view";
 import { starsOf } from "./model/favorites";
 import {
@@ -1328,6 +1329,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
     loadSnapSettings(this.settings, saved ?? {});
     this.settings.laserDefaultColor = laserDefaultColorOf(this.settings.laserDefaultColor);
+    Object.assign(this.settings, cleanHandwriteSettings(this.settings));
     // A record of its own: the key store mutates it, and the default's must
     // stay empty.
     const keys = saved?.apiKeys;
