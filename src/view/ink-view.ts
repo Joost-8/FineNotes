@@ -541,7 +541,7 @@ import {
   exportTarget,
   mimeTypeOf,
 } from "../export/export-choice";
-import { exportNamesOf, pdfName, rememberPdfName } from "../export/export-name";
+import { exportNamesOf, pdfName, rememberPdfName, typedPdfName } from "../export/export-name";
 import { inkFileSuffix, stripInkSuffix, uniqueFileName } from "../model/new-notebook";
 import { TEMPLATE_EXTENSION, buildTemplatePackage } from "../import/template-package";
 import { SaveTemplateModal, type TemplateDetails } from "./template-ui";
@@ -6514,12 +6514,16 @@ export class InkView extends TextFileView {
             bytes.byteOffset,
             bytes.byteOffset + bytes.byteLength,
           ) as ArrayBuffer;
+          // A typed name is the companion's name too: the companion moves to
+          // it, and an export to its file goes through its writer, Subject and all.
+          const whole = pages.length === total;
+          if (typedPdfName(typed ?? "")) await this.companion.moveTo(path);
           const existing = replaces ? this.app.vault.getFileByPath(path) : null;
-          if (existing) await this.app.vault.modifyBinary(existing, buffer);
+          if (this.companion.writes(path)) await this.companion.writeExport(path, bytes, whole);
+          else if (existing) await this.app.vault.modifyBinary(existing, buffer);
           else await this.app.vault.createBinary(path, buffer);
           // The whole notebook can become its companion PDF (Keep updated).
-          const keepUpdated =
-            pages.length === total ? this.companion.keepUpdated(path, bytes) : undefined;
+          const keepUpdated = whole ? this.companion.keepUpdated(path, bytes) : undefined;
           const files = [new File([buffer], name, { type })];
           return { paths: [path], where: path, files, ...(keepUpdated ? { keepUpdated } : {}) };
         }

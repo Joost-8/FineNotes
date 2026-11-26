@@ -282,6 +282,20 @@ export function followedCompanionPath(pdfPath: string, notePath: string): string
   return inCompanionFolder(folderOf(pdfPath), companionName(notePath));
 }
 
+/**
+ * The companion's file name: the notebook's PDF name typed in the Export
+ * dialog (FineNotes#318) when it has one, else the notebook's own name. One
+ * rule for both, so an export of that name and the companion are one file.
+ */
+export function companionFileName(notePath: string, typed?: string): string {
+  return typed ? `${typed}.pdf` : companionName(notePath);
+}
+
+/** Whether `pdfPath` is the file of the notebook's typed export name: the user's to replace. */
+export function isTypedPdf(pdfPath: string, typed: string | undefined): boolean {
+  return !!typed && fileNameOf(pdfPath).toLowerCase() === `${typed}.pdf`.toLowerCase();
+}
+
 /** Whether a PDF's name is the notebook's own (it follows the name), not one the user gave it. */
 export function followsName(pdfPath: string, notePath: string): boolean {
   return fileNameOf(pdfPath).toLowerCase() === companionName(notePath).toLowerCase();

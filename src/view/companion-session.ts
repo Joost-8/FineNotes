@@ -279,6 +279,35 @@ export class CompanionSession implements CompanionViewLink {
     };
   }
 
+  /** Whether an export to `path` is the companion's own file (then {@link writeExport} writes it). */
+  writes(path: string): boolean {
+    const entry = this.manager?.entry(this.id);
+    return this.enabled && entry?.pdfPath.toLowerCase() === path.toLowerCase();
+  }
+
+  /** A PDF name typed in the Export dialog (#318): the companion moves to it. */
+  async moveTo(path: string): Promise<void> {
+    const file = this.host.file;
+    const id = this.id;
+    if (!file || !id || !this.manager || !this.enabled) return;
+    await this.manager.moveTo(file, id, path);
+  }
+
+  /**
+   * The Export dialog's PDF, written to the companion's own file through the
+   * companion's writer. `whole`: every page, so it carries the content hash
+   * and the companion is up to date.
+   */
+  async writeExport(path: string, bytes: Uint8Array, whole: boolean): Promise<void> {
+    const id = this.id;
+    if (!id || !this.manager) return;
+    const made = whole ? this.capture() : null;
+    const stamp = made
+      ? { hash: await captureHash(this.host.app, made, this.hasher), optionsKey: made.optionsKey }
+      : null;
+    await this.manager.writeExport(id, path, bytes, stamp, stampCompanionPdfSubject);
+  }
+
   /**
    * The export dialog's Keep updated, for a PDF of the whole notebook it just
    * saved at `path`; `undefined` when this notebook already has a companion.

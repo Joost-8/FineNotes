@@ -8,6 +8,7 @@ import { blankPage, emptyDocument } from "../../src/model/document";
 import {
   CompanionError,
   companionErrorCode,
+  companionFileName,
   companionFrontmatter,
   companionIdFromBody,
   companionMark,
@@ -21,6 +22,7 @@ import {
   freeCompanionPath,
   isCompanionNotebookPath,
   isCompanionScratch,
+  isTypedPdf,
   parseCompanionJournal,
   sameStat,
   withCompanionKeys,
@@ -232,5 +234,19 @@ describe("the state mark", () => {
     expect(sameStat(written, { path: "a.pdf", mtime: 1, size: 2 })).toBe(true);
     expect(sameStat(written, { path: "a.pdf", mtime: 1, size: 3 })).toBe(false);
     expect(sameStat(undefined, written)).toBe(false);
+  });
+});
+
+describe("one name for an export and the companion (#318)", () => {
+  it("is the typed export name when there is one, else the notebook's", () => {
+    expect(companionFileName("School/Cell.notebook.md", "Hand-in 3")).toBe("Hand-in 3.pdf");
+    expect(companionFileName("School/Cell.notebook.md")).toBe("Cell.pdf");
+    expect(companionFileName("School/Cell.notebook.md", "")).toBe("Cell.pdf");
+  });
+
+  it("knows the typed name's file, in any case", () => {
+    expect(isTypedPdf("Exports/hand-in 3.PDF", "Hand-in 3")).toBe(true);
+    expect(isTypedPdf("Exports/Cell.pdf", "Hand-in 3")).toBe(false);
+    expect(isTypedPdf("Exports/Cell.pdf", undefined)).toBe(false);
   });
 });
