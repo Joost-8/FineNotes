@@ -10,6 +10,10 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Changed
 
+- **Beautify this word.** A long press on a word now rewrites only that word,
+  a word alone on its line included; the lasso's Beautify still does whole
+  lines.
+
 - **Help improve Grape: new terms (version 3).** Before a shared item is used
   to train Grape, its label may be checked against its ink by Claude, an AI by
   Anthropic: only a picture of the ink and its text are sent, and Anthropic

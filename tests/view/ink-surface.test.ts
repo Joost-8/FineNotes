@@ -3767,18 +3767,24 @@ describe("Tidy on a selection", () => {
     });
   });
 
-  it("offers the brush on a held word of a 16 degree line, and none on a lone word", () => {
+  it("offers Beautify this word on a held word of a 16 degree line, and on a word alone", () => {
     const strokes = climbingLine(Math.tan((16 * Math.PI) / 180));
     const steep = tidySurface(strokes);
     const action = run<SelectionAction | null>(
       steep.surface,
-      "beautifyLineAction",
+      "beautifyWordAction",
       steep.page,
       strokes[5],
     );
-    expect(action?.id).toBe("beautify-line");
+    expect(action?.id).toBe("beautify-word");
     const word = strokes.slice(0, 4);
     const lone = tidySurface(word);
-    expect(run(lone.surface, "beautifyLineAction", lone.page, word[1])).toBeNull();
+    const alone = run<SelectionAction | null>(
+      lone.surface,
+      "beautifyWordAction",
+      lone.page,
+      word[1],
+    );
+    expect(alone?.id).toBe("beautify-word");
   });
 });
