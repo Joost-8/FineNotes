@@ -210,6 +210,8 @@ import {
   parseNudges,
   recordUse,
 } from "./model/nudges";
+import { inlineEditorHost, registerHandwriteHere } from "./view/handwrite-here";
+import { cleanHandwriteSettings } from "./model/handwrite-blocks";
 import { InkView } from "./view/ink-view";
 import { CompanionPdfManager } from "./view/companion-pdf";
 import { starsOf } from "./model/favorites";
@@ -445,6 +447,10 @@ export default class GoodObsidianPlugin extends Plugin {
   override settings!: GoodObsidianSettings;
   /** `![[Notebook#page=3]]` previews in notes; repainted when the page appearance changes. */
   private pageEmbeds: PageEmbeds | null = null;
+
+  activateInlineEmbed(file: TFile, pageId: string): void {
+    this.pageEmbeds?.activateInline(file, pageId);
+  }
   /** Transcription engines by id. Manual always; the cloud one is added on load. */
   readonly providers = createProviderRegistry();
   /** Where API keys live: Obsidian's keychain when it has one (see key-store.ts). */
@@ -887,6 +893,7 @@ export default class GoodObsidianPlugin extends Plugin {
       }),
     );
     this.routeInkNotes();
+    registerHandwriteHere(this);
     // `![[Physics.notebook#page=3]]` in any note shows that page (page-embed.ts).
     this.pageEmbeds = this.addChild(
       new PageEmbeds({
@@ -896,6 +903,7 @@ export default class GoodObsidianPlugin extends Plugin {
         usePressure: () => this.settings.pressureWidth,
         highlighterAlpha: () => this.settings.highlighterAlpha,
         paper: () => shownPaperTheme(this.settings, document.body.hasClass("theme-dark")),
+        ...inlineEditorHost(this),
       }),
     );
     this.registerEvent(
@@ -1387,6 +1395,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
     loadSnapSettings(this.settings, saved ?? {});
     this.settings.laserDefaultColor = laserDefaultColorOf(this.settings.laserDefaultColor);
+    Object.assign(this.settings, cleanHandwriteSettings(this.settings));
     // A record of its own: the key store mutates it, and the default's must
     // stay empty.
     const keys = saved?.apiKeys;

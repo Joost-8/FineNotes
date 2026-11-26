@@ -3329,6 +3329,7 @@ body:not(.is-mobile) .goodobsidian-settings {
 .goodobsidian-settings[data-section="general"] > .setting-group.goodobsidian-sec-general,
 .goodobsidian-settings[data-section="writing"] > .setting-group.goodobsidian-sec-writing,
 .goodobsidian-settings[data-section="pages"] > .setting-group.goodobsidian-sec-pages,
+.goodobsidian-settings[data-section="notes"] > .setting-group.goodobsidian-sec-notes,
 .goodobsidian-settings[data-section="shortcuts"] > .setting-group.goodobsidian-sec-shortcuts,
 .goodobsidian-settings[data-section="reading"] > .setting-group.goodobsidian-sec-reading,
 .goodobsidian-settings[data-section="ai"] > .setting-group.goodobsidian-sec-ai,
@@ -16778,10 +16779,12 @@ button.clickable-icon.goodobsidian-zoombox-window-button.is-active {
   border-bottom: var(--gob-bar-border);
 }
 
+.goodobsidian-inline-toolbar-host.goodobsidian-has-pill-row > .goodobsidian-pill-row,
 .goodobsidian-view.goodobsidian-has-pill-row > .goodobsidian-pill-row {
   display: block;
 }
 
+.goodobsidian-inline-toolbar-host.goodobsidian-has-pill-row > .goodobsidian-toolbar,
 .goodobsidian-view.goodobsidian-has-pill-row > .goodobsidian-toolbar {
   border-bottom-color: transparent;
 }
@@ -25793,4 +25796,283 @@ button.goodobsidian-ns-companion-folder.clickable-icon {
   background: hsla(var(--interactive-accent-hsl), 0.15);
   color: var(--interactive-accent);
   opacity: 1;
+}
+
+/* --- Handwrite here: blocks in a note, and one written in place --- */
+.markdown-source-view.mod-cm6 .goodobsidian-page-embed-page.is-transparent {
+  border-radius: var(--radius-m);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary-alt);
+  box-shadow: none;
+}
+.markdown-reading-view .goodobsidian-page-embed-page.is-transparent,
+.print .goodobsidian-page-embed-page.is-transparent {
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+/* A block's one control, in Live Preview only: the pencil that opens it for writing. */
+.goodobsidian-page-embed-write {
+  display: none;
+}
+.markdown-source-view.mod-cm6
+  .goodobsidian-page-embed-page:not(.is-inline-editing)
+  > .goodobsidian-page-embed-write {
+  position: absolute;
+  top: var(--size-4-1);
+  right: var(--size-4-1);
+  z-index: 5;
+  display: flex;
+  color: var(--text-faint);
+}
+.markdown-source-view.mod-cm6 .goodobsidian-page-embed-page:hover > .goodobsidian-page-embed-write {
+  color: var(--text-muted);
+}
+/* Named for screen readers, not shown (Obsidian makes a tooltip of aria-label). */
+.goodobsidian-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.goodobsidian-page-embed-page.is-inline-editing {
+  overflow: visible;
+  cursor: default;
+  background: transparent;
+  box-shadow: none;
+  border: 1px solid var(--interactive-accent);
+  border-radius: var(--radius-m);
+}
+.goodobsidian-page-embed-page.is-inline-editing > .goodobsidian-page-embed-canvas {
+  display: none;
+}
+.finenotes-inline-active-embed {
+  overflow: visible;
+}
+.goodobsidian-inline-overlay {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+.goodobsidian-inline-toolbar-host {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  border-radius: var(--radius-m) var(--radius-m) 0 0;
+}
+.goodobsidian-inline-toolbar-host .goodobsidian-toolbar {
+  border-radius: var(--radius-m) var(--radius-m) 0 0;
+}
+.goodobsidian-inline-done-icon.clickable-icon {
+  color: var(--interactive-accent);
+}
+.goodobsidian-inline-stage {
+  position: relative;
+  width: 100%;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 0 0 var(--radius-m) var(--radius-m);
+}
+.goodobsidian-inline-stage .goodobsidian-surface {
+  width: 100%;
+  height: 100%;
+}
+/* With the pen only, a finger scrolls the note over the block; the pen still writes. */
+.goodobsidian-inline-stage.is-finger-scroll .goodobsidian-scroll {
+  touch-action: pan-y;
+}
+/* One page that never zooms: no page number, zoom or scroll marks. */
+.goodobsidian-inline-stage .goodobsidian-pageindicator,
+.goodobsidian-inline-stage .goodobsidian-zoomreadout,
+.goodobsidian-inline-stage .goodobsidian-scrollthumb {
+  display: none;
+}
+.goodobsidian-page-embed-page.is-transparent .goodobsidian-inline-stage .goodobsidian-surface {
+  background: transparent;
+}
+.goodobsidian-inline-resize-handle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -10px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ns-resize;
+  touch-action: none;
+  z-index: 12;
+}
+.goodobsidian-inline-resize-pill {
+  width: 44px;
+  height: 4px;
+  border-radius: var(--radius-l);
+  background: var(--interactive-accent);
+}
+.goodobsidian-page-flash {
+  position: absolute;
+  z-index: 25;
+  pointer-events: none;
+  border-radius: var(--radius-m);
+  border: 2px solid var(--interactive-accent);
+  animation: goodobsidian-page-flash-fade 1.45s ease-out forwards;
+}
+@keyframes goodobsidian-page-flash-fade {
+  0% {
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+/* Settings → Notebooks in notes: the ⓘ of "Embedding a notebook", the link forms. */
+.goodobsidian-embed-help {
+  margin-top: var(--size-4-2);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.6;
+  color: var(--text-muted);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+/* One card per way to embed: 2 a row where there is room, 1 on a narrow pane. */
+.goodobsidian-embed-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr));
+  gap: var(--size-4-3);
+  margin-bottom: var(--size-4-2);
+}
+.goodobsidian-embed-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-1);
+  min-width: 0;
+  user-select: text;
+}
+.goodobsidian-embed-picture {
+  width: 100%;
+  height: auto;
+}
+.goodobsidian-art-svg .ga-embed-title {
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-linecap: round;
+  stroke-width: 3;
+}
+.goodobsidian-art-svg .ga-embed-sketch {
+  fill: none;
+  stroke: var(--text-normal);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.4;
+}
+.goodobsidian-embed-help code {
+  font-family: var(--font-monospace);
+  overflow-wrap: anywhere;
+}
+.goodobsidian-embed-help.is-hidden {
+  display: none;
+}
+
+/* The first Handwrite here: where blocks go, three rows and Continue. */
+.goodobsidian-hw-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-2);
+}
+.goodobsidian-hw-blocks-row {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  width: 100%;
+  height: auto;
+  min-height: 44px;
+  padding: var(--size-2-3) var(--size-4-3);
+  justify-content: flex-start;
+  text-align: start;
+  white-space: normal;
+  border-radius: var(--radius-m);
+  box-shadow: none;
+  background: transparent;
+  color: var(--text-normal);
+}
+.goodobsidian-hw-blocks-row.is-active {
+  background: var(--background-modifier-hover);
+}
+.goodobsidian-hw-blocks-icon {
+  display: flex;
+  color: var(--text-muted);
+}
+.goodobsidian-hw-blocks-name {
+  flex: 1 1 auto;
+}
+.goodobsidian-hw-blocks-check {
+  display: flex;
+  color: var(--interactive-accent);
+  visibility: hidden;
+}
+.goodobsidian-hw-blocks-row.is-active .goodobsidian-hw-blocks-check {
+  visibility: visible;
+}
+.goodobsidian-hw-blocks-hint {
+  margin-top: var(--size-4-3);
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+}
+.goodobsidian-hw-pick-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.goodobsidian-hw-pick-icon {
+  display: inline-flex;
+  color: var(--text-muted);
+  flex: none;
+}
+.goodobsidian-hw-pick-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.goodobsidian-hw-pick-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+.goodobsidian-hw-pick-sub {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+.goodobsidian-hw-pick-badge {
+  padding: 1px 7px;
+  border-radius: var(--radius-l);
+  font-size: var(--font-ui-smaller);
+  background: var(--background-modifier-hover);
+  color: var(--interactive-accent);
+}
+.goodobsidian-paper-swatch.is-transparent-swatch .goodobsidian-paper-swatch-disc {
+  background-image:
+    linear-gradient(45deg, var(--background-modifier-border) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--background-modifier-border) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--background-modifier-border) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--background-modifier-border) 75%);
+  background-size: 8px 8px;
+  background-position:
+    0 0,
+    0 4px,
+    4px -4px,
+    -4px 0;
 }

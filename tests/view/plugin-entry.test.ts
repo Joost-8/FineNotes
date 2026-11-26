@@ -564,6 +564,8 @@ describe("registration", () => {
         "fit-board-drawing",
         "fit-reset-view",
         "go-to-board",
+        "handwrite-here",
+        "handwrite-here-choose",
         "import-pdf",
         "import-vault-pdf",
         "insert-new-notebook",

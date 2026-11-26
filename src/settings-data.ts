@@ -8,6 +8,8 @@
  * `tests/settings/settings-data.test.ts` pins all of it.
  */
 
+import type { SyntheticBackdrop } from "./model/document";
+import type { HandwriteBlocks } from "./model/handwrite-blocks";
 import type { FolderStyles } from "./model/library-style";
 import type { SimplePart } from "./model/simple-mode";
 import { LLM_PROVIDER_ID } from "./recognition/llm-request";
@@ -590,6 +592,14 @@ export interface GoodObsidianSettings {
    * where read (`parseCalculatorData`, model/calculator-store.ts).
    */
   calculator?: unknown;
+  /** Last backdrop chosen for an inline handwriting block (unset = transparent). */
+  inlineLastBackdrop?: SyntheticBackdrop;
+  /** Where Handwrite here keeps a new block (model/handwrite-blocks.ts). */
+  handwriteBlocks: HandwriteBlocks;
+  /** The first-use question about it has been answered. */
+  handwriteBlocksChosen: boolean;
+  /** The notebook of "One notebook for everything"; "" for none. */
+  handwriteNotebook: string;
 }
 
 // The records are copies, so a host that edits its settings in place cannot
@@ -694,6 +704,9 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   showNewNotebookInExplorer: true,
   folderNotebooks: true,
   pageAppearance: "light",
+  handwriteBlocks: "note",
+  handwriteBlocksChosen: false,
+  handwriteNotebook: "",
   invertPdfPages: true,
   ocrScannedPdfs: true,
   ocrModel: "fast",
@@ -753,6 +766,7 @@ export const SETTINGS_SECTIONS = [
   "general",
   "writing",
   "pages",
+  "notes",
   "shortcuts",
   "reading",
   "ai",
