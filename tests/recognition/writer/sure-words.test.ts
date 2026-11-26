@@ -2,45 +2,109 @@ import { describe, expect, it } from "vitest";
 
 import type { CharReading } from "../../../src/recognition/hwr/char-readings";
 import {
+  ASK_BELOW,
   SURE_BARS,
   applyAnswers,
   joinPunctuation,
+  pickQuestions,
   sureWords,
-  unsureWords,
+  unsureCandidates,
   wordCore,
+  wordSureness,
   wordsOf,
+  writeUnasked,
 } from "../../../src/recognition/writer/sure-words";
 
-describe("applyAnswers with words just confirmed (Beautify asked)", () => {
-  const words = ["from", "the", "Bezout", "lemma"];
-  const ink = [["s1", "s2"], ["s3"], ["s4", "s5", "s6"], ["s7", "s8"]];
+describe("applyAnswers when the card read a word otherwise than Beautify (the reviewer's case)", () => {
+  // Beautify's own reading of the line says "testng"; the card showed the page's reading.
+  const words = ["testng", "the", "new"];
+  const ink = [["s1", "s2"], ["s3"], ["s4"]];
 
-  it("makes a confirmed word known whatever the answer, and leaves the others", () => {
-    const got = applyAnswers(
-      words,
-      ink,
-      [{ kind: "mistake", text: "Bezout", ids: ["s4", "s5", "s6"] }],
-      [["s4", "s5", "s6"]],
-    );
-    expect([...got.known]).toEqual([2]);
-    expect(got.words).toEqual(words);
+  it("writes what the writer answered, for every kind, not Beautify's own reading", () => {
+    for (const kind of ["mistake", "ignore", "misread"] as const) {
+      const got = applyAnswers(words, ink, [{ kind, text: "testing", ids: ["s1", "s2"] }]);
+      expect(got.words[0]).toBe("testing");
+      expect([...got.known]).toEqual([0]);
+    }
   });
 
-  it("matches the confirmed ink by most of its strokes", () => {
-    expect([...applyAnswers(words, ink, [], [["s7", "s8", "s9"]]).known]).toEqual([3]);
-    expect([...applyAnswers(words, ink, [], [["s7"]]).known]).toEqual([]);
+  it("knows a word only when an answer matched it: of several words, or other ink, none", () => {
+    expect(
+      applyAnswers(words, ink, [{ kind: "misread", text: "can not", ids: ["s1", "s2"] }]).known
+        .size,
+    ).toBe(0);
+    expect(
+      applyAnswers(words, ink, [{ kind: "mistake", text: "testing", ids: ["s1", "s9", "s8"] }])
+        .known.size,
+    ).toBe(0);
   });
 });
 
-describe("unsureWords", () => {
-  it("lists the ink of words left as written that have a letter or digit", () => {
-    expect(
-      unsureWords({
-        words: ["test", "again,", "but", "-", "simple"],
-        ink: [["a"], ["b"], ["c"], ["d"], []],
-        rewrite: [true, false, true, false, false],
-      }),
-    ).toEqual([["b"]]);
+describe("pickQuestions (Joost's iPad, 25 November: ten cards for two lines)", () => {
+  const q = (line: number, word: number, sure: number) => ({ line, word, sure });
+
+  it("asks on each line about its least sure word only (the reviewer's case: two on line 0, none on line 1)", () => {
+    const got = pickQuestions([q(0, 1, 0.2), q(0, 3, 0.1), q(1, 0, 0.3), q(1, 2, 0.6)]);
+    expect(got).toEqual([q(0, 3, 0.1), q(1, 0, 0.3)]);
+  });
+
+  it("never asks about a word read surely enough, nor with no room on a line", () => {
+    expect(pickQuestions([q(0, 0, ASK_BELOW), q(0, 1, 0.97)])).toEqual([]);
+    expect(pickQuestions([q(0, 0, 0.1)], 0)).toEqual([]);
+  });
+});
+
+describe("unsureCandidates and writeUnasked: who is asked, who is written", () => {
+  const line = {
+    read: ["Meeting", "on", "Tusday", "-", "room"],
+    words: [["a"], ["b"], ["c", "d"], ["e"], []],
+    rewrite: [true, false, false, false, false],
+    sure: [1, 0.95, 0.2, 0.1, 0.3],
+  };
+
+  it("offers the words not sure enough to write that have a letter or digit and ink", () => {
+    expect(unsureCandidates([line])).toEqual([
+      { line: 0, word: 1, sure: 0.95 },
+      { line: 0, word: 2, sure: 0.2 },
+    ]);
+  });
+
+  it("keeps a word asked and not answered as ink, writes an answered one, and every word not asked", () => {
+    const asked = new Set(["c"]);
+    // Not answered: still not sure after the question.
+    expect(writeUnasked(line, asked)).toEqual({
+      rewrite: [true, true, false, true, false],
+      answered: [false, false, false, false, false],
+    });
+    // Answered: sure now, and marked answered.
+    const after = { ...line, rewrite: [true, false, true, false, false] };
+    expect(writeUnasked(after, asked)).toEqual({
+      rewrite: [true, true, true, true, false],
+      answered: [false, false, true, false, false],
+    });
+  });
+});
+
+describe("wordSureness", () => {
+  it("is a word's least sure letter, halved when the list could hold it and does not", () => {
+    const text = "Meeting on room xyzzy";
+    const chars = readings(text, { 1: { confidence: 0.8 } });
+    const list = (w: string) => ["meeting", "room"].includes(w.toLowerCase());
+    const got = wordSureness(text, text, chars, list);
+    expect(got[0]).toBeCloseTo(0.8, 6);
+    // "on" is too short for the list (it keeps three letters or more): not halved.
+    expect(got[1]).toBeCloseTo(0.99, 6);
+    expect(got[2]).toBeCloseTo(0.99, 6);
+    expect(got[3]).toBeCloseTo(0.495, 6);
+  });
+
+  it("is 0 where the text and the letters as written disagree", () => {
+    const got = wordSureness(
+      "Meeting on Tuesday",
+      "Meeting en Tuesday",
+      readings("Meeting en Tuesday"),
+    );
+    expect(got).toEqual([0.99, 0, 0.99]);
   });
 });
 
@@ -197,6 +261,23 @@ describe("sureWords", () => {
     // "cat," is looked up as "cat"; "42" has no letter and is not looked up.
     expect(out).toEqual([true, true, false, true]);
     expect(seen).toEqual(["the", "cat", "sat"]);
+  });
+
+  it("does not look up words the list cannot hold: under three letters, or with digits (Joost's iPad)", () => {
+    const t = "Meeting on Tuesday at 10:30 in room B-214.";
+    const list = new Set(["meeting", "tuesday", "room"]);
+    const inList = (w: string): boolean => list.has(w.toLowerCase());
+    const any = (): boolean => true;
+    expect(sureWords(t, t, readings(t), any, SURE_BARS, new Set(), inList)).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ]);
   });
 
   it("does not need the list when none is given", () => {

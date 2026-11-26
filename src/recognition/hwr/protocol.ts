@@ -129,7 +129,8 @@ export type HwrResult =
   | { type: "lines"; readings: LineReading[] }
   /** One per line asked; null where the text could not be laid over the ink. */
   | { type: "tag"; lines: (TaggedLine | null)[]; rowsMatch: boolean }
-  | { type: "rows"; text: string }
+  /** `sure`: per character of `text`, how sure the reader is of it. */
+  | { type: "rows"; text: string; sure: number[] }
   | { type: "lexicon"; size: number }
   /**
    * One per item (null: no near list word, or no list); `results` is null

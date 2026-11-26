@@ -276,6 +276,11 @@ export class HandwritingReader {
     return this.withClient((client) => client.readRows(rows));
   }
 
+  /** Neaten: the same, with how sure the model is of each character it reads. */
+  readRowsSure(rows: Rows): Promise<{ text: string; sure: number[] }> {
+    return this.withClient((client) => client.readRowsSure(rows));
+  }
+
   /** What a few strokes say: on one line (lines joined by spaces), or line by line. */
   async readInk(strokes: readonly Stroke[], keepLines = false): Promise<string> {
     const reading = await this.readPage(strokes);

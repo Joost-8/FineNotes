@@ -46,6 +46,9 @@ import { inkXHeight, leastXHeight, writtenXHeight } from "../recognition/writer/
 import { DEFAULT_TRIES } from "../recognition/writer/flow-meta";
 import { type WriterKind, WRITER_KINDS, kindFor } from "../recognition/writer/kinds";
 import { guidanceAt } from "../recognition/writer/neatness";
+import { roughness } from "../recognition/writer/evenness";
+import { strengthAt } from "../recognition/writer/neatness";
+import { straighten } from "../recognition/writer/straighten";
 import {
   type ManifestProblem,
   type WriterManifest,
@@ -56,9 +59,12 @@ import {
   type WordAnswer,
   applyAnswers,
   joinPunctuation,
+  pickQuestions,
   sureWords,
-  unsureWords,
+  unsureCandidates,
+  writeUnasked,
   wordCore,
+  wordSureness,
   wordsOf,
 } from "../recognition/writer/sure-words";
 import { WRITER_HOSTED, WRITER_MODEL } from "../recognition/writer/writer-model";
@@ -101,6 +107,8 @@ export interface NeatenRequest {
   selected: ReadonlySet<string>;
   /** The page's ruled lines, if any (Tidy sets lines on them). */
   rules: readonly RuleBlock[] | null;
+  /** The page's width (page px): nothing written or moved goes past it. */
+  pageWidth?: number;
   /** Asked between steps: true ends the work, nothing changes. */
   stop: () => boolean;
   /**
@@ -257,8 +265,10 @@ export class NeatenService {
     // Looked at again each time (the files may have come by sync since launch): ~0.2 s on the iPad.
     await store.check(true);
     if (store.state.kind !== "ready") {
-      // Offered as a card ("Not now" holds for the session); Beautify tidies meanwhile.
-      this.host.models.offer(WRITER_MODEL.id, "auto");
+      // Beautify was chosen, so its download card shows every time, even after a "Not now":
+      // with "auto" it stayed away, and a device with an older Dostoyev (2.0 where 2.1 is
+      // pinned) only tidied, silently (25 November, Joost's iPad). Beautify tidies meanwhile.
+      this.host.models.offer(WRITER_MODEL.id, "ask");
       return { kind: "tidy" };
     }
     const model = await this.loadModel();
@@ -297,26 +307,31 @@ export class NeatenService {
     const lexicon = this.host.lexicon();
     const listed = lexicon ? new Set(lexicon.words().map((w) => w.toLowerCase())) : null;
     const readings = await this.host.handwriting.readForNeaten(lines, lexicon);
-    const jobsWith = async (confirmed: string[][]) => {
+    const jobsWith = async () => {
       const answers = request.note ? await this.host.answers(request.note, request.pageId) : [];
       return lines.flatMap((strokes, li) => {
-        const job = this.jobOf(strokes, readings[li], writable, listed, answers, confirmed);
+        const job = this.jobOf(strokes, readings[li], writable, listed, answers);
         return job ? [job] : [];
       });
     };
-    let jobs = await jobsWith([]);
-    // Words Grape is not sure of: the writer is asked with the word card (Joost, 25 November);
-    // each one they answer is written too, the rest stay their own ink.
-    const unsure = jobs.flatMap((job) =>
-      unsureWords({ words: job.read, ink: job.words, rewrite: job.rewrite }),
-    );
-    if (unsure.length > 0 && request.ask) {
+    let jobs = await jobsWith();
+    // Of the words Grape is not sure of, the least sure few are asked about with the word card,
+    // about one per line (Joost, 25 November: ten cards for two lines was far too many). An
+    // answered word is written as answered; a skipped one stays the writer's ink.
+    const questions = pickQuestions(unsureCandidates(jobs));
+    const asked = new Set(questions.map((q) => jobs[q.line].words[q.word][0]));
+    if (questions.length > 0 && request.ask) {
       request.asking?.();
-      const confirmed = await request.ask(unsure);
+      const confirmed = await request.ask(questions.map((q) => jobs[q.line].words[q.word]));
       if (request.stop()) return { kind: "stopped" };
-      if (confirmed.length > 0) jobs = await jobsWith(confirmed);
+      // Answered words take the writer's text from the saved answers.
+      if (confirmed.length > 0) jobs = await jobsWith();
     }
-    jobs = jobs.filter((job) => job.rewrite.some(Boolean));
+    // Every other word is written as read; the read-back below keeps one that does not read
+    // back as itself in the writer's ink.
+    jobs = jobs
+      .map((job) => ({ ...job, ...writeUnasked(job, asked) }))
+      .filter((job) => job.rewrite.some(Boolean));
     if (jobs.length === 0) return { kind: "tidy" };
     if (request.stop()) return { kind: "stopped" };
 
@@ -330,10 +345,12 @@ export class NeatenService {
       }
       refs.push(kind.reference(job.text, shown, manifest, n + 1));
     }
-    // The neatness dial moves the model's own guidance (`neatness.ts`).
+    // The neatness dial is how far the written line's letters are straightened; the
+    // guidance is the model's own at every stop (`neatness.ts`, `straighten.ts`).
     const guidance = manifest.sampling
       ? guidanceAt(this.host.neatness(), manifest.sampling.guidance)
       : undefined;
+    const strength = strengthAt(this.host.neatness());
     const tries = manifest.sampling?.tries ?? DEFAULT_TRIES;
     if (request.stop()) return { kind: "stopped" };
 
@@ -349,27 +366,41 @@ export class NeatenService {
         n,
         (text, r, seed, id, low) => writer.write(text, r, seed, id, low, guidance),
         (written) => this.host.handwriting.readRows(written),
-        { seed: 0, tries, repair: true, stop: request.stop },
+        {
+          seed: 0,
+          tries,
+          repair: true,
+          stop: request.stop,
+          // Of two tries read equally well, the more even one.
+          uneven: (written) => roughness(written, written.char, job.text),
+        },
       );
       if (!done || request.stop()) return { kind: "stopped" };
-      // A word whose writing Grape does not read back as the word stays in the writer's own
-      // ink: the model wrote "simple" as "single" and "again" as "ag ain" on Joost's iPad.
-      const rewrite = readBackRewrite(job.text, done.read, job.rewrite);
+      // Words flat and level, letters standing and leaning evenly; no letter redrawn.
+      const written = straighten(done.written, done.written.char, job.text, strength);
+      // What is placed is what was read: the straightened line is read once more. A word
+      // whose writing Grape does not read back as the word, or reads back only with a letter
+      // it is unsure of, stays in the writer's own ink: the model wrote "simple" as
+      // "single", "again" as "ag ain" and "at" like "nt" on Joost's iPad.
+      const back = await this.host.handwriting.readRowsSure(written);
+      if (request.stop()) return { kind: "stopped" };
+      const rewrite = readBackRewrite(job.text, back.text, job.rewrite, back.sure);
       if (!rewrite.some(Boolean)) continue;
       placing.push({
         strokes: job.strokes,
         words: job.words,
         rewrite,
-        written: levelledStrokes(done.written, done.written.char, job.text),
+        answered: job.answered,
+        written: levelledStrokes(written, written.char, job.text),
         // Written at the writer's own x-height, or at the least the model writes legibly with their pen.
         xHeight: {
           ink: job.xHeight,
-          written: writtenXHeight(done.written, done.written.char, job.text),
+          written: writtenXHeight(written, written.char, job.text),
           least: leastXHeight(median(job.strokes.map((s) => s.size))),
         },
       });
     }
-    const placed = placeLines(placing, profile);
+    const placed = placeLines(placing, profile, request.pageWidth);
     const edit = neatenEdit(request.strokes, placed, profile, request.rules, request.selected);
     if (edit.added.length === 0) return { kind: "tidy" };
     // Each line's new strokes take the pen of the line's first stroke.
@@ -383,7 +414,6 @@ export class NeatenService {
     writable: (ch: string) => boolean,
     listed: ReadonlySet<string> | null,
     answers: readonly WordAnswer[],
-    confirmed: readonly string[][] = [],
   ): {
     text: string;
     strokes: Stroke[];
@@ -392,6 +422,10 @@ export class NeatenService {
     /** Each word's text. */
     read: string[];
     rewrite: boolean[];
+    /** How sure Grape is of each word (`wordSureness`); 1 for a word the writer answered. */
+    sure: number[];
+    /** Set once asked: the words the writer answered on a card. */
+    answered?: boolean[];
     xHeight: number | null;
   } | null {
     if (!reading || !reading.wordStrokes || !reading.chars) return null;
@@ -401,7 +435,7 @@ export class NeatenService {
     );
     if (read.length === 0 || ink.length !== read.length) return null;
     // The writer's own answers come first: a corrected word is what they said it is.
-    const answered = applyAnswers(read, ink, answers, confirmed);
+    const answered = applyAnswers(read, ink, answers);
     const text = answered.words.join(" ");
     // The model writes the whole line (its neighbours shape each word), so every letter must be one it has.
     if (!Array.from(text).every(writable)) return null;
@@ -417,13 +451,17 @@ export class NeatenService {
       answered.known,
       inList,
     );
-    const joined = joinPunctuation({ words: answered.words, ink, rewrite });
+    const sure = wordSureness(text, reading.greedy, reading.chars, inList).map((s, i) =>
+      answered.known.has(i) ? 1 : s,
+    );
+    const joined = joinPunctuation({ words: answered.words, ink, rewrite, sure });
     return {
       text: joined.words.join(" "),
       strokes,
       words: joined.ink,
       read: joined.words,
       rewrite: joined.rewrite,
+      sure: joined.sure ?? [],
       // The writer's x-height on this line, from the strokes Grape read as x-height letters.
       xHeight: inkXHeight(strokes, reading.chars),
     };

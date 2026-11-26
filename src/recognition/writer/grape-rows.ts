@@ -89,7 +89,33 @@ export function rowsMatch(bundle: HwrBundle, rows: { tol: number; norm: string }
 }
 
 export function readRows(bundle: HwrBundle, r: Rows): string {
-  if (r.n === 0) return "";
+  return readRowsSure(bundle, r).text;
+}
+
+/**
+ * What Grape reads in written rows, with how sure it is of each character:
+ * the best probability over the frames it was read in. A short word written
+ * badly can still be read as itself ("at" drawn like "nt", 25 November on
+ * Joost's iPad); its letters' sureness says so.
+ */
+export function readRowsSure(bundle: HwrBundle, r: Rows): { text: string; sure: number[] } {
+  if (r.n === 0) return { text: "", sure: [] };
   const logp = forward(bundle.net, padded(bundle, r), r.n);
-  return greedyDecode(logp, r.n, bundle.meta.alphabet).text;
+  const read = greedyDecode(logp, r.n, bundle.meta.alphabet);
+  return { text: read.text, sure: spanSureness(logp, read.spans, bundle.meta.alphabet.length + 1) };
+}
+
+/** Per character of a greedy read, the best probability of any class but blank over its frames. */
+export function spanSureness(
+  logp: ArrayLike<number>,
+  spans: readonly [number, number][],
+  classes: number,
+): number[] {
+  return spans.map(([t0, t1]) => {
+    let best = -Infinity;
+    for (let t = t0; t <= t1; t++) {
+      for (let k = 1; k < classes; k++) best = Math.max(best, logp[t * classes + k]);
+    }
+    return Math.exp(best);
+  });
 }

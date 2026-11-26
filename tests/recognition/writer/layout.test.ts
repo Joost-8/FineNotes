@@ -3,7 +3,12 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { measureHand, measureLines } from "../../../src/ink/tidy";
-import { bodyOf, placeLines, type LineToPlace } from "../../../src/recognition/writer/layout";
+import {
+  MODEL_X_HEIGHT,
+  bodyOf,
+  placeLines,
+  type LineToPlace,
+} from "../../../src/recognition/writer/layout";
 import { median } from "../../../src/recognition/writer/rows";
 import { writerLine, writtenLine, xs, ys } from "./fixture";
 
@@ -104,8 +109,8 @@ describe("placeLines", () => {
     );
     expect(placed.added.some((s) => s.word === 1)).toBe(false);
     // All strokes of the kept word move by the same amount, so that it sits one word gap after the word before.
-    const dx = placed.kept.get(keptIds[0]) as number;
-    for (const id of keptIds) expect(placed.kept.get(id)).toBe(dx);
+    const dx = placed.kept.get(keptIds[0])?.dx as number;
+    for (const id of keptIds) expect(placed.kept.get(id)?.dx).toBe(dx);
     const gap = profile.wordGap * profile.xHeight;
     const before = Math.max(...placed.added.filter((s) => s.word === 0).flatMap((s) => xs(s.pts)));
     expect(Math.min(...allX(keptIds)) + dx - before).toBeCloseTo(gap, 3);
@@ -119,8 +124,8 @@ describe("placeLines", () => {
     const a = first.words[1];
     const b = first.words[2];
     const own = Math.min(...allX(b)) - Math.max(...allX(a));
-    const da = placed.kept.get(a[0]) as number;
-    const db = placed.kept.get(b[0]) as number;
+    const da = placed.kept.get(a[0])?.dx as number;
+    const db = placed.kept.get(b[0])?.dx as number;
     expect(Math.min(...allX(b)) + db - (Math.max(...allX(a)) + da)).toBeCloseTo(own, 6);
   });
 
@@ -143,7 +148,7 @@ describe("placeLines", () => {
     const looseX = Math.min(...allX([loose]));
     const newEnd1 = Math.max(...placed.added.filter((s) => s.word === 1).flatMap((s) => xs(s.pts)));
     // Same distance from its word's end as before.
-    expect(looseX + (placed.kept.get(loose) as number) - newEnd1).toBeCloseTo(looseX - end1, 6);
+    expect(looseX + (placed.kept.get(loose)?.dx as number) - newEnd1).toBeCloseTo(looseX - end1, 6);
     expect(placed.removed).not.toContain(loose);
   });
 
@@ -152,7 +157,7 @@ describe("placeLines", () => {
     expect(placed.added).toEqual([]);
     expect(placed.removed).toEqual([]);
     expect(placed.kept.size).toBe(first.strokes.length);
-    expect([...placed.kept.values()].every((dx) => dx === 0)).toBe(true);
+    expect([...placed.kept.values()].every((m) => m.dx === 0 && m.dy === 0)).toBe(true);
   });
 
   it("returns a line unchanged when nothing was written for it", () => {
@@ -172,6 +177,57 @@ describe("placeLines", () => {
     );
     for (const s of placed.added)
       for (let i = 2; i < s.pts.length; i += 3) expect(s.pts[i]).toBeCloseTo(expected);
+  });
+
+  it("stands a kept word of a tilted line on the written words' level line (B-214. on Joost's iPad)", () => {
+    // The line climbs 1 px in 10; its last word stays the writer's ink.
+    const tilt = (pts: ArrayLike<number>) =>
+      Array.from(pts, (v, i) => (i % 3 === 1 ? v - 0.1 * (pts[i - 1] - 40) : v));
+    const strokes = first.strokes.map((s) => ({ ...s, pts: tilt(s.pts) }));
+    const [placed] = placeLines(
+      [{ strokes, words: first.words, rewrite: [true, true, true, false], written: writtenLine() }],
+      profile,
+    );
+    const feet = Math.max(...placed.added.flatMap((s) => ys(s.pts)));
+    const kept = strokes.filter((s) => first.words[3].includes(s.id));
+    const keptFeet = Math.max(
+      ...kept.flatMap((s) => ys(s.pts).map((y) => y + (placed.kept.get(s.id)?.dy ?? 0))),
+    );
+    // Before, its feet were 14 px or more above the written words'; now on the same line.
+    expect(feet - Math.max(...kept.flatMap((s) => ys(s.pts)))).toBeGreaterThan(10);
+    expect(Math.abs(keptFeet - feet)).toBeLessThan(0.3 * profile.xHeight);
+  });
+
+  it("never pushes ink past the page's edge: gaps narrow, then the rightmost written words go back to ink", () => {
+    const right = Math.max(...first.strokes.flatMap((s) => xs(s.pts)));
+    const pageWidth = right + profile.xHeight;
+    const sized = (k: number) => ({
+      ...lineToPlace([true, true, true, true]),
+      xHeight: { ink: k * profile.xHeight, written: MODEL_X_HEIGHT, least: 0 },
+    });
+    const rightOf = (placed: ReturnType<typeof placeLines>[number]) =>
+      Math.max(
+        ...first.strokes
+          .filter((s) => placed.kept.has(s.id))
+          .flatMap((s) => xs(s.pts).map((x) => x + (placed.kept.get(s.id)?.dx ?? 0))),
+        ...placed.added.flatMap((s) => xs(s.pts)),
+      );
+    // A quarter bigger than the writer's: past the edge, until the gaps narrow.
+    expect(rightOf(placeLines([sized(1.25)], profile)[0])).toBeGreaterThan(right);
+    const narrowed = placeLines([sized(1.25)], profile, pageWidth)[0];
+    expect(rightOf(narrowed)).toBeLessThanOrEqual(right + 1e-6);
+    expect(new Set(narrowed.added.map((s) => s.word))).toEqual(new Set([0, 1, 2, 3]));
+    // Half again bigger: the last word goes back to the writer's own ink.
+    const held = placeLines([sized(1.5)], profile, pageWidth)[0];
+    expect(rightOf(held)).toBeLessThanOrEqual(right + 1e-6);
+    expect(new Set(held.added.map((s) => s.word))).toEqual(new Set([0, 1, 2]));
+    for (const id of first.words[3]) expect(held.kept.has(id)).toBe(true);
+    // A word the writer answered on a card goes back last: the word before it goes instead.
+    const answered = { ...sized(1.5), answered: [false, false, false, true] };
+    const kept = placeLines([answered], profile, pageWidth)[0];
+    expect(rightOf(kept)).toBeLessThanOrEqual(right + 1e-6);
+    expect(kept.added.some((s) => s.word === 3)).toBe(true);
+    expect(kept.added.some((s) => s.word === 2)).toBe(false);
   });
 
   it("places each line on its own, in order", () => {
@@ -214,7 +270,7 @@ describe("placeLines on Joost's line alone on the page (his iPad, 24 November)",
   const ptsOf = (id: string): number[] => strokes.find((t) => t.id === id)?.pts ?? [];
   const span = (all: number[]): [number, number] => [Math.min(...all), Math.max(...all)];
   const keptSpan = (w: number) =>
-    span(real.words[w].flatMap((id) => xs(ptsOf(id)).map((x) => x + (line.kept.get(id) ?? 0))));
+    span(real.words[w].flatMap((id) => xs(ptsOf(id)).map((x) => x + (line.kept.get(id)?.dx ?? 0))));
   const newSpan = (w: number) =>
     span(line.added.filter((s) => s.word === w).flatMap((s) => xs(s.pts)));
 

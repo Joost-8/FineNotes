@@ -2696,6 +2696,7 @@ export class InkView extends TextFileView {
           }
         });
       },
+      this.plugin.beautifyNeatness(),
     );
   }
 
@@ -4408,10 +4409,10 @@ export class InkView extends TextFileView {
     at: { x: number; y: number },
     asked: boolean,
     after: { done?: () => void; closed?: () => void; inHand?: boolean } = {},
-  ): void {
+  ): boolean {
     const file = this.file;
     const surface = this.surface;
-    if (!file || !surface) return;
+    if (!file || !surface) return false;
     const ids = new Set(word.strokeIds);
     const strokes = page.strokes.filter((stroke) => ids.has(stroke.id));
     surface.setActiveWordFlag(page.id, word.strokeIds);
@@ -4453,6 +4454,7 @@ export class InkView extends TextFileView {
             () => this.isDamaged() || isReadOnly(this.doc) || isReadOnly(surface.document),
           ),
     );
+    return true;
   }
 
   /**
@@ -4464,19 +4466,29 @@ export class InkView extends TextFileView {
     return {
       open: async (strokeIds, after) => {
         const surface = this.surface;
+        const file = this.file;
         const index = surface?.document.pages.findIndex((p) => p.id === pageId) ?? -1;
         const page = surface?.document.pages[index];
-        if (!surface || !page) return false;
-        const found = await this.readWordAt(page, pageContentHash(page), strokeIds).catch(
-          () => null,
-        );
-        const at = found ? surface.wordInk(index, found.word.strokeIds) : null;
+        if (!surface || !file || !page) return false;
+        const hash = pageContentHash(page);
+        const found = await this.readWordAt(page, hash, strokeIds).catch(() => null);
+        // Closed, another file, or written on while it was read: the card would be about other ink.
+        const moved =
+          this.surface !== surface ||
+          this.file !== file ||
+          !surface.document.pages.includes(page) ||
+          pageContentHash(page) !== hash;
+        const at = found && !moved ? surface.wordInk(index, found.word.strokeIds) : null;
         if (!found || !at) return false;
-        this.openWordCard(page, found.word, found.suggestion, at, true, {
+        const opened = this.openWordCard(page, found.word, found.suggestion, at, true, {
           ...after,
           inHand: false,
         });
-        return true;
+        // A row or a chip tapped: an answer is coming, however long its save takes.
+        activeDocument
+          .querySelector(".goodobsidian-wordcheck")
+          ?.addEventListener("click", () => after.chosen(), { capture: true });
+        return opened;
       },
       dialogOpen: () => activeDocument.querySelector(".modal-container") !== null,
     };
@@ -4848,7 +4860,6 @@ export class InkView extends TextFileView {
           this.surface?.refreshLassoChrome();
           this.plugin.saveLasso(mode, filter);
         },
-        beautifyNeatness: () => this.plugin.beautifyNeatness(),
         onToggleThumbnails: () => this.toggleSidebar(),
         onHome: () => void this.plugin.openLibrary(),
         onFullScreen: this.plugin.fullScreenOffered
