@@ -377,6 +377,8 @@ import { FrameRun } from "../canvas/frame-run";
 import { type RunBox, type RunMark, boundsSince, unionBox } from "../ink/run-window";
 import { TILT_MAX_FACTOR, tiltFactor, tiltShapes } from "../ink/tilt";
 import { lineOfHighlight } from "../ink/straighten";
+import { ASKED_LEVEL_SLOPE, lineOfStroke, measureHand, tidyInk } from "../ink/tidy";
+import { SetStrokePoints } from "../model/tidy-commands";
 import { LINE_LEVEL_RISE, levelLine, levelTurn } from "../ink/level-line";
 import { explainShape, recognizeAtZoom, styleOfShape } from "../ink/shape-recognizer";
 import { SNAP_RADIUS_PX, ShapeSnapper, penForPoint } from "../ink/shape-snap";
@@ -15864,6 +15866,16 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     // The word check's card, for any word, underlined or not.
     const correct = this.correctWordAction(index, sel.strokes);
     if (menu.handwriting && correct) actions.push(correct);
+    // Tidy: the selected writing set level, on its margin and evenly spaced.
+    if (menu.handwriting && sel.strokes.some((stroke) => stroke.tool === "pen" && !stroke.shape)) {
+      actions.push({
+        id: "tidy",
+        icon: "brush-cleaning",
+        label: t("surface.selectionBar.tidy"),
+        group: "edit",
+        run: () => this.tidySelection(),
+      });
+    }
     if (menu.handwriting && heading && index >= 0 && this.callbacks.onAddSection) {
       const add = this.callbacks.onAddSection;
       actions.push({
@@ -16446,6 +16458,9 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
       ? this.correctWordAction(index, [press.ink], { group: "press", ...inBar })
       : null;
     if (correct) actions.unshift(correct);
+    // Beside Correct: tidy the line that word is on.
+    const tidyLine = page && press.ink ? this.tidyLineAction(page, press.ink) : null;
+    if (tidyLine) actions.splice(correct ? 1 : 0, 0, tidyLine);
     actions.push(
       {
         id: "text-here",
@@ -19389,6 +19404,95 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     this.syncTextBoxes();
     this.syncSelectionOverlay();
     this.changed([sel.pageId]);
+  }
+
+  /**
+   * Tidy the selected handwriting (`ink/tidy.ts`): nothing is read and nothing
+   * is redrawn, the strokes are only moved, so no word can change. The hand
+   * it tidies toward is measured from the whole page, and on ruled paper the
+   * lines are set on the rules. One undo step; the selection stays.
+   */
+  private tidySelection(): void {
+    const sel = this.liveSelection();
+    if (!sel || this.groupDrag || this.callbacks.isLocked?.()) return;
+    if (!this.tidyStrokes(sel.pageId, sel.strokes)) return;
+    // The loop was drawn round the ink as it stood; the frame now follows the tidied ink.
+    this.selectionOutline = null;
+    this.syncSelectionOverlay();
+  }
+
+  /**
+   * Tidy the lines holding these strokes toward the hand measured from the
+   * whole page (`tidySelection`, and the press menu's Tidy for a held word's
+   * line). The rest of the page's ink is given too, held where it is, so a
+   * tidied line keeps clear of its neighbours and an underline or highlight
+   * on it follows. Mirrors of joined pages are left to their owners. One undo
+   * step. Tidy the user asked for: steeper lines are levelled than an
+   * automatic tidy would (design rulings, 2026-11-24). When nothing moves far
+   * enough to be seen, nothing changes and a notice says so. False then.
+   */
+  private tidyStrokes(pageId: string, strokes: readonly Stroke[]): boolean {
+    const page = this.doc.pages.find((candidate) => candidate.id === pageId);
+    const box = this.boxForPage(pageId);
+    if (!page || !box) return false;
+    const own = page.strokes.filter((stroke) => !isMirror(stroke));
+    const result = tidyInk(own, {
+      profile: measureHand(own),
+      rules: writingLines(page.backdrop, page.geometry),
+      only: new Set(strokes.filter((stroke) => !isMirror(stroke)).map((stroke) => stroke.id)),
+      maxLevelSlope: ASKED_LEVEL_SLOPE,
+    });
+    const changes = own.flatMap((stroke) => {
+      const pts = result.pts.get(stroke.id);
+      return pts ? [{ stroke, pts }] : [];
+    });
+    if (changes.length === 0 || !result.seen) {
+      new Notice(t("surface.notice.nothingToTidy"));
+      return false;
+    }
+    const moved = changes.map((change) => change.stroke);
+    const before = moved.map(strokeBounds).reduce<Bounds | null>(unionBounds, null);
+    this.history.push(this.doc, new SetStrokePoints(pageId, changes));
+    // The index files a stroke where it stood; a tidied line moved.
+    this.strokeIndex.refreshPages(this.doc.pages, [pageId]);
+    const after = moved.map(strokeBounds).reduce<Bounds | null>(unionBounds, null);
+    const region = unionBounds(before, after);
+    if (region) this.renderer?.invalidateRegion(box.index, region);
+    this.renderDry();
+    this.changed([pageId]);
+    return true;
+  }
+
+  /**
+   * The press menu's Tidy, beside Correct: the line the held word is on.
+   * Null when the ink is on no line of running text (`lineOfStroke`).
+   */
+  private tidyLineAction(page: Page, ink: Stroke): SelectionAction | null {
+    if (ink.shape || ink.tool !== "pen" || isMirror(ink) || this.callbacks.isLocked?.())
+      return null;
+    const ids = lineOfStroke(
+      page.strokes.filter((stroke) => !isMirror(stroke)),
+      ink.id,
+      ASKED_LEVEL_SLOPE,
+    );
+    if (!ids) return null;
+    return {
+      id: "tidy-line",
+      icon: "brush-cleaning",
+      label: t("surface.selectionBar.tidyLine"),
+      group: "press",
+      // A symbol in the bar, beside Correct, so the bar keeps to its three words.
+      bar: true,
+      menu: "none",
+      run: () => {
+        const line = new Set(ids);
+        this.clearSelection();
+        this.tidyStrokes(
+          page.id,
+          page.strokes.filter((stroke) => line.has(stroke.id)),
+        );
+      },
+    };
   }
 
   /** Abandon a selection drag without committing it (a reload, an undo, a tool change). */
