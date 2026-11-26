@@ -23,11 +23,17 @@ const ENOUGH = 12;
 const SHARE = 0.1;
 /** No budget is cut below this, ms: a tile still has to be made sometime. */
 export const MIN_BUDGET_MS = 2;
-/** Gaps from this to {@link NEAR_MOST} times the short end are single frames. */
+/**
+ * Gaps from this to {@link NEAR_MOST} times the short end are single frames.
+ * The top is just under twice the short end: a frame that started nearly
+ * half a frame late leaves a gap of little over half a frame, and a top of
+ * one and a half times that left the ordinary frames out, so the display
+ * read twice as fast as it is (240 Hz at 120, found in review).
+ */
 const NEAR_LEAST = 0.75;
-const NEAR_MOST = 1.5;
+const NEAR_MOST = 1.9;
 /** A gap under this share of a frame is a stray reading, not a frame. */
-const STRAY = 0.6;
+const STRAY = 0.45;
 
 /**
  * The display's frame length from the gaps between frames, ms.

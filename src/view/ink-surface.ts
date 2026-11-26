@@ -6829,8 +6829,8 @@ export class InkSurface {
     const held = this.pinch !== null || this.pressing;
     const { remaining, speed } = this.scroller;
     const pages = this.pagesToTurnTo();
-    // The pages it would make tiles of: the one read, those beside it, those turned to.
-    const near = [this.pageIndex - 1, this.pageIndex, this.pageIndex + 1, ...pages];
+    // Every page the prefetch would make tiles of, as the renderer itself picks them.
+    const near = this.renderer.prefetchPages(this.doc.pages.length, pages);
     const pdf = this.fixedPages || near.some((i) => this.doc.pages[i]?.backdrop.kind === "pdf");
     const still = { complete, held, pdf, zooming: zooming || this.zoomTransient };
     if (!coasting({ remaining, speed, ...still })) return;

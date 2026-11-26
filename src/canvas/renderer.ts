@@ -2045,19 +2045,12 @@ export class Renderer {
     const k = this.deviceScale;
     const s = k / level;
     const deadline = now() + budgetMs;
-    const { top, bottom } = this.visibleBand();
     // A ring round the view and its overscan, which a paint draws too.
     const dpr = this.screen.dpr;
     const ringX = PREFETCH_MARGIN + this.overscan.x * dpr;
     const ringY = PREFETCH_MARGIN + this.overscan.y * dpr;
     const screen = this.screenDevice;
-    const marginLayout = Math.max(ringX, ringY) / k;
-    const around = this.boxesInBand(
-      doc.pages.length,
-      top - marginLayout,
-      bottom + marginLayout,
-      marginLayout,
-    );
+    const around = this.boxesAround(doc.pages.length);
 
     // First the ink's paths, a stroke at a time. The first tile or preview
     // of a page traced every stroke on it, in one frame whatever the budget.
@@ -2135,6 +2128,27 @@ export class Renderer {
     }
     // The room made for those pages may hold the ring's tiles too: once more.
     return ringFull && madeRoom;
+  }
+
+  /** The pages {@link prefetch} looks at round the view: those in it and within its ring. */
+  private boxesAround(pageCount: number): PageBox[] {
+    const { top, bottom } = this.visibleBand();
+    const dpr = this.screen.dpr;
+    const ring = PREFETCH_MARGIN + Math.max(this.overscan.x, this.overscan.y) * dpr;
+    const margin = ring / this.deviceScale;
+    return this.boxesInBand(pageCount, top - margin, bottom + margin, margin);
+  }
+
+  /**
+   * The pages a {@link prefetch} with these `whole` pages would make tiles
+   * or previews of, by index: for a caller that must know first what is on
+   * them (a PDF's pages are not made while the view moves).
+   */
+  prefetchPages(pageCount: number, whole: readonly number[] = []): number[] {
+    if (this.level === 0 || this.layout.boxes.length === 0) return [];
+    const pages = new Set(this.boxesAround(pageCount).map((box) => box.index));
+    for (const index of whole) if (this.layout.boxes[index]) pages.add(index);
+    return [...pages];
   }
 
   /** The bytes of the tiles the pages `whole` lack at `level`. */

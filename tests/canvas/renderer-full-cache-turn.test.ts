@@ -114,3 +114,22 @@ describe("pages made whole ahead of a turn, with the tile cache full", () => {
     expect(renderer.stats().tileBytes).toBe(before.tileBytes);
   });
 });
+
+describe("the pages a prefetch would touch", () => {
+  it("names the pages in and beside the view, and those to turn to, once each", () => {
+    const { renderer } = readTo(10);
+    // Page 10 in view; 9 and 11 are 20 px away, inside the ring.
+    expect(renderer.prefetchPages(PAGES).sort((a, b) => a - b)).toEqual([9, 10, 11]);
+    const withTurns = renderer.prefetchPages(PAGES, [11, 9, 12, 99]);
+    expect(withTurns.sort((a, b) => a - b)).toEqual([9, 10, 11, 12]);
+  });
+
+  it("names several pages when the view shows several", () => {
+    const { renderer } = readTo(10);
+    // Zoomed out to a third: about three pages across the pane, and the ring beyond.
+    renderer.setViewport({ scrollY: 0, scale: 1 / 3, width: 800 }, (-10 * STEP) / 3);
+    const pages = renderer.prefetchPages(PAGES);
+    for (const index of [10, 11, 12]) expect(pages).toContain(index);
+    expect(pages.length).toBeGreaterThan(3);
+  });
+});
