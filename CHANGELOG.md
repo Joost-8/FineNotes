@@ -42,13 +42,14 @@ extracted from the matching section of this file by `release.yml`.
   underlined. Accented letters are still read without their accents.
 - **Beautify handwriting.** Lasso some lines and choose **Beautify** in the ⋯
   menu, or hold a handwritten word and tap the brush beside **Correct** to
-  beautify its line. The words Grape is sure of are written again, neater, in
-  your own hand, where yours were, by Dostoyev (handwriting writer model, a
+  beautify its line. Your words are written again, neater, in your own hand,
+  where yours were, by Dostoyev (handwriting writer model, a
   one-time download, run on your device); every line is set level (on the
   paper's rules when it has them), wandering baselines are straightened,
   margins aligned and shaky strokes smoothed. Writing in your hand needs your
   practice sheets (at least 10 copied lines); without them Beautify only
   tidies. Formulas and tables are left alone. One undo puts it all back. How
+  neat it writes is a slider at the end of the AI menu, from most like your
   neat it writes is a slider in the Lasso tool's popover, from most like your
   ink to neatest.
 - **Write it in your handwriting.** Once Beautify can write in your hand:
@@ -65,6 +66,23 @@ extracted from the matching section of this file by `release.yml`.
   after your "=" in your hand, once Grape reads it back exactly; fractions
   and powers stay in the drawn figures. All of it follows Beautify's
   neatness slider.
+  ink to neatest. When Grape is unsure of a word, Beautify first opens the
+  word card on it (as **Correct** does): answer it and that word is written
+  too, and Grape learns from it; close the card and the word stays as you
+  wrote it.
+- **Beautify writes straight.** The words it writes in your hand are set flat
+  on the line, and their letters stand on it and lean the same way, with your
+  letter shapes kept: nothing is redrawn. The neatness slider now sets how far
+  the letters are straightened, so its "neatest" end is still your hand. Of
+  two tries that read equally well, Beautify keeps the more even one. It
+  writes with Dostoyev 2.1, the same model started from less noise, which
+  reads better and writes more evenly.
+  ink to neatest. For the word Grape is least sure of on each line, at most,
+  Beautify first opens the word card (as **Correct** does): answer it and that
+  word is written too, and Grape learns from it; close the card and the word
+  stays as you wrote it. A word whose new writing does not read back as itself
+  stays as you wrote it too, level with the line, and nothing is pushed past
+  the page's edge.
 - **Insert space on boards, and on paper without lines**
   ([discussion #276](https://github.com/Joost-8/FineNotes/discussions/276)).
   With the lasso on **By line**, press anywhere on a board and drag down: everything

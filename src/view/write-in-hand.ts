@@ -19,6 +19,7 @@
 
 import { Notice } from "obsidian";
 import { t } from "../i18n/translate";
+import { isOutOfMemory } from "../recognition/writer/protocol";
 import type { Page, Stroke, TextBoxElement } from "../model/document";
 import { AddStrokeToPage, CompositeCommand, RemoveTextBoxFromPage } from "../model/page-commands";
 import { neatenCommandFor } from "../model/neaten-commands";
@@ -31,7 +32,8 @@ import type { WrittenStroke } from "../recognition/writer/rows";
 import { median } from "../recognition/writer/rows";
 import {
   KNOWN_PRESSURE,
-  MIN_LINE_PITCH,
+  boxXHeight,
+  spacingOf,
   chunkLine,
   flowWords,
   numericAnswer,
@@ -53,7 +55,7 @@ export interface KnownWriter {
   writes(ch: string): boolean;
   writeKnown(
     texts: readonly string[],
-    options?: { stop?: () => boolean; seed?: number; exact?: boolean },
+    options?: { stop?: () => boolean; seed?: number; exact?: boolean; attempts?: number },
   ): Promise<{ lines: WrittenStroke[][]; sample: InkStroke[] } | null>;
 }
 
@@ -70,6 +72,9 @@ function pressureOf(strokes: readonly Stroke[]): number {
   });
   return p.length ? median(p) : KNOWN_PRESSURE;
 }
+
+/** How many times a word or line Grape misreads is written again before the best reading is kept. */
+const REWRITE_ATTEMPTS = 3;
 
 /** A seed of its own for each writing, so the same text never comes out the same twice. */
 const freshSeed = (): number => Math.floor(Math.random() * 1_000_000);
@@ -144,16 +149,22 @@ export class WriteInHand {
     // The word's underline shows the work, as the card did.
     surface.setActiveWordFlag(pageId, wordIds);
     let written: Awaited<ReturnType<KnownWriter["writeKnown"]>> = null;
+    let failure: string | null = null;
     try {
-      written = await this.writer.writeKnown([text], { stop, seed: freshSeed() });
+      written = await this.writer.writeKnown([text], {
+        stop,
+        seed: freshSeed(),
+        attempts: REWRITE_ATTEMPTS,
+      });
     } catch (error) {
       console.warn("FineNotes: writing in your hand stopped", error);
+      failure = isOutOfMemory(error) ? t("ai.neaten.noMemory") : null;
     } finally {
       surface.setActiveWordFlag(null);
     }
     if (stop()) return;
     if (!written) {
-      new Notice(t("ai.hand.failed"), 6000);
+      new Notice(failure ?? t("ai.hand.failed"), 8000);
       return;
     }
     // The whole text as one unit (a correction may be two words), as the model spaced it.
@@ -196,9 +207,10 @@ export class WriteInHand {
    * handwriting: from the box's left edge to the page's right margin (or the
    * rules' block), its paragraphs each from a new line, lines on the rules
    * of ruled paper and below the box's top, never on anything already on the
-   * page (ink, pictures, other boxes, tables). The size and word gap are the
-   * writer's on this page, or on their practice sheets when the page has no
-   * writing; the ink is the box's colour. A box written in Markdown is
+   * page (ink, pictures, other boxes, tables). Its x-height is the box's own
+   * lowercase (`boxXHeight`), larger only to stay legible; the word gap and
+   * line spacing are the writer's, in x-heights, from this page when it
+   * holds enough writing or else their practice sheets (`spacingOf`); the ink is the box's colour. A box written in Markdown is
    * written as it reads, without its marks. When it does not all fit on the
    * page, or the note became read-only (`locked`), nothing changes.
    */
@@ -226,14 +238,20 @@ export class WriteInHand {
       return locked() || !still || still.text !== box.text;
     };
     let written: Awaited<ReturnType<KnownWriter["writeKnown"]>> = null;
+    let failure: string | null = null;
     try {
-      written = await this.writer.writeKnown(pieces, { stop, seed: freshSeed() });
+      written = await this.writer.writeKnown(pieces, {
+        stop,
+        seed: freshSeed(),
+        attempts: REWRITE_ATTEMPTS,
+      });
     } catch (error) {
       console.warn("FineNotes: writing in your hand stopped", error);
+      failure = isOutOfMemory(error) ? t("ai.neaten.noMemory") : null;
     }
     if (stop()) return;
     if (!written) {
-      new Notice(t("ai.hand.failed"), 6000);
+      new Notice(failure ?? t("ai.hand.failed"), 8000);
       return;
     }
     const writing = writingOf(page);
@@ -243,8 +261,10 @@ export class WriteInHand {
       t0: s.t0 ?? null,
       pts: s.pts,
     }));
-    const hand = measureHand(writing) ?? measureHand(sample);
-    const plan = layoutFor(page, box, hand);
+    // The page's measure only from enough writing: two strokes measured no gaps (Joost, 2026-11-25).
+    const hand = spacingOf(measureHand(writing), measureHand(sample));
+    const pen = penFor(writing, box);
+    const plan = layoutFor(page, box, hand, pen.size);
     const words = wordsOfLines(written.lines, plan.xHeight, pressureOf(writing));
     // The pieces back into their paragraphs.
     let at = 0;
@@ -262,7 +282,6 @@ export class WriteInHand {
       new Notice(t("ai.hand.noRoom"), 8000);
       return;
     }
-    const pen = penFor(writing, box);
     const label = t("surface.command.writeInHand");
     surface.applyCommand(
       new CompositeCommand(label, [
@@ -387,7 +406,8 @@ function penFor(writing: readonly Stroke[], box: TextBoxElement): Omit<Stroke, "
 function layoutFor(
   page: Page,
   box: TextBoxElement,
-  hand: { xHeight: number; wordGap: number; linePitch: number } | null,
+  hand: { wordGap: number; linePitch: number },
+  penSize: number,
 ): {
   xHeight: number;
   frame: {
@@ -407,11 +427,10 @@ function layoutFor(
     blocks.find(
       (b) => box.x >= b.x0 - margin && box.x <= b.x1 && b.baselines.some((y) => y > box.y),
     ) ?? null;
-  // The writer's size; on ruled paper never taller than the rules allow.
-  let xHeight = hand?.xHeight ?? (block ? block.pitch / MIN_LINE_PITCH : 10);
-  if (block) xHeight = Math.min(xHeight, block.pitch / MIN_LINE_PITCH);
-  const pitch = block?.pitch ?? Math.max(hand?.linePitch ?? 0, MIN_LINE_PITCH) * xHeight;
-  const gap = (hand?.wordGap ?? 1) * xHeight;
+  // The box's own size (Joost, 2026-11-25: "keep it to the size of the text"), larger only to stay legible.
+  const xHeight = boxXHeight(box.fontSize, penSize, block ? block.pitch : null);
+  const pitch = block?.pitch ?? hand.linePitch * xHeight;
+  const gap = hand.wordGap * xHeight;
   const left = Math.max(box.x, block ? block.x0 : 0);
   const right = block ? block.x1 - xHeight * 0.5 : width - margin;
   return {

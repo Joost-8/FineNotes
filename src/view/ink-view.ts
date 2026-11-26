@@ -459,6 +459,7 @@ import {
 } from "../recognition/hwr/selection-words";
 import type { SpellingFix } from "./spelling-row";
 import type { WordPopover } from "./word-popover";
+import { type WordCardHost, askUnsureWords } from "./beautify-ask";
 import { wordInHand } from "./write-in-hand";
 import { type TranslateAi, TranslateWindow, type TranslateTarget } from "./translate-window";
 import { nextDeviceStep } from "../recognition/device-reading";
@@ -2699,6 +2700,7 @@ export class InkView extends TextFileView {
           }
         });
       },
+      this.plugin.beautifyNeatness(),
     );
   }
 
@@ -4415,7 +4417,9 @@ export class InkView extends TextFileView {
    * The word card (word-check.ts) for `word` on `page`, at `at` (client
    * px); `asked` when opened by hand ("Correct"). Its underline turns red
    * while it is open, and an answer is saved and acted on the same way
-   * however the card was opened.
+   * however the card was opened. `after` hooks its answer and its closing;
+   * `after.inHand` false (Beautify asking, which writes the word itself):
+   * the card must not also write the word in the hand.
    */
   private openWordCard(
     page: Page,
@@ -4423,15 +4427,17 @@ export class InkView extends TextFileView {
     suggestion: LexiconSuggestion | null,
     at: { x: number; y: number },
     asked: boolean,
-  ): void {
+    after: { done?: () => void; closed?: () => void; inHand?: boolean } = {},
+  ): boolean {
     const file = this.file;
     const surface = this.surface;
-    if (!file || !surface) return;
+    if (!file || !surface) return false;
     const ids = new Set(word.strokeIds);
     const strokes = page.strokes.filter((stroke) => ids.has(stroke.id));
     surface.setActiveWordFlag(page.id, word.strokeIds);
     const closed = () => {
       if (this.surface === surface) surface.setActiveWordFlag(null);
+      after.closed?.();
     };
     this.wordPopover?.close();
     this.wordPopover = this.plugin.wordCheck.ask(
@@ -4445,6 +4451,7 @@ export class InkView extends TextFileView {
       },
       at,
       () => {
+        after.done?.();
         // Answered: search finds the answer, and the page is underlined again without it.
         this.searchAnswered(page.id);
         const checked = this.checkedWords.get(page.id);
@@ -4458,19 +4465,60 @@ export class InkView extends TextFileView {
       },
       closed,
       asked,
-      wordInHand(
-        this.plugin.writeInHand,
-        surface,
-        page.id,
-        word.strokeIds,
-        at,
-        (card) => {
-          this.wordPopover = card;
-        },
-        // Read-only or damaged: the card answers, but nothing is rewritten (no notice from here).
-        () => this.isDamaged() || isReadOnly(this.doc) || isReadOnly(surface.document),
-      ),
+      // Beautify's own cards (inHand: false) write the word themselves: no second offer here.
+      after.inHand === false
+        ? undefined
+        : wordInHand(
+            this.plugin.writeInHand,
+            surface,
+            page.id,
+            word.strokeIds,
+            at,
+            (card) => {
+              this.wordPopover = card;
+            },
+            // Read-only or damaged: the card answers, but nothing is rewritten (no notice from here).
+            () => this.isDamaged() || isReadOnly(this.doc) || isReadOnly(surface.document),
+          ),
     );
+    return true;
+  }
+
+  /**
+   * The word card for ink on page `pageId`, as Correct opens it, for
+   * Beautify's question about its unsure words (`beautify-ask.ts`): null
+   * when the ink is in no word the page's reading has.
+   */
+  private wordCards(pageId: string): WordCardHost {
+    return {
+      open: async (strokeIds, after) => {
+        const surface = this.surface;
+        const file = this.file;
+        const index = surface?.document.pages.findIndex((p) => p.id === pageId) ?? -1;
+        const page = surface?.document.pages[index];
+        if (!surface || !file || !page) return false;
+        const hash = pageContentHash(page);
+        const found = await this.readWordAt(page, hash, strokeIds).catch(() => null);
+        // Closed, another file, or written on while it was read: the card would be about other ink.
+        const moved =
+          this.surface !== surface ||
+          this.file !== file ||
+          !surface.document.pages.includes(page) ||
+          pageContentHash(page) !== hash;
+        const at = found && !moved ? surface.wordInk(index, found.word.strokeIds) : null;
+        if (!found || !at) return false;
+        const opened = this.openWordCard(page, found.word, found.suggestion, at, true, {
+          ...after,
+          inHand: false,
+        });
+        // A row or a chip tapped: an answer is coming, however long its save takes.
+        activeDocument
+          .querySelector(".goodobsidian-wordcheck")
+          ?.addEventListener("click", () => after.chosen(), { capture: true });
+        return opened;
+      },
+      dialogOpen: () => activeDocument.querySelector(".modal-container") !== null,
+    };
   }
 
   /**
@@ -4840,7 +4888,6 @@ export class InkView extends TextFileView {
           this.surface?.refreshLassoChrome();
           this.plugin.saveLasso(mode, filter);
         },
-        beautifyNeatness: () => this.plugin.beautifyNeatness(),
         onToggleThumbnails: () => this.toggleSidebar(),
         onHome: () => void this.plugin.openLibrary(),
         onFullScreen: this.plugin.fullScreenOffered
@@ -5204,7 +5251,12 @@ export class InkView extends TextFileView {
         },
         onFlaggedWord: (index, strokeIds, at) => this.askAboutWord(index, strokeIds, at),
         onCorrectWord: (index, strokeIds) => void this.correctWord(index, strokeIds),
-        onNeaten: (request) => this.plugin.neaten.run({ ...request, note: this.file?.path }),
+        onNeaten: (request) =>
+          this.plugin.neaten.run({
+            ...request,
+            note: this.file?.path,
+            ask: (words) => askUnsureWords(this.wordCards(request.pageId), words, request.stop),
+          }),
         canNeaten: () => this.plugin.neaten.available(),
         onWriteInHand: (pageId, boxId) =>
           this.surface

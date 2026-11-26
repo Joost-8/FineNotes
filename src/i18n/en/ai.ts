@@ -36,6 +36,11 @@ export const ai = {
   "ai.menu.generateImage": "Generate image…",
   "ai.menu.transcribeRecording": "Transcribe recording…",
   "ai.menu.settings": "AI settings…",
+  "ai.menu.beautify": "Beautify",
+  "ai.menu.beautifyAbout": "Rewrites in your hand: your ink to neatest",
+  "ai.menu.neatness": "How neat Beautify writes",
+  "ai.menu.likeMyInk": "Most like my ink",
+  "ai.menu.neatest": "Neatest",
   "ai.menu.setUp": "Set up AI…",
   "ai.menu.needsEndpoint": "Needs your endpoint's URL in settings",
   "ai.menu.speechOnDevice": "Recordings are transcribed on this device",
@@ -604,6 +609,8 @@ export const ai = {
   "ai.neaten.modelBroken":
     "Dostoyev, the handwriting writer, is damaged on this device. Download it again in Settings, Models on this device.",
   "ai.neaten.failed": "Beautify could not rewrite these words, so it only tidied them.",
+  "ai.neaten.noMemory":
+    "There is not enough memory on this device right now to write in your hand. Try again in a moment.",
   "ai.ocr.tierFast": "Fast",
   "ai.ocr.tierAccurate": "Accurate",
   "ai.ocr.tierMostAccurate": "Most accurate",

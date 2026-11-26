@@ -136,7 +136,8 @@ export type HwrResult =
   | { type: "lines"; readings: LineReading[] }
   /** One per line asked; null where the text could not be laid over the ink. */
   | { type: "tag"; lines: (TaggedLine | null)[]; rowsMatch: boolean }
-  | { type: "rows"; text: string }
+  /** `sure`: per character of `text`, how sure the reader is of it. */
+  | { type: "rows"; text: string; sure: number[] }
   | { type: "lexicon"; size: number }
   | { type: "pack"; language: PageLanguage; words: number }
   /**

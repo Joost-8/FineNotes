@@ -17,7 +17,7 @@ import { parseLanguagePack } from "./language-pack";
 import type { PageLanguage } from "./page-language";
 import { writeBundle } from "./bundle-write";
 import { tune } from "./tune";
-import { readRows, rowsMatch, tagLine } from "../writer/grape-rows";
+import { readRowsSure, rowsMatch, tagLine } from "../writer/grape-rows";
 
 interface WorkerScope {
   onmessage: ((event: MessageEvent<{ [HWR_TAG]: true; id: number } & HwrRequest>) => void) | null;
@@ -156,7 +156,7 @@ function handle(request: HwrRequest, id: number): HwrResult {
       rowsMatch: true,
     };
   }
-  if (request.type === "rows") return { type: "rows", text: readRows(model, request.rows) };
+  if (request.type === "rows") return { type: "rows", ...readRowsSure(model, request.rows) };
   const rereadList = request.reread && lexicon ? { lexicon, words: lexiconWords } : null;
   return {
     type: "lines",

@@ -2746,7 +2746,7 @@ export default class GoodObsidianPlugin extends Plugin {
     for (const view of this.openNotebooks()) view.setFingerDrawing(on);
   }
 
-  /** Beautify's neatness slider, while Beautify can write in the hand; null when it only tidies. */
+  /** Beautify's neatness slider at the AI menu's end, while Beautify can write in the hand; null when it only tidies. */
   beautifyNeatness(): NeatnessControl | null {
     if (!this.neaten.writesInHand()) return null;
     return {

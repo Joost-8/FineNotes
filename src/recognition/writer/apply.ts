@@ -40,8 +40,9 @@ export function neatenEdit<S extends PageInk>(
   selected: ReadonlySet<string> = new Set(),
 ): NeatenEdit {
   const removed = new Set(placed.flatMap((line) => line.removed));
-  const shift = new Map<string, number>();
-  for (const line of placed) for (const [id, dx] of line.kept) if (dx !== 0) shift.set(id, dx);
+  const shift = new Map<string, { dx: number; dy: number }>();
+  for (const line of placed)
+    for (const [id, move] of line.kept) if (move.dx !== 0 || move.dy !== 0) shift.set(id, move);
   const added = placed.flatMap((line, i) => line.added.map((s) => ({ pts: s.pts, line: i })));
   if (added.length === 0) return { removed: [], added: [], moved: new Map() };
   // The page as it will be, with ids for the new strokes no stroke has.
@@ -50,9 +51,11 @@ export function neatenEdit<S extends PageInk>(
     ...strokes
       .filter((s) => !removed.has(s.id))
       .map((s) => {
-        const dx = shift.get(s.id);
-        if (dx === undefined) return s;
-        const pts = Array.from(s.pts, (v, i) => (i % 3 === 0 ? v + dx : v));
+        const move = shift.get(s.id);
+        if (move === undefined) return s;
+        const pts = Array.from(s.pts, (v, i) =>
+          i % 3 === 0 ? v + move.dx : i % 3 === 1 ? v + move.dy : v,
+        );
         return { id: s.id, tool: s.tool, shape: s.shape, t0: s.t0, pts };
       }),
     ...added.map((s, i) => ({ id: tag(i), tool: "pen", shape: null, t0: null, pts: s.pts })),

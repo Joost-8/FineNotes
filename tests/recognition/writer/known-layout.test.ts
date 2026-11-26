@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { measureLines } from "../../../src/ink/tidy";
+import { measureHand, measureLines } from "../../../src/ink/tidy";
 import {
+  MEASURED_LINES,
+  MIN_LINE_PITCH,
+  MIN_WORD_GAP,
+  MIN_X_HEIGHT_PENS,
+  TEXT_X_HEIGHT,
+  boxXHeight,
   chunkLine,
   flowWords,
   numericAnswer,
@@ -10,12 +16,14 @@ import {
   placeWord,
   plainMarkdown,
   readsAs,
+  spacingOf,
   wordsOfLines,
   writableText,
   type WrittenWord,
 } from "../../../src/recognition/writer/known-layout";
 import type { WrittenStroke } from "../../../src/recognition/writer/rows";
 import { H, writerLine, writtenLine, xs, ys } from "./fixture";
+import twoStrokes from "./fixtures/joost-page-two-strokes.json";
 
 const ascii = (ch: string): boolean => ch >= " " && ch <= "~";
 
@@ -228,6 +236,52 @@ describe("placeAnswer", () => {
 
   it("writes nothing for nothing", () => {
     expect(placeAnswer([], { x: 0, baseline: 0, height: 10 })).toEqual([]);
+  });
+});
+
+describe("boxXHeight", () => {
+  it("is the box's own lowercase, whatever else is on the page", () => {
+    expect(boxXHeight(40, 3, null)).toBeCloseTo(40 * TEXT_X_HEIGHT, 6);
+    expect(boxXHeight(22, 3, null)).toBeCloseTo(22 * TEXT_X_HEIGHT, 6);
+  });
+
+  it("grows only to stay legible for the pen", () => {
+    expect(boxXHeight(10, 3, null)).toBe(3 * MIN_X_HEIGHT_PENS);
+    expect(boxXHeight(10, 6, null)).toBe(6 * MIN_X_HEIGHT_PENS);
+  });
+
+  it("keeps to the rules on ruled paper, never below legible", () => {
+    expect(boxXHeight(60, 3, 30)).toBeCloseTo(30 / 3, 6);
+    expect(boxXHeight(18, 3, 30)).toBeCloseTo(18 * TEXT_X_HEIGHT, 6);
+    expect(boxXHeight(60, 6, 30)).toBe(6 * MIN_X_HEIGHT_PENS);
+  });
+});
+
+describe("spacingOf", () => {
+  // Joost's practice sheets, as measureHand gives them.
+  const practice = { wordGap: 2.25, linePitch: 2.3, lines: 4 };
+
+  it("does not take a page of two strokes for his spacing (words ran together on the iPad)", () => {
+    const page = measureHand(
+      twoStrokes.strokes.map((s, i) => ({ id: `s${i}`, tool: "pen", t0: null, pts: s.pts })),
+    );
+    expect(page).not.toBeNull();
+    expect(spacingOf(page, practice).wordGap).toBeCloseTo(2.25, 6);
+  });
+
+  it("takes the page's own spacing when it holds enough writing", () => {
+    expect(spacingOf({ wordGap: 1.8, linePitch: 3.4, lines: MEASURED_LINES }, practice)).toEqual({
+      wordGap: 1.8,
+      linePitch: 3.4,
+    });
+  });
+
+  it("never sets words or lines closer than the floors", () => {
+    expect(spacingOf({ wordGap: 0.4, linePitch: 1, lines: 9 }, practice)).toEqual({
+      wordGap: MIN_WORD_GAP,
+      linePitch: MIN_LINE_PITCH,
+    });
+    expect(spacingOf(null, null)).toEqual({ wordGap: MIN_WORD_GAP, linePitch: MIN_LINE_PITCH });
   });
 });
 

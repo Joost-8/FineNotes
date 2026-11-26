@@ -4,6 +4,7 @@ import {
   errorRate,
   neatenLine,
   opcodes,
+  READ_BACK_SURE,
   readBackRewrite,
   rejected,
   wordSpan,
@@ -204,6 +205,30 @@ describe("readBackRewrite", () => {
     ).toEqual([false, false, true, false]);
   });
 
+  it("keeps the writer's ink for a word read back as itself with a letter the reader was unsure of (at written like nt)", () => {
+    const read = "Meeting on Tuesday at 10:30";
+    const sure = Array.from(read, () => 0.99);
+    sure[read.indexOf("at ")] = READ_BACK_SURE - 0.01;
+    expect(readBackRewrite(read, read, [true, true, true, true, true], sure)).toEqual([
+      true,
+      true,
+      true,
+      false,
+      true,
+    ]);
+    // At the bar, and on a space or punctuation, nothing changes.
+    sure[read.indexOf("at ")] = READ_BACK_SURE;
+    sure[read.indexOf(":")] = 0.1;
+    sure[read.indexOf(" at")] = 0.1;
+    expect(readBackRewrite(read, read, [true, true, true, true, true], sure)).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+    ]);
+  });
+
   it("leaves every word rewritten when the line reads back right, and never rewrites a kept one", () => {
     expect(readBackRewrite("the new one", "the new one", [true, false, true])).toEqual([
       true,
@@ -288,6 +313,29 @@ describe("neatenLine", () => {
       repair: false,
     });
     expect(out?.seed).toBe(0);
+  });
+
+  it("keeps the more even of tries the reader reads equally well, the earlier on a tie there too", async () => {
+    const f = fakes(() => "hello world");
+    const out = await neatenLine(TEXT, ref, 0, f.write, f.read, {
+      seed: 0,
+      tries: 3,
+      repair: false,
+      uneven: (w) => [0.9, 0.6, 0.6][w.n - 1],
+    });
+    expect(out?.seed).toBe(1);
+  });
+
+  it("never lets evenness outvote the reader", async () => {
+    const f = fakes((_c, n) => ["hello world", "hello wrld"][n]);
+    const out = await neatenLine(TEXT, ref, 0, f.write, f.read, {
+      seed: 0,
+      tries: 2,
+      repair: false,
+      uneven: (w) => [0.9, 0.1][w.n - 1],
+    });
+    expect(out?.seed).toBe(0);
+    expect(out?.read).toBe("hello world");
   });
 
   it("skips the repair rounds when repair is off, even for a rejected word", async () => {

@@ -35,6 +35,56 @@ export const MIN_LINE_PITCH = 3;
 export const MEASURED_WORDS = 3;
 /** How far a line's own measure may move it from the calibrated size. */
 export const LINE_SPREAD = 1.3;
+/** A typed letter's x-height as a share of its font size (Obsidian's interface faces: about half). */
+export const TEXT_X_HEIGHT = 0.53;
+/** The smallest x-height written ink stays legible at, in pen widths: smaller, a letter's strokes run together. */
+export const MIN_X_HEIGHT_PENS = 3;
+/**
+ * A page's own measure of the hand is used from this many lines of writing
+ * on; fewer, its gaps are as often between letters as between words.
+ */
+export const MEASURED_LINES = 3;
+/**
+ * The least gap between written words, in x-heights. Joost's practice
+ * sheets measure 2.25; a page with two strokes on it measured 1 (no gaps,
+ * the default), and the words ran together (2026-11-25).
+ */
+export const MIN_WORD_GAP = 1.2;
+/** A writer's spacing as `measureHand` gives it: both in x-heights, `linePitch` 0 when unknown. */
+export interface HandSpacing {
+  wordGap: number;
+  linePitch: number;
+  lines: number;
+}
+
+/**
+ * The word gap and line pitch text is written with, in x-heights: the
+ * page's own when it holds enough writing to measure (`MEASURED_LINES`),
+ * else the practice sheets', and never closer than `MIN_WORD_GAP` and
+ * `MIN_LINE_PITCH`.
+ */
+export function spacingOf(
+  page: HandSpacing | null,
+  practice: HandSpacing | null,
+): { wordGap: number; linePitch: number } {
+  const hand = page && page.lines >= MEASURED_LINES ? page : (practice ?? page);
+  return {
+    wordGap: Math.max(hand?.wordGap ?? 0, MIN_WORD_GAP),
+    linePitch: Math.max(hand?.linePitch ?? 0, MIN_LINE_PITCH),
+  };
+}
+
+/**
+ * The x-height a text box's handwriting is written at: the box's own
+ * lowercase (its font size, not other ink on the page), larger only where
+ * that would be too small for the pen to write legibly. On ruled paper no
+ * taller than the rules allow, but never below legible. Page px.
+ */
+export function boxXHeight(fontSize: number, penSize: number, rulePitch: number | null): number {
+  const legible = penSize * MIN_X_HEIGHT_PENS;
+  const typed = Math.max(fontSize * TEXT_X_HEIGHT, legible);
+  return rulePitch ? Math.max(legible, Math.min(typed, rulePitch / MIN_LINE_PITCH)) : typed;
+}
 
 /** One written word: strokes of x, y, pressure in page px, x from its left edge, y from its baseline (down). */
 export interface WrittenWord {

@@ -136,16 +136,48 @@ export function rejected(text: string, read: string): Map<number, Set<number>> {
 }
 
 /**
+ * The least sure a letter of a written word may be read back with for the
+ * word to be kept. "at" written like "nt" was still read as "at" (Joost's
+ * iPad, 25 November): only how unsure the reader was of its "a" told.
+ */
+export const READ_BACK_SURE = 0.7;
+
+/**
  * Which words stay rewritten once the written line has been read back: a
- * word the reader does not find as written keeps the writer's own ink.
+ * word the reader does not find as written keeps the writer's own ink, and
+ * so does one found with a letter read less surely than `READ_BACK_SURE`
+ * (`sure`: per character of `read`, when the reader gives it).
  */
 export function readBackRewrite(
   text: string,
   read: string,
   rewrite: readonly boolean[],
+  sure?: readonly number[],
 ): boolean[] {
   const misread = rejected(text, read);
+  if (sure) for (const w of shakyWords(text, read, sure)) misread.set(w, new Set());
   return rewrite.map((r, w) => r && !misread.has(w));
+}
+
+/** The words of `text` read back as written, but with a letter read less surely than `READ_BACK_SURE`. */
+function shakyWords(text: string, read: string, sure: readonly number[]): number[] {
+  const { words } = wordStarts(text);
+  const got = [...read.matchAll(/\S+/g)].map((m) => ({ word: m[0], at: m.index ?? 0 }));
+  const out: number[] = [];
+  for (const [tag, a0, a1, b0] of opcodes(
+    words,
+    got.map((g) => g.word),
+  )) {
+    if (tag !== "equal") continue;
+    for (let wi = a0; wi < a1; wi++) {
+      const { word, at } = got[b0 + (wi - a0)];
+      const shaky = Array.from(word).some(
+        (ch, i) => ALNUM.test(ch) && (sure[at + i] ?? 1) < READ_BACK_SURE,
+      );
+      if (shaky) out.push(wi);
+    }
+  }
+  return out;
 }
 
 /** The positions in `text` of word `wi`'s letters. */
@@ -195,7 +227,10 @@ export interface NeatenedLine {
 /**
  * The best of `tries` tries of one line, then its repair. `seed` is the
  * line's own seed (tries are `seed * tries + s`, as in the research);
- * `stop` is asked between tries and ends the work early (null).
+ * `stop` is asked between tries and ends the work early (null). Between
+ * tries the reader reads equally well, `uneven` (lower is better; Beautify
+ * gives `evenness.roughness`) keeps the more even one; without it, or on a
+ * tie there too, the earlier try stays.
  */
 export async function neatenLine<R = Reference>(
   text: string,
@@ -203,16 +238,27 @@ export async function neatenLine<R = Reference>(
   id: number,
   write: WriteTry<R>,
   read: ReadBack,
-  options: { seed: number; tries: number; repair: boolean; stop?: () => boolean },
+  options: {
+    seed: number;
+    tries: number;
+    repair: boolean;
+    stop?: () => boolean;
+    uneven?: (written: Written) => number;
+  },
 ): Promise<NeatenedLine | null> {
   let best: NeatenedLine | null = null;
+  let bestUneven = 0;
   for (let s = 0; s < options.tries; s++) {
     if (options.stop?.()) return null;
     const seed = options.seed * options.tries + s;
     const written = await write(text, ref, seed, id, new Set());
     const got = await read(written);
-    if (!best || errorRate(text, got) < errorRate(text, best.read)) {
+    const wrong = errorRate(text, got);
+    const uneven = options.uneven?.(written) ?? 0;
+    const was = best ? errorRate(text, best.read) : Infinity;
+    if (wrong < was || (wrong === was && uneven < bestUneven)) {
       best = { written, read: got, seed, repairs: { tried: 0, kept: 0 } };
+      bestUneven = uneven;
     }
   }
   if (!best || !options.repair) return best;

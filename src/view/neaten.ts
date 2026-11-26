@@ -31,14 +31,24 @@ import type { LineReading } from "../recognition/hwr/recognizer";
 import type { InkStroke } from "../recognition/hwr/features";
 import { type NeatenEdit, neatenEdit } from "../recognition/writer/apply";
 import type { WriterClient } from "../recognition/writer/client";
+import { isOutOfMemory } from "../recognition/writer/protocol";
 import { type LineToPlace, placeLines } from "../recognition/writer/layout";
 import { proseLike } from "../recognition/writer/pool";
-import { neatenLine, readBackRewrite } from "../recognition/writer/repair";
+import { errorRate, neatenLine, readBackRewrite } from "../recognition/writer/repair";
 import { readsAs } from "../recognition/writer/known-layout";
-import { type TaggedLine, type WrittenStroke, levelledStrokes } from "../recognition/writer/rows";
+import {
+  type TaggedLine,
+  type WrittenStroke,
+  levelledStrokes,
+  median,
+} from "../recognition/writer/rows";
+import { inkXHeight, leastXHeight, writtenXHeight } from "../recognition/writer/x-height";
 import { DEFAULT_TRIES } from "../recognition/writer/flow-meta";
 import { type WriterKind, WRITER_KINDS, kindFor } from "../recognition/writer/kinds";
 import { guidanceAt } from "../recognition/writer/neatness";
+import { roughness } from "../recognition/writer/evenness";
+import { strengthAt } from "../recognition/writer/neatness";
+import { straighten } from "../recognition/writer/straighten";
 import {
   type ManifestProblem,
   type WriterManifest,
@@ -49,8 +59,12 @@ import {
   type WordAnswer,
   applyAnswers,
   joinPunctuation,
+  pickQuestions,
   sureWords,
+  unsureCandidates,
+  writeUnasked,
   wordCore,
+  wordSureness,
   wordsOf,
 } from "../recognition/writer/sure-words";
 import { WRITER_HOSTED, WRITER_MODEL } from "../recognition/writer/writer-model";
@@ -65,6 +79,8 @@ const EXACT_ATTEMPTS = 3;
 const SPARE_LINES = 4;
 /** How often the menu may ask for the model's files to be looked for again. */
 const RECHECK_MS = 30_000;
+/** Wait before starting the writer again after it ran out of memory starting (a worker's memory is reclaimed late). */
+const OOM_RETRY_MS = 1500;
 
 export interface NeatenHost {
   app: App;
@@ -91,8 +107,18 @@ export interface NeatenRequest {
   selected: ReadonlySet<string>;
   /** The page's ruled lines, if any (Tidy sets lines on them). */
   rules: readonly RuleBlock[] | null;
+  /** The page's width (page px): nothing written or moved goes past it. */
+  pageWidth?: number;
   /** Asked between steps: true ends the work, nothing changes. */
   stop: () => boolean;
+  /**
+   * Ask the writer about words Grape is not sure of (their ink), one after
+   * another with the word card; resolves with the ink of each word they
+   * answered (the view fills it). Without it those words stay as written.
+   */
+  ask?: (words: string[][]) => Promise<string[][]>;
+  /** Told just before `ask`: from then on the selection may go (a tap closing a card) without stopping the work. */
+  asking?: () => void;
 }
 
 export type NeatenOutcome =
@@ -124,6 +150,10 @@ export class NeatenService {
   private practiceLines: number | null = null;
   /** When `ready` last counted the practice lines (0: never). */
   private countedAt = 0;
+  /** Lets the OCR carry on; held while the writer's worker lives. */
+  private ocrHold: (() => void) | null = null;
+  /** `readyWriter` is starting the worker a second time: its release keeps the OCR paused. */
+  private retrying = false;
 
   constructor(private readonly host: NeatenHost) {
     // Listed in Settings › Models on this device from the start, like the other models.
@@ -166,39 +196,79 @@ export class NeatenService {
       await new Promise((done) => window.setTimeout(done, 100));
     }
     this.running = true;
-    let resumeOcr: (() => void) | null = null;
     try {
-      const outcome = await this.work(request, async () => {
-        resumeOcr ??= await this.host.pauseOcr();
-      });
-      return outcome;
+      return await this.work(request);
     } catch (error) {
-      console.warn("FineNotes: Neaten stopped", error);
+      console.warn("FineNotes: Beautify stopped", error);
       new Notice(
         error instanceof ModelNotDownloadedError
           ? t("view.notice.plain", { message: error.message })
-          : t("ai.neaten.failed"),
+          : isOutOfMemory(error)
+            ? t("ai.neaten.noMemory")
+            : t("ai.neaten.failed"),
         8000,
       );
       return { kind: "tidy" };
     } finally {
-      // The writer goes before the OCR may load again.
-      this.writer?.dispose();
-      (resumeOcr as (() => void) | null)?.();
+      // The writer stays loaded for the next use; its idle release lets it go, and the OCR on.
       this.running = false;
     }
   }
 
-  private async work(
-    request: NeatenRequest,
-    pauseOcr: () => Promise<void>,
-  ): Promise<NeatenOutcome> {
+  /**
+   * The writer's worker with `model` loaded, for Beautify and for writing
+   * known text. The OCR is paused for as long as the worker lives (the two
+   * models are never in memory together) and carries on when the worker is
+   * let go (`IDLE_RELEASE_MS` unused, an error, the plugin unloading).
+   * The worker is kept between uses: on the iPad a new worker started soon
+   * after another was let go ran out of WebAssembly memory 3 times in 4
+   * (24 November). If it still does, it is let go, and started once more
+   * after a pause; a second failure is thrown (`isOutOfMemory` tells it).
+   */
+  async readyWriter(model: {
+    manifest: WriterManifest;
+    kind: WriterKind;
+    key: string;
+  }): Promise<WriterClient> {
+    this.ocrHold ??= await this.host.pauseOcr();
+    const writer = await this.writerClient();
+    const { manifest, kind } = model;
+    const files = async () => {
+      const graphs: Record<string, ArrayBuffer> = {};
+      for (const role of Object.keys(kind.graphs)) {
+        graphs[role] = await this.bytes(manifest.graphs[role].file);
+      }
+      return { files: { graphs, wasm: await this.bytes(OCR_WASM_FILE.name) }, manifest };
+    };
+    try {
+      await writer.ensureModel(model.key, files);
+    } catch (error) {
+      if (!isOutOfMemory(error)) throw error;
+      console.warn(
+        "FineNotes: the handwriting writer ran out of memory starting; trying once more",
+        error,
+      );
+      this.retrying = true;
+      try {
+        writer.dispose();
+        await new Promise((done) => window.setTimeout(done, OOM_RETRY_MS));
+        await writer.ensureModel(model.key, files);
+      } finally {
+        this.retrying = false;
+      }
+    }
+    return writer;
+  }
+
+  private async work(request: NeatenRequest): Promise<NeatenOutcome> {
     const store = this.host.models.register(WRITER_MODEL);
     // Looked at again each time (the files may have come by sync since launch): ~0.2 s on the iPad.
     await store.check(true);
     if (store.state.kind !== "ready") {
-      // Offered as a card ("Not now" holds for the session); Beautify tidies meanwhile.
-      this.host.models.offer(WRITER_MODEL.id, "auto");
+      // Beautify was chosen, so its download card shows every time, even after a "Not now":
+      // with "auto" it stayed away, and a device with an older Dostoyev (2.0 where 2.1 is
+      // pinned) only tidied, silently (25 November, Joost's iPad). Beautify tidies meanwhile.
+      this.host.models.offer(WRITER_MODEL.id, "ask");
       return { kind: "tidy" };
     }
     const model = await this.loadModel();
@@ -236,12 +306,32 @@ export class NeatenService {
     if (lines.length === 0 || !profile) return { kind: "tidy" };
     const lexicon = this.host.lexicon();
     const listed = lexicon ? new Set(lexicon.words().map((w) => w.toLowerCase())) : null;
-    const answers = request.note ? await this.host.answers(request.note, request.pageId) : [];
     const readings = await this.host.handwriting.readForNeaten(lines, lexicon);
-    const jobs = lines.flatMap((strokes, li) => {
-      const job = this.jobOf(strokes, readings[li], writable, listed, answers);
-      return job ? [job] : [];
-    });
+    const jobsWith = async () => {
+      const answers = request.note ? await this.host.answers(request.note, request.pageId) : [];
+      return lines.flatMap((strokes, li) => {
+        const job = this.jobOf(strokes, readings[li], writable, listed, answers);
+        return job ? [job] : [];
+      });
+    };
+    let jobs = await jobsWith();
+    // Of the words Grape is not sure of, the least sure few are asked about with the word card,
+    // about one per line (Joost, 25 November: ten cards for two lines was far too many). An
+    // answered word is written as answered; a skipped one stays the writer's ink.
+    const questions = pickQuestions(unsureCandidates(jobs));
+    const asked = new Set(questions.map((q) => jobs[q.line].words[q.word][0]));
+    if (questions.length > 0 && request.ask) {
+      request.asking?.();
+      const confirmed = await request.ask(questions.map((q) => jobs[q.line].words[q.word]));
+      if (request.stop()) return { kind: "stopped" };
+      // Answered words take the writer's text from the saved answers.
+      if (confirmed.length > 0) jobs = await jobsWith();
+    }
+    // Every other word is written as read; the read-back below keeps one that does not read
+    // back as itself in the writer's ink.
+    jobs = jobs
+      .map((job) => ({ ...job, ...writeUnasked(job, asked) }))
+      .filter((job) => job.rewrite.some(Boolean));
     if (jobs.length === 0) return { kind: "tidy" };
     if (request.stop()) return { kind: "stopped" };
 
@@ -255,23 +345,17 @@ export class NeatenService {
       }
       refs.push(kind.reference(job.text, shown, manifest, n + 1));
     }
-    // The neatness dial moves the model's own guidance (`neatness.ts`).
+    // The neatness dial is how far the written line's letters are straightened; the
+    // guidance is the model's own at every stop (`neatness.ts`, `straighten.ts`).
     const guidance = manifest.sampling
       ? guidanceAt(this.host.neatness(), manifest.sampling.guidance)
       : undefined;
+    const strength = strengthAt(this.host.neatness());
     const tries = manifest.sampling?.tries ?? DEFAULT_TRIES;
     if (request.stop()) return { kind: "stopped" };
 
     // The writer, alone in memory with Grape.
-    await pauseOcr();
-    const writer = await this.writerClient();
-    await writer.ensureModel(model.key, async () => {
-      const graphs: Record<string, ArrayBuffer> = {};
-      for (const role of Object.keys(kind.graphs)) {
-        graphs[role] = await this.bytes(manifest.graphs[role].file);
-      }
-      return { files: { graphs, wasm: await this.bytes(OCR_WASM_FILE.name) }, manifest };
-    });
+    const writer = await this.readyWriter(model);
     const placing: LineToPlace<Stroke>[] = [];
     for (const [n, job] of jobs.entries()) {
       const ref = refs[n];
@@ -282,35 +366,68 @@ export class NeatenService {
         n,
         (text, r, seed, id, low) => writer.write(text, r, seed, id, low, guidance),
         (written) => this.host.handwriting.readRows(written),
-        { seed: 0, tries, repair: true, stop: request.stop },
+        {
+          seed: 0,
+          tries,
+          repair: true,
+          stop: request.stop,
+          // Of two tries read equally well, the more even one.
+          uneven: (written) => roughness(written, written.char, job.text),
+        },
       );
       if (!done || request.stop()) return { kind: "stopped" };
-      // A word whose writing Grape does not read back as the word stays in the writer's own
-      // ink: the model wrote "simple" as "single" and "again" as "ag ain" on Joost's iPad.
-      const rewrite = readBackRewrite(job.text, done.read, job.rewrite);
+      // Words flat and level, letters standing and leaning evenly; no letter redrawn.
+      const written = straighten(done.written, done.written.char, job.text, strength);
+      // What is placed is what was read: the straightened line is read once more. A word
+      // whose writing Grape does not read back as the word, or reads back only with a letter
+      // it is unsure of, stays in the writer's own ink: the model wrote "simple" as
+      // "single", "again" as "ag ain" and "at" like "nt" on Joost's iPad.
+      const back = await this.host.handwriting.readRowsSure(written);
+      if (request.stop()) return { kind: "stopped" };
+      const rewrite = readBackRewrite(job.text, back.text, job.rewrite, back.sure);
       if (!rewrite.some(Boolean)) continue;
       placing.push({
         strokes: job.strokes,
         words: job.words,
         rewrite,
-        written: levelledStrokes(done.written, done.written.char, job.text),
+        answered: job.answered,
+        written: levelledStrokes(written, written.char, job.text),
+        // Written at the writer's own x-height, or at the least the model writes legibly with their pen.
+        xHeight: {
+          ink: job.xHeight,
+          written: writtenXHeight(written, written.char, job.text),
+          least: leastXHeight(median(job.strokes.map((s) => s.size))),
+        },
       });
     }
-    const placed = placeLines(placing, profile);
+    const placed = placeLines(placing, profile, request.pageWidth);
     const edit = neatenEdit(request.strokes, placed, profile, request.rules, request.selected);
     if (edit.added.length === 0) return { kind: "tidy" };
     // Each line's new strokes take the pen of the line's first stroke.
     return { kind: "done", edit, style: placing.map((line) => line.strokes[0]) };
   }
 
-  /** One line's text, words, and which words to rewrite; null when nothing on it may be. */
+  /** One line's text, words, and which words to rewrite; null when the model cannot write it. */
   private jobOf(
     strokes: Stroke[],
     reading: LineReading | undefined,
     writable: (ch: string) => boolean,
     listed: ReadonlySet<string> | null,
     answers: readonly WordAnswer[],
-  ): { text: string; strokes: Stroke[]; words: string[][]; rewrite: boolean[] } | null {
+  ): {
+    text: string;
+    strokes: Stroke[];
+    /** Each word's ink (stroke ids). */
+    words: string[][];
+    /** Each word's text. */
+    read: string[];
+    rewrite: boolean[];
+    /** How sure Grape is of each word (`wordSureness`); 1 for a word the writer answered. */
+    sure: number[];
+    /** Set once asked: the words the writer answered on a card. */
+    answered?: boolean[];
+    xHeight: number | null;
+  } | null {
     if (!reading || !reading.wordStrokes || !reading.chars) return null;
     const read = wordsOf(reading.text);
     const ink = reading.wordStrokes.map((word) =>
@@ -334,9 +451,20 @@ export class NeatenService {
       answered.known,
       inList,
     );
-    const joined = joinPunctuation({ words: answered.words, ink, rewrite });
-    if (!joined.rewrite.some(Boolean)) return null;
-    return { text: joined.words.join(" "), strokes, words: joined.ink, rewrite: joined.rewrite };
+    const sure = wordSureness(text, reading.greedy, reading.chars, inList).map((s, i) =>
+      answered.known.has(i) ? 1 : s,
+    );
+    const joined = joinPunctuation({ words: answered.words, ink, rewrite, sure });
+    return {
+      text: joined.words.join(" "),
+      strokes,
+      words: joined.ink,
+      read: joined.words,
+      rewrite: joined.rewrite,
+      sure: joined.sure ?? [],
+      // The writer's x-height on this line, from the strokes Grape read as x-height letters.
+      xHeight: inkXHeight(strokes, reading.chars),
+    };
   }
 
   /** Every prose-like copied line of the vault's practice sheets (not yet tied to its letters). */
@@ -420,7 +548,12 @@ export class NeatenService {
     if (!this.writer) {
       // The worker's code loads with it, on first use, not with the plugin.
       const { WriterClient } = await import("../recognition/writer/client");
-      this.writer = new WriterClient();
+      // The worker let go: the OCR may load again (not while `readyWriter` starts it once more).
+      this.writer = new WriterClient(() => {
+        if (this.retrying) return;
+        this.ocrHold?.();
+        this.ocrHold = null;
+      });
     }
     return this.writer;
   }
@@ -472,12 +605,16 @@ export class NeatenService {
    * units, words stood level (`rows.levelledStrokes`), and the practice
    * lines' ink (a hand to size by on an empty page). Null when the writer is
    * not ready, a text has a letter the model lacks, or `stop` said so.
-   * The OCR is paused while it writes, and the writer let go after.
+   * The writer starts as Beautify's does (`readyWriter`): the OCR paused while
+   * it lives, one retry when memory runs out (then it throws: `isOutOfMemory`).
    */
   async writeKnown(
     texts: readonly string[],
-    /** `exact`: a line counts only when Grape reads it back as the text (an answer); else null. */
-    options: { stop?: () => boolean; seed?: number; exact?: boolean } = {},
+    /**
+     * `attempts`: how many times a line Grape misreads is written again (the best reading kept).
+     * `exact`: a line counts only when Grape reads it back as the text (an answer); else null.
+     */
+    options: { stop?: () => boolean; seed?: number; exact?: boolean; attempts?: number } = {},
   ): Promise<{ lines: WrittenStroke[][]; sample: InkStroke[] } | null> {
     if (texts.length === 0) return null;
     // One writing at a time, Beautify's included: wait for one in progress.
@@ -486,7 +623,6 @@ export class NeatenService {
       await new Promise((resolve) => window.setTimeout(resolve, 100));
     }
     this.running = true;
-    let resumeOcr: (() => void) | null = null;
     const stop = options.stop ?? (() => false);
     try {
       if (!(await this.ready())) return null;
@@ -512,20 +648,20 @@ export class NeatenService {
         ? guidanceAt(this.host.neatness(), manifest.sampling.guidance)
         : undefined;
       const tries = manifest.sampling?.tries ?? DEFAULT_TRIES;
-      resumeOcr = await this.host.pauseOcr();
-      const writer = await this.writerClient();
-      await writer.ensureModel(model.key, async () => {
-        const graphs: Record<string, ArrayBuffer> = {};
-        for (const role of Object.keys(kind.graphs)) {
-          graphs[role] = await this.bytes(manifest.graphs[role].file);
-        }
-        return { files: { graphs, wasm: await this.bytes(OCR_WASM_FILE.name) }, manifest };
-      });
+      // The writer as Beautify starts it: the OCR paused while it lives, one retry when memory runs out.
+      const writer = await this.readyWriter(model);
       const lines: WrittenStroke[][] = [];
       for (const [n, text] of texts.entries()) {
         let kept: Awaited<ReturnType<typeof neatenLine>> = null;
-        // Exact: written again from other noise until it reads back as the text.
-        for (let attempt = 0; attempt < (options.exact ? EXACT_ATTEMPTS : 1); attempt++) {
+        let best: Awaited<ReturnType<typeof neatenLine>> = null;
+        // Written again from other noise until Grape reads it back as the text (a word it
+        // misreads may be misshapen: "friena", "bridye" on the iPad, 2026-11-25); otherwise
+        // the best reading is kept, or for `exact` (an answer) nothing.
+        for (
+          let attempt = 0;
+          attempt < (options.exact ? EXACT_ATTEMPTS : (options.attempts ?? 1));
+          attempt++
+        ) {
           const done = await neatenLine(
             text,
             refs[n],
@@ -535,18 +671,19 @@ export class NeatenService {
             { seed: (options.seed ?? 0) + attempt * 7919, tries, repair: true, stop },
           );
           if (!done || stop()) return null;
-          if (!options.exact || readsAs(text, done.read)) {
+          if (readsAs(text, done.read)) {
             kept = done;
             break;
           }
+          if (!best || errorRate(text, done.read) < errorRate(text, best.read)) best = done;
         }
+        if (!options.exact) kept ??= best;
         if (!kept) return null;
         lines.push(levelledStrokes(kept.written, kept.written.char, text));
       }
       return { lines, sample: pool.flatMap((line) => line.strokes) };
     } finally {
-      this.writer?.dispose();
-      resumeOcr?.();
+      // The worker stays for the next writing; its idle release lets it go and the OCR resume.
       this.running = false;
     }
   }
