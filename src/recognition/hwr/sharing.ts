@@ -185,9 +185,11 @@ export interface SharingLedger {
   auto: { on: boolean; at: number };
   /**
    * How many items were waiting when the user was last reminded to share
-   * them (0: never). The next reminder waits for {@link REMIND_EVERY} more.
+   * them (0: never), and when (ms): the newer reminder wins a merge, so a
+   * lower count after a send is not undone by an older copy's higher one.
+   * The next reminder waits for {@link REMIND_EVERY} more.
    */
-  remindedAt: number;
+  reminder: { waiting: number; at: number };
 }
 
 /** New items that bring a reminder to share, for someone who shares by hand. */
@@ -207,7 +209,7 @@ export function emptyLedger(now = 0): SharingLedger {
     deletedAt: 0,
     upgradeOwed: 0,
     auto: { on: false, at: 0 },
-    remindedAt: 0,
+    reminder: { waiting: 0, at: 0 },
   };
 }
 
@@ -279,12 +281,16 @@ export function parseLedger(raw: string | null): SharingLedger {
   if (isRecord(auto) && typeof auto.at === "number" && Number.isFinite(auto.at)) {
     out.auto = { on: auto.on === true && out.contributor !== null, at: auto.at };
   }
+  const reminder = data.reminder;
   if (
-    typeof data.remindedAt === "number" &&
-    Number.isInteger(data.remindedAt) &&
-    data.remindedAt > 0
+    isRecord(reminder) &&
+    typeof reminder.waiting === "number" &&
+    Number.isInteger(reminder.waiting) &&
+    reminder.waiting >= 0 &&
+    typeof reminder.at === "number" &&
+    Number.isFinite(reminder.at)
   ) {
-    out.remindedAt = data.remindedAt;
+    out.reminder = { waiting: reminder.waiting, at: reminder.at };
   }
   return out;
 }
@@ -337,7 +343,7 @@ export function mergeLedgers(a: SharingLedger, b: SharingLedger): SharingLedger 
     deletedAt,
     upgradeOwed: contributor ? Math.max(a.upgradeOwed, b.upgradeOwed) : 0,
     auto: a.auto.at >= b.auto.at ? a.auto : b.auto,
-    remindedAt: Math.max(a.remindedAt, b.remindedAt),
+    reminder: a.reminder.at >= b.reminder.at ? a.reminder : b.reminder,
   };
 }
 
@@ -387,13 +393,14 @@ export function autoSends(ledger: SharingLedger): boolean {
  */
 export function remindDue(ledger: SharingLedger, waiting: number): boolean {
   if (!sharingOn(ledger) || ledger.auto.on || ledger.pendingDelete) return false;
-  const since = ledger.remindedAt <= waiting ? ledger.remindedAt : 0;
+  const last = ledger.reminder.waiting;
+  const since = last <= waiting ? last : 0;
   return waiting - since >= REMIND_EVERY;
 }
 
-/** The user was reminded with `waiting` items to share. */
-export function reminded(ledger: SharingLedger, waiting: number): SharingLedger {
-  return { ...ledger, remindedAt: waiting };
+/** The user was reminded, at `now`, with `waiting` items to share. */
+export function reminded(ledger: SharingLedger, waiting: number, now: number): SharingLedger {
+  return { ...ledger, reminder: { waiting, at: now } };
 }
 
 /** The server confirmed that the consent now covers what was shared before. */

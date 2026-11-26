@@ -90,8 +90,17 @@ export class GrapeSharing implements SharingFeature {
   private loading: Promise<void> | null = null;
   private busy = false;
   private addedTimer = 0;
+  /** The reminder on screen, if any: a new one replaces it. */
+  private remindNotice: Notice | null = null;
+  private destroyed = false;
 
   constructor(private readonly host: SharingHost) {}
+
+  destroy(): void {
+    this.destroyed = true;
+    window.clearTimeout(this.addedTimer);
+    this.remindNotice?.hide();
+  }
 
   start(): void {
     void this.load().then(async () => {
@@ -113,34 +122,48 @@ export class GrapeSharing implements SharingFeature {
    * else, when `remind` and enough has come since the last one, a reminder.
    */
   private async newItems(remind: boolean): Promise<void> {
+    if (this.destroyed || this.busy) return;
+    // The ledger alone first: reading every practice sheet is only worth it
+    // for someone who shares (this runs after every answered word).
+    if (!sharingOn(await this.readLedger())) return;
     await this.load();
     const ledger = this.ledger;
     const items = this.items;
-    if (!ledger || !items || !sharingOn(ledger)) return;
+    if (!ledger || !items || !sharingOn(ledger) || this.destroyed) return;
     const pending = pendingItems(items, ledger);
     if (pending.length === 0) return;
     if (autoSends(ledger)) {
       await this.send(ledger, pending, [], true);
     } else if (remind && remindDue(ledger, pending.length)) {
-      await this.saveLedger(reminded(ledger, pending.length));
+      await this.saveLedger(reminded(ledger, pending.length, Date.now()));
       this.remindCard(pending);
     }
   }
 
   /** "N new items to share": Later, Always (send by itself from now on), Share N. */
   private remindCard(pending: ShareItem[]): void {
+    this.remindNotice?.hide();
     const notice = new Notice(
       createFragment((fragment) => {
         drawRemindCard(fragment.createDiv(), pending, (choice) => {
           notice.hide();
-          const ledger = this.ledger;
-          if (!ledger || choice === "later") return;
-          const next = choice === "always" ? setAuto(ledger, true, Date.now()) : ledger;
-          void this.send(next, pending, []);
+          if (this.remindNotice === notice) this.remindNotice = null;
+          void this.reminderAnswered(choice, pending);
         });
       }),
       0,
     );
+    this.remindNotice = notice;
+  }
+
+  /** Always is saved before anything is sent, and only while sharing is still on. */
+  private async reminderAnswered(
+    choice: "later" | "always" | "share",
+    pending: ShareItem[],
+  ): Promise<void> {
+    if (choice === "later" || !this.ledger || !sharingOn(this.ledger)) return;
+    if (choice === "always") await this.saveLedger(setAuto(this.ledger, true, Date.now()));
+    if (this.ledger) await this.send(this.ledger, pending, []);
   }
 
   /**
@@ -389,7 +412,8 @@ export class GrapeSharing implements SharingFeature {
         this.host,
         pending,
         changes,
-        ledger.auto.on,
+        // Ticked only for someone who chose it and has not stopped since.
+        ledger.consent !== null && ledger.auto.on,
         (auto) => {
           acted = true;
           void this.saveLedger(agreed(auto))
@@ -470,9 +494,23 @@ export class GrapeSharing implements SharingFeature {
       if (!ledger) return;
       const built = buildBatches(kept, ledger, this.client());
       if (!built) return;
+      // Stop, Delete, unticking Share automatically or a plugin unload while
+      // batches go ends the send before the next one: nothing more is sent,
+      // and nothing is marked sent under a contributor a delete ended.
+      const stillOn = (): boolean => {
+        const now = this.ledger;
+        return (
+          !this.destroyed &&
+          now !== null &&
+          now.epoch === ledger.epoch &&
+          now.contributor === ledger.contributor &&
+          (quiet ? autoSends(now) : sharingOn(now))
+        );
+      };
       if (quiet) {
         for (const batch of built.batches) {
-          if ((await postBatch(batch, ledger.key ?? "")) !== "sent") return;
+          if (!stillOn()) return;
+          if ((await postBatch(batch, ledger.key ?? "")) !== "sent" || !stillOn()) return;
           await this.saveLedger(
             markSent(
               this.ledger ?? ledger,
@@ -487,7 +525,9 @@ export class GrapeSharing implements SharingFeature {
       }
       let count = 0;
       for (const batch of built.batches) {
+        if (!stillOn()) return;
         const outcome = await postBatch(batch, ledger.key ?? "");
+        if (!stillOn()) return;
         if (outcome === "sent") {
           await this.saveLedger(
             markSent(

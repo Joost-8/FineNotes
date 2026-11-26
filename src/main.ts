@@ -938,6 +938,7 @@ export default class GoodObsidianPlugin extends Plugin {
     }).then((sharing) => {
       this.sharing = sharing;
       sharing?.start();
+      if (sharing) this.register(() => sharing.destroy());
     });
     // The reader's and the learner's workers end with the plugin.
     this.register(() => {

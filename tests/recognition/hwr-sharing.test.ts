@@ -494,16 +494,16 @@ describe("sending by itself, and reminders", () => {
   });
 
   it("round-trips the choice and the reminder, and reads an old file as by hand", () => {
-    const ledger = reminded(agree(emptyLedger(100), 200, bytes(1), true), 24);
+    const ledger = reminded(agree(emptyLedger(100), 200, bytes(1), true), 24, 250);
     const back = parseLedger(serializeLedger(ledger));
     expect(back.auto).toEqual({ on: true, at: 200 });
-    expect(back.remindedAt).toBe(24);
+    expect(back.reminder).toEqual({ waiting: 24, at: 250 });
     const old = JSON.parse(serializeLedger(onLedger())) as Record<string, unknown>;
     delete old.auto;
-    delete old.remindedAt;
+    delete old.reminder;
     const read = parseLedger(JSON.stringify(old));
     expect(read.auto.on).toBe(false);
-    expect(read.remindedAt).toBe(0);
+    expect(read.reminder).toEqual({ waiting: 0, at: 0 });
     // Without a contributor there is no one to send for.
     expect(parseLedger(JSON.stringify({ auto: { on: true, at: 5 } })).auto.on).toBe(false);
   });
@@ -512,7 +512,7 @@ describe("sending by itself, and reminders", () => {
     const hand = onLedger();
     expect(remindDue(hand, REMIND_EVERY - 1)).toBe(false);
     expect(remindDue(hand, REMIND_EVERY)).toBe(true);
-    const once = reminded(hand, REMIND_EVERY + 3);
+    const once = reminded(hand, REMIND_EVERY + 3, 300);
     expect(remindDue(once, REMIND_EVERY + 10)).toBe(false);
     expect(remindDue(once, 2 * REMIND_EVERY + 3)).toBe(true);
     // After a send fewer wait than at the reminder: the count starts again.
@@ -526,9 +526,25 @@ describe("sending by itself, and reminders", () => {
     expect(remindDue(stopSharing(onLedger(), 300), 500)).toBe(false);
   });
 
-  it("merges reminders by the later count", () => {
-    const a = reminded(onLedger(), 20);
-    const b = reminded(onLedger(), 40);
-    expect(mergeLedgers(a, b).remindedAt).toBe(40);
+  it("merges reminders by the newer one, so a send starts the count again", () => {
+    const a = reminded(onLedger(), 40, 300);
+    const b = reminded(onLedger(), 20, 900);
+    expect(mergeLedgers(a, b).reminder).toEqual({ waiting: 20, at: 900 });
+    expect(mergeLedgers(b, a).reminder).toEqual({ waiting: 20, at: 900 });
+  });
+
+  it("reminds every 20 through saves that merge with the copy on disk (found in review)", () => {
+    // Each save merges with what is on disk, as GrapeSharing.saveLedger does.
+    let disk = onLedger();
+    let now = 1000;
+    const shown: number[] = [];
+    for (const waiting of [20, 40, 0, 10, 20, 21, 22, 25, 30, 39, 40]) {
+      now += 1000;
+      if (!remindDue(disk, waiting)) continue;
+      shown.push(waiting);
+      disk = mergeLedgers(reminded(disk, waiting, now), disk);
+    }
+    // Before the fix: 20, 40, then every count from 20 to 39 again.
+    expect(shown).toEqual([20, 40, 20, 40]);
   });
 });

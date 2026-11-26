@@ -23,6 +23,8 @@ export interface SharingFeature {
   itemsAdded(): void;
   /** On load: send a delete the server has not confirmed yet. */
   start(): void;
+  /** On unload: no timer fires and no send goes on after it. */
+  destroy(): void;
 }
 
 /** What the feature needs from the plugin. */
