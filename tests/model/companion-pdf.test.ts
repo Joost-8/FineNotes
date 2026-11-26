@@ -72,7 +72,7 @@ describe("the frontmatter keys", () => {
       front(
         "tags: [biology]",
         "aliases: [cells]",
-        `finenotes-companion-id: ${ID}`,
+        `finenotes-companion-id: "${ID}"`,
         'finenotes-companion-pdf: "Exports/Cell biology.pdf"',
         "finenotes-companion-follow: true",
       ),
@@ -84,14 +84,14 @@ describe("the frontmatter keys", () => {
     });
     // Turned off: the place goes, the id stays.
     expect(withCompanionKeys(set, { pdfPath: null, followName: null })).toBe(
-      front("tags: [biology]", "aliases: [cells]", `finenotes-companion-id: ${ID}`),
+      front("tags: [biology]", "aliases: [cells]", `finenotes-companion-id: "${ID}"`),
     );
   });
 
   it("adds a frontmatter where there is none, and removes one that held only its keys", () => {
     const added = withCompanionKeys("Body text\n", { id: ID, pdfPath: "a.pdf", followName: true });
     expect(added).toBe(
-      `---\nfinenotes-companion-id: ${ID}\nfinenotes-companion-pdf: "a.pdf"\nfinenotes-companion-follow: true\n---\nBody text\n`,
+      `---\nfinenotes-companion-id: "${ID}"\nfinenotes-companion-pdf: "a.pdf"\nfinenotes-companion-follow: true\n---\nBody text\n`,
     );
     expect(withoutCompanionKeys(added)).toBe("Body text\n");
     expect(withCompanionKeys("Body text\n", { pdfPath: null })).toBe("Body text\n");
@@ -100,8 +100,8 @@ describe("the frontmatter keys", () => {
   it("keeps Windows line ends and a byte-order mark", () => {
     const body = `\uFEFF---\r\ntags: [x]\r\n---\r\nText`;
     const set = withCompanionKeys(body, { id: ID });
-    expect(set).toBe(`\uFEFF---\r\ntags: [x]\r\nfinenotes-companion-id: ${ID}\r\n---\r\nText`);
-    expect(companionFrontmatter(set)).toBe(`tags: [x]\r\nfinenotes-companion-id: ${ID}`);
+    expect(set).toBe(`\uFEFF---\r\ntags: [x]\r\nfinenotes-companion-id: "${ID}"\r\n---\r\nText`);
+    expect(companionFrontmatter(set)).toBe(`tags: [x]\r\nfinenotes-companion-id: "${ID}"`);
   });
 
   it("leaves a copy without a companion, and a note without keys untouched", () => {

@@ -4,7 +4,8 @@
  * wins; a forced request stays forced); a request while that notebook's
  * export runs waits for it. Nothing starts while the pen is down, and
  * nothing starts in the call that asked: a notebook that is closing has
- * finished tearing down before its export begins. Pure: time is handed in.
+ * finished tearing down before its export begins (after its startDelay). The
+ * pen is waited for between pages too, by the export itself. Pure: time is handed in.
  */
 
 export type CompanionJob = (force: boolean) => Promise<void>;
@@ -16,6 +17,12 @@ export interface CompanionQueueIO {
   sleep: (ms: number) => Promise<void>;
   /** A job that failed: reported, never thrown at the caller that queued it. */
   failed: (id: string, error: unknown) => void;
+  /**
+   * How long a first request waits before anything starts: a closed
+   * notebook has finished tearing down, and a pen picked up again right
+   * after the close is heard first. 0 when not given.
+   */
+  startDelay?: number;
   /** Running or waiting changed (the state marks). */
   changed?: () => void;
 }
@@ -79,7 +86,7 @@ export class CompanionQueue {
 
   private async run(): Promise<void> {
     // Not in the caller's own turn: a closing view finishes first.
-    await this.io.sleep(0);
+    await this.io.sleep(this.io.startDelay ?? 0);
     while (!this.stopped && this.waiting.size > 0) {
       while (this.io.paused() && !this.stopped) await this.io.sleep(PAUSE_POLL_MS);
       if (this.stopped) return;

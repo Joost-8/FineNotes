@@ -3,13 +3,16 @@
  * It says which notebook the PDF belongs to and which content it shows, and
  * travels with the PDF to every device.
  *
- * Reading it never parses the PDF: `readCompanionSubject` finds the trailer's
- * /Info reference in the last bytes, then that object, and decodes its
- * /Subject string. This works because a Subject is only ever written with
- * the Info dictionary in the clear (`useObjectStreams: false` in
- * `pdf-composer.ts` and in `stampCompanionPdfSubject`); a PDF whose Info is
- * compressed into an object stream reads as having no Subject, which means
- * "not ours", the safe answer.
+ * Reading it never parses the PDF: `readCompanionSubject` follows
+ * `startxref` through the classic cross-reference tables (newest first),
+ * takes /Info from the newest trailer that names one, looks that object up
+ * in the same tables, and decodes its /Subject string. Anything else (a
+ * cross-reference stream, a table it cannot follow, an object it cannot
+ * find) reads as having no Subject, which means "not ours", the safe answer:
+ * a PDF another tool rewrote is never taken for this notebook's, and never
+ * overwritten. FineNotes writes its Subject with the Info dictionary and the
+ * tables in the clear (`useObjectStreams: false` in `pdf-composer.ts` and
+ * in `stampCompanionPdfSubject`).
  */
 import { PDFDocument } from "pdf-lib";
 import { CompanionError, validCompanionHash, validCompanionId } from "../model/companion-pdf";
@@ -34,8 +37,8 @@ export function parseCompanionSubject(subject: string | null | undefined): Compa
   return { id, contentHash: validCompanionHash(hash) ? hash : null };
 }
 
-/** How far from the end the trailer (or the cross-reference stream's dictionary) is looked for. */
-const TAIL_BYTES = 64 * 1024;
+/** How far from the end `startxref` is looked for. */
+const TAIL_BYTES = 4 * 1024;
 
 function latin1(bytes: Uint8Array, from: number, to: number): string {
   let out = "";
@@ -44,27 +47,6 @@ function latin1(bytes: Uint8Array, from: number, to: number): string {
     out += String.fromCharCode(...bytes.subarray(at, Math.min(to, at + step)));
   }
   return out;
-}
-
-function isSpace(byte: number | undefined): boolean {
-  return (
-    byte === undefined ||
-    byte === 0x20 ||
-    byte === 0x0a ||
-    byte === 0x0d ||
-    byte === 0x09 ||
-    byte === 0x0c ||
-    byte === 0x00
-  );
-}
-
-/** The last place `pattern` starts in `bytes`, standing alone (not part of a longer number). */
-function lastIndexOfToken(bytes: Uint8Array, pattern: Uint8Array): number {
-  outer: for (let at = bytes.length - pattern.length; at >= 0; at--) {
-    for (let i = 0; i < pattern.length; i++) if (bytes[at + i] !== pattern[i]) continue outer;
-    if (isSpace(bytes[at - 1])) return at;
-  }
-  return -1;
 }
 
 /** The text of a PDF string: a literal `(…)` with its escapes, or hex `<…>`; UTF-16 when it says so. */
@@ -138,79 +120,87 @@ function subjectIn(dict: string): string | null {
 /** One cross-reference entry is 20 bytes: `oooooooooo ggggg n` and an end of line. */
 const XREF_ENTRY = 20;
 
+/** One classic cross-reference section: where its subsections are, and its trailer's text. */
+interface XrefSection {
+  subsections: Array<{ first: number; count: number; entries: number }>;
+  trailer: string;
+}
+
 /**
- * Where object `num` starts, from the classic cross-reference tables (the
- * newest first, then each `/Prev`): a few small reads, wherever the object
- * is in the file. `null` for a PDF with a cross-reference stream, or any
- * table this cannot follow; the caller then searches for the object.
+ * The classic cross-reference sections from `start`, newest first,
+ * following each trailer's /Prev. `null` when `start` does not lead to a
+ * classic table, or a table cannot be read.
  */
-function offsetFromXref(bytes: Uint8Array, start: number, num: number): number | null {
+function xrefChain(bytes: Uint8Array, start: number): XrefSection[] | null {
+  const chain: XrefSection[] = [];
   const visited = new Set<number>();
   let at = start;
-  while (at >= 0 && at < bytes.length && !visited.has(at)) {
+  for (;;) {
+    if (at < 0 || at >= bytes.length || visited.has(at)) return null;
     visited.add(at);
-    let text = latin1(bytes, at, Math.min(bytes.length, at + 64));
-    if (!text.startsWith("xref")) return null;
+    if (!latin1(bytes, at, Math.min(bytes.length, at + 8)).startsWith("xref")) return null;
+    const subsections: XrefSection["subsections"] = [];
     let cursor = at + 4;
     for (;;) {
-      text = latin1(bytes, cursor, Math.min(bytes.length, cursor + 64));
+      const text = latin1(bytes, cursor, Math.min(bytes.length, cursor + 64));
       const header = /^\s*(\d+)\s+(\d+)[ \t]*\r?\n/.exec(text);
       if (!header) break;
-      const first = Number(header[1]);
-      const count = Number(header[2]);
       const entries = cursor + header[0].length;
-      if (num >= first && num < first + count) {
-        const entry = latin1(
-          bytes,
-          entries + (num - first) * XREF_ENTRY,
-          entries + (num - first + 1) * XREF_ENTRY,
-        );
-        const found = /^(\d{10}) (\d{5}) n/.exec(entry);
-        return found ? Number(found[1]) : null;
-      }
-      cursor = entries + count * XREF_ENTRY;
+      subsections.push({ first: Number(header[1]), count: Number(header[2]), entries });
+      cursor = entries + Number(header[2]) * XREF_ENTRY;
     }
-    const trailer = latin1(bytes, cursor, Math.min(bytes.length, cursor + 4096));
-    if (!/^\s*trailer/.test(trailer)) return null;
-    const prev = /\/Prev\s+(\d+)/.exec(trailer.slice(0, trailer.indexOf(">>") + 2));
-    if (!prev) return null;
+    const tail = latin1(bytes, cursor, Math.min(bytes.length, cursor + 4096));
+    const trailer = /^\s*trailer\s*<<([\s\S]*?)>>\s*startxref/.exec(tail)?.[1];
+    if (trailer === undefined) return null;
+    chain.push({ subsections, trailer });
+    const prev = /\/Prev\s+(\d+)/.exec(trailer);
+    if (!prev) return chain;
     at = Number(prev[1]);
+  }
+}
+
+/**
+ * Where object `num` starts, from the newest section that lists it.
+ * `null` when none does, or the newest entry says it was freed.
+ */
+function offsetIn(bytes: Uint8Array, chain: XrefSection[], num: number): number | null {
+  for (const section of chain) {
+    for (const { first, count, entries } of section.subsections) {
+      if (num < first || num >= first + count) continue;
+      const at = entries + (num - first) * XREF_ENTRY;
+      const entry = /^(\d{10}) (\d{5}) ([nf])/.exec(latin1(bytes, at, at + XREF_ENTRY));
+      return entry && entry[3] === "n" ? Number(entry[1]) : null;
+    }
   }
   return null;
 }
 
-/** Whether object `num gen` starts at `at`. */
-function objectAt(bytes: Uint8Array, at: number, head: string): boolean {
-  return (
-    at >= 0 &&
-    latin1(bytes, at, Math.min(bytes.length, at + head.length + 2))
-      .trimStart()
-      .startsWith(head)
-  );
-}
-
 /**
- * The Companion Subject of a PDF's bytes, read from its trailer and Info
- * dictionary only. `null` when the PDF has none, or its Info is compressed.
+ * The Companion Subject of a PDF's bytes, read through its cross-reference
+ * tables and Info dictionary only. `null` when the PDF has none, or it
+ * cannot be read that way.
  */
 export function readCompanionSubject(input: ArrayBuffer | Uint8Array): CompanionPdfMeta | null {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
   const tail = latin1(bytes, Math.max(0, bytes.length - TAIL_BYTES), bytes.length);
-  const refs = [...tail.matchAll(/\/Info\s+(\d+)\s+(\d+)\s+R/g)];
-  const ref = refs[refs.length - 1];
-  if (!ref) return null;
-  const head = `${ref[1]} ${ref[2]} obj`;
   const startxref = [...tail.matchAll(/startxref\s+(\d+)/g)].pop();
-  const fromXref = startxref ? offsetFromXref(bytes, Number(startxref[1]), Number(ref[1])) : null;
-  const at =
-    fromXref !== null && objectAt(bytes, fromXref, head)
-      ? fromXref
-      : lastIndexOfToken(bytes, new TextEncoder().encode(head));
-  if (at < 0) return null;
+  if (!startxref) return null;
+  const chain = xrefChain(bytes, Number(startxref[1]));
+  if (!chain) return null;
+  let info: RegExpExecArray | null = null;
+  for (const section of chain) {
+    info = /\/Info\s+(\d+)\s+(\d+)\s+R/.exec(section.trailer);
+    if (info) break;
+  }
+  if (!info) return null;
+  const at = offsetIn(bytes, chain, Number(info[1]));
+  if (at === null) return null;
   // An Info dictionary is small; a few kilobytes hold it whole.
   const text = latin1(bytes, at, Math.min(bytes.length, at + 16 * 1024));
+  const head = new RegExp(`^\\s*${info[1]}\\s+${info[2]}\\s+obj\\b`).exec(text);
+  if (!head) return null;
   const end = text.indexOf("endobj");
-  return parseCompanionSubject(subjectIn(end < 0 ? text : text.slice(0, end)));
+  return parseCompanionSubject(subjectIn(text.slice(head[0].length, end < 0 ? undefined : end)));
 }
 
 /**

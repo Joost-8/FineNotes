@@ -54,7 +54,14 @@ export interface CompanionSessionHost {
   penDown(): boolean;
   /** Whether a page is drawn from the file at `path` (an imported PDF, a picture). */
   uses(path: string): boolean;
+  /** Whether `leaf` is this view's own tab. */
+  isLeaf(leaf: unknown): boolean;
+  /** Whether the app is in the background. */
+  hidden(): boolean;
 }
+
+/** How long a changed notebook stays out of sight (another tab in front) before it is exported. */
+export const LEFT_EXPORT_MS = 30_000;
 
 /** The Note Settings row's host (`note-settings-modal.ts`). */
 export interface CompanionSettingsHost {
@@ -85,6 +92,8 @@ export class CompanionSession implements CompanionViewLink {
   /** The file whose close was already handled (unload, then close). */
   private closed: TFile | null = null;
   private readonly hasher = new CompanionHasher(sha256Hex);
+  /** Set while another tab is in front: then the notebook is exported once it has waited. */
+  private leftTimer = 0;
 
   constructor(
     private readonly host: CompanionSessionHost,
@@ -119,6 +128,7 @@ export class CompanionSession implements CompanionViewLink {
   /** A notebook was read: its frontmatter says what its companion is; a re-read may be newer. */
   loaded(again: boolean): void {
     this.closed = null;
+    this.stopLeft();
     const file = this.host.file;
     if (!file || !this.manager) return;
     this.manager.hydrate(file, this.host.noteBody);
@@ -141,13 +151,16 @@ export class CompanionSession implements CompanionViewLink {
   /** The notebook as saved: kept by the export after this view is gone. */
   private capture(): CompanionCapture {
     const { doc, file } = this.host;
+    const options = this.host.options();
     return {
+      revision: this.manager?.revisionOf(this.id) ?? 0,
+      optionsKey: JSON.stringify(options),
       title: stripInkSuffix(file?.basename ?? ""),
       snapshot: this.host.snapshot(),
       paperWidth: this.host.paperWidth,
       furniture: doc.endless ? undefined : readFurniture(doc.furniture),
       resources: companionResources(doc),
-      options: this.host.options(),
+      options,
       crop: (page) => this.host.crop(page),
     };
   }
@@ -160,13 +173,48 @@ export class CompanionSession implements CompanionViewLink {
   async close(file: TFile): Promise<void> {
     if (this.closed === file) return;
     this.closed = file;
+    this.stopLeft();
+    await this.queueChanged(file);
+  }
+
+  /** Saves and queues the notebook when it changed (or this device's export switches did). */
+  private async queueChanged(file: TFile): Promise<void> {
     const id = this.id;
     const entry = this.manager?.entry(id);
-    if (!id || !this.manager || !this.enabled || !entry?.dirty || !this.host.writable()) return;
+    if (!id || !this.manager || !entry || !this.enabled || !this.host.writable()) return;
+    // This device's export switches changed: its PDF is behind here, and only here.
+    if (entry.optionsKey !== undefined && entry.optionsKey !== JSON.stringify(this.host.options()))
+      this.manager.markDirty(id);
+    if (!entry.dirty) return;
     await this.host.saveNow();
     if (this.host.file !== file) return;
     const made = this.capture();
     void this.manager.requestExport(id, file, () => made, false);
+  }
+
+  /**
+   * Another tab came to the front, or this one did. On an iPad tabs are
+   * seldom closed, so a changed notebook left out of sight for
+   * {@link LEFT_EXPORT_MS} is exported as at a close; never while the app is
+   * in the background.
+   */
+  activeLeafChanged(leaf: unknown): void {
+    if (this.host.isLeaf(leaf)) {
+      this.stopLeft();
+      return;
+    }
+    const file = this.host.file;
+    if (!file || this.leftTimer || !this.enabled || !this.manager?.entry(this.id)?.dirty) return;
+    this.leftTimer = window.setTimeout(() => {
+      this.leftTimer = 0;
+      if (this.host.file !== file || this.host.hidden()) return;
+      void this.queueChanged(file);
+    }, LEFT_EXPORT_MS);
+  }
+
+  private stopLeft(): void {
+    window.clearTimeout(this.leftTimer);
+    this.leftTimer = 0;
   }
 
   /** Update now (the row's button, the command): made even when it looks current or is missing. */
@@ -183,7 +231,12 @@ export class CompanionSession implements CompanionViewLink {
   private async check(): Promise<void> {
     const id = this.id;
     if (!id || !this.manager || !this.enabled) return;
-    await this.manager.check(id, await captureHash(this.host.app, this.capture(), this.hasher));
+    const made = this.capture();
+    await this.manager.check(
+      id,
+      await captureHash(this.host.app, made, this.hasher),
+      made.optionsKey,
+    );
   }
 
   private requireFile(file: TFile): void {

@@ -630,10 +630,10 @@ export class ExportPdfModal extends Modal {
     const keepUpdated = saved.keepUpdated;
     if (keepUpdated) {
       const keep = actions.createEl("button", {
-        cls: "goodobsidian-export-keep",
+        cls: "clickable-icon goodobsidian-export-keep",
         attr: { type: "button", "aria-label": t("notebooks.companion.keepUpdated") },
       });
-      setIcon(keep, "refresh-cw");
+      setIcon(keep, "link");
       keep.addEventListener("click", () => {
         keep.disabled = true;
         status.removeClass("is-error");

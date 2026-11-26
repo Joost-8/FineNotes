@@ -198,7 +198,7 @@ export class NoteSettingsModal extends Modal {
     const mark = row.nameEl.createSpan({ attr: { role: "img" } });
     const controls = row.controlEl.createDiv({ cls: "goodobsidian-ns-companion-controls" });
     const folder = controls.createEl("button", {
-      cls: "goodobsidian-ns-companion-folder",
+      cls: "clickable-icon goodobsidian-ns-companion-folder",
       attr: { type: "button", "aria-label": t("notebooks.companion.chooseFolder") },
     });
     setIcon(folder.createSpan({ cls: "goodobsidian-ns-companion-folder-icon" }), "folder");
@@ -213,6 +213,8 @@ export class NoteSettingsModal extends Modal {
       attr: { type: "button", "aria-label": t("notebooks.companion.openPdf") },
     });
     setIcon(open, "external-link");
+    // The reason it failed, where a finger can read it: one line, only while it is so.
+    const failure = group.createDiv({ cls: "goodobsidian-ns-companion-error" });
     const first = host.state();
     row.addToggle((toggle) =>
       toggle.setValue(first.mark !== "off").onChange((on) => {
@@ -226,11 +228,17 @@ export class NoteSettingsModal extends Modal {
       mark.toggleClass("is-busy", state.mark === "busy");
       mark.setAttribute("aria-label", state.error ?? t(MARK_TEXT[state.mark]));
       mark.toggle(on);
+      failure.setText(state.mark === "error" ? (state.error ?? "") : "");
+      failure.toggle(state.mark === "error" && !!state.error);
       folder.toggle(on);
       update.toggle(on);
       open.toggle(on && state.pdfExists);
       update.disabled = state.mark === "busy";
       folderName.setText(state.folder.split("/").pop() || "/");
+      folder.setAttribute(
+        "aria-label",
+        t("notebooks.companion.folderIs", { folder: state.folder || "/" }),
+      );
     };
     paint();
     this.stopCompanion = host.observe(paint);

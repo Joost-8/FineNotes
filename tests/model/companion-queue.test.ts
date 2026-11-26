@@ -111,3 +111,17 @@ describe("the export queue", () => {
     expect(job).not.toHaveBeenCalled();
   });
 });
+
+describe("after a close", () => {
+  it("waits its start delay before the first export", async () => {
+    const slept: number[] = [];
+    const queue = new CompanionQueue({
+      paused: () => false,
+      sleep: async (ms) => void slept.push(ms),
+      startDelay: 3000,
+      failed: vi.fn(),
+    });
+    await queue.request("a", async () => {});
+    expect(slept[0]).toBe(3000);
+  });
+});

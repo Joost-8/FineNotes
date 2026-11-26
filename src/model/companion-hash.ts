@@ -22,6 +22,26 @@ export interface CompanionHashSource {
   resources: readonly { path: string; size: number }[];
 }
 
+function sortedKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortedKeys);
+  if (!value || typeof value !== "object") return value;
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(value).sort()) {
+    out[key] = sortedKeys((value as Record<string, unknown>)[key]);
+  }
+  return out;
+}
+
+/**
+ * A page's saved JSON with every object's keys in one order. A command can
+ * leave a page's keys in another order than the loader makes (a text box's
+ * `bold` added after its `rotation`), so the same page would otherwise hash
+ * differently before and after a reload, or on another device.
+ */
+export function canonicalJson(json: string): string {
+  return JSON.stringify(sortedKeys(JSON.parse(json)));
+}
+
 /** Hex SHA-256 (or any digest) of a text. */
 export type Digest = (text: string) => Promise<string>;
 
@@ -40,7 +60,7 @@ export class CompanionHasher {
     const parts: string[] = [];
     for (const page of source.pages) {
       let part = next.get(page.slot) ?? this.bySlot.get(page.slot);
-      if (part === undefined) part = await this.digest(page.json);
+      if (part === undefined) part = await this.digest(canonicalJson(page.json));
       next.set(page.slot, part);
       parts.push(part);
     }

@@ -116,6 +116,8 @@ export interface PdfExportOptions {
   onProgress?: (done: number, total: number) => void;
   /** Checked between pages; when it returns true the export stops with an `AbortError`. */
   cancelled?: () => boolean;
+  /** Awaited between pages: an export in the background waits here while the pen writes. */
+  between?: () => Promise<void>;
 }
 
 /** Render `pages` in order and return the PDF's bytes. */
@@ -137,6 +139,7 @@ export async function exportPagesToPdf(
     options.onProgress?.(i, pages.length);
     // Let the dialog paint its progress before the next page blocks the thread.
     await new Promise((resolve) => window.setTimeout(resolve, 0));
+    await options.between?.();
     if (composer && original.backdrop.kind === "pdf") {
       // Margins and plain paper reach a PDF page here; a picture page gets
       // them in paintForExport, which asks the furniture for the original.

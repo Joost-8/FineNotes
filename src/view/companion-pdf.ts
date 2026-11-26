@@ -96,7 +96,18 @@ export interface CompanionCapture {
   options: CompanionExportOptions;
   /** A board page cropped to its drawing. */
   crop: (page: Page) => Page;
+  /** The notebook's edit count when this was captured: later edits leave the PDF behind. */
+  revision: number;
+  /** This device's export switches, as a key: changed, the PDF is behind on this device only. */
+  optionsKey: string;
 }
+
+/** Automatic exports skip a notebook whose imported PDFs come to more than this; Update now still makes it. */
+export const COMPANION_AUTO_PDF_LIMIT = 60 * 1024 * 1024;
+
+/** How long after a close the first export waits. */
+const START_DELAY_MS = 3000;
+const PEN_POLL_MS = 400;
 
 /** What an open notebook view offers the manager. */
 export interface CompanionViewLink {
@@ -109,6 +120,8 @@ export interface CompanionViewLink {
   readonly id: string | null;
   /** Whether its pages are drawn from the file at `path`. */
   uses(path: string): boolean;
+  /** Another tab (or this one) became the active one. */
+  activeLeafChanged(leaf: unknown): void;
 }
 
 export interface CompanionState {
@@ -164,6 +177,7 @@ async function renderCapture(
   app: App,
   capture: CompanionCapture,
   subject: string,
+  between: () => Promise<void>,
 ): Promise<Uint8Array> {
   const doc = readStoredDocument(JSON.parse(assembleJson(capture.snapshot)), capture.paperWidth);
   const pages = companionRenderPages(doc, capture.crop);
@@ -184,7 +198,7 @@ async function renderCapture(
         ...capture.options,
         furniture: companionFurniture(doc, capture.title),
       },
-      { title: capture.title, subject },
+      { title: capture.title, subject, between },
     );
   } finally {
     images.destroy();
@@ -209,6 +223,11 @@ export function checkFrontmatter(text: string): void {
   }
 }
 
+/** A companion id as Obsidian's YAML read it: an id of digits comes back as a number. */
+function idText(value: unknown): string | null {
+  return typeof value === "string" || typeof value === "number" ? String(value) : null;
+}
+
 export class CompanionPdfManager {
   private journal: CompanionJournal;
   readonly queue: CompanionQueue;
@@ -223,6 +242,7 @@ export class CompanionPdfManager {
   constructor(
     private readonly app: App,
     private readonly device = deviceIdOf(app),
+    timing: { startDelay: number } = { startDelay: START_DELAY_MS },
   ) {
     let raw: unknown = null;
     try {
@@ -231,12 +251,35 @@ export class CompanionPdfManager {
       /* No local storage: a journal for this session only. */
     }
     this.journal = parseCompanionJournal(raw);
+    // An export that was running when the app last ended may be what ended
+    // it (pdf.md, 2026-11-22): that notebook is not exported automatically
+    // again until Update now.
+    let crashed = false;
+    for (const entry of Object.values(this.journal.entries)) {
+      if (!entry.exporting) continue;
+      delete entry.exporting;
+      entry.halted = true;
+      entry.error = "export";
+      entry.dirty = true;
+      crashed = true;
+    }
+    if (crashed) this.persist();
     this.queue = new CompanionQueue({
       paused: () => this.penDown(),
-      sleep: (ms) => new Promise((resolve) => window.setTimeout(resolve, ms)),
+      sleep: (ms) => this.sleep(ms),
+      startDelay: timing.startDelay,
       failed: (id, error) => this.failed(id, error, false),
       changed: () => this.statusChanged(),
     });
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
+  }
+
+  /** Waits while the pen writes anywhere (down, or lifted less than a second ago). */
+  private async waitForPen(): Promise<void> {
+    while (this.penDown() && !this.stopped) await this.sleep(PEN_POLL_MS);
   }
 
   /** Hears the vault, recovers interrupted writes once the vault is indexed, stops with the plugin. */
@@ -248,6 +291,11 @@ export class CompanionPdfManager {
     plugin.registerEvent(vault.on("delete", (file) => this.deleted(file.path)));
     plugin.registerEvent(vault.on("modify", (file) => this.changed(file)));
     plugin.registerEvent(vault.on("create", (file) => this.changed(file)));
+    plugin.registerEvent(
+      workspace.on("active-leaf-change", (leaf) => {
+        for (const view of this.views()) view.activeLeafChanged(leaf);
+      }),
+    );
     workspace.onLayoutReady(() => void this.recoverAll());
     plugin.register(() => this.destroy());
   }
@@ -297,6 +345,11 @@ export class CompanionPdfManager {
     };
   }
 
+  /** The notebook's edit count on this device: a capture records it. */
+  revisionOf(id: string | null): number {
+    return id ? this.revision(id) : 0;
+  }
+
   private revision(id: string): number {
     return this.revisions.get(id) ?? 0;
   }
@@ -327,7 +380,7 @@ export class CompanionPdfManager {
       const otherId: unknown = other
         ? this.app.metadataCache.getFileCache(other)?.frontmatter?.[COMPANION_ID_KEY]
         : undefined;
-      if (other && otherId === meta.id) {
+      if (other && idText(otherId) === meta.id) {
         if (entry.error !== "duplicate") {
           entry.error = "duplicate";
           this.persist();
@@ -492,7 +545,7 @@ export class CompanionPdfManager {
     force: boolean,
   ): Promise<void> {
     if (this.stopped || !this.entry(id)?.enabled) return Promise.resolve();
-    if (!force && !this.entry(id)?.dirty) return Promise.resolve();
+    if (!force && (!this.entry(id)?.dirty || this.entry(id)?.halted)) return Promise.resolve();
     return this.queue.request(
       id,
       async (forced) => {
@@ -534,24 +587,48 @@ export class CompanionPdfManager {
     this.hydrate(notebook, body);
     if (!entry.enabled || (!force && !entry.dirty)) return;
     if (entry.error === "duplicate") throw new CompanionError("duplicate");
-    const revision = this.revision(id);
+    if (!force && entry.halted) return;
     const made = capture();
+    // Edits made after the capture (the notebook reopened while this waited)
+    // are not in this PDF: it stays behind.
+    const revision = made.revision;
     const target = entry.pdfPath;
     if (made.resources.includes(target)) throw new CompanionError("source");
     const hash = await captureHash(this.app, made);
     const pdf = await this.pdfAt(entry, target);
     if (pdf && pdf.id !== id) throw new CompanionError("occupied");
     if (!pdf && !force) throw new CompanionError("missing");
-    if (pdf && pdf.hash === hash && !force) {
+    const sameSwitches = entry.optionsKey === undefined || entry.optionsKey === made.optionsKey;
+    if (pdf && pdf.hash === hash && sameSwitches && !force) {
       // Already shows this content (another device wrote it, or the edit was undone).
       entry.dirty = this.revision(id) !== revision;
+      entry.optionsKey = made.optionsKey;
       delete entry.error;
       this.persist();
       return;
     }
-    const bytes = await renderCapture(this.app, made, companionPdfSubject(id, hash));
-    // Moved, renamed or turned off while it rendered: the next update writes it.
-    if (this.stopped || !entry.enabled || entry.pdfPath !== target) return;
+    // A notebook over big PDFs is made only when asked: it may take the app down.
+    if (!force && this.importedPdfBytes(made) > COMPANION_AUTO_PDF_LIMIT) return;
+    entry.exporting = true;
+    this.persist();
+    let bytes: Uint8Array;
+    try {
+      bytes = await renderCapture(this.app, made, companionPdfSubject(id, hash), () =>
+        this.waitForPen(),
+      );
+    } finally {
+      delete entry.exporting;
+      this.persist();
+    }
+    // Moved, renamed, turned off or deleted while it rendered: nothing is written.
+    if (
+      this.stopped ||
+      this.journal.entries[id] !== entry ||
+      !this.app.vault.getFileByPath(notebook.path) ||
+      !entry.enabled ||
+      entry.pdfPath !== target
+    )
+      return;
     const tx = companionTransaction(target, id, this.device, Date.now());
     await this.ensureFolder(target);
     await this.internally([tx.target, tx.stage, tx.backup], () =>
@@ -562,21 +639,35 @@ export class CompanionPdfManager {
     if (file)
       entry.written = { path: target, mtime: file.stat.mtime, size: file.stat.size, id, hash };
     entry.dirty = this.revision(id) !== revision;
+    entry.optionsKey = made.optionsKey;
     delete entry.error;
+    delete entry.halted;
     this.persist();
+  }
+
+  /** The bytes of the PDFs a capture's pages are drawn from. */
+  private importedPdfBytes(made: CompanionCapture): number {
+    let total = 0;
+    for (const path of made.resources) {
+      if (!/\.pdf$/i.test(path)) continue;
+      total += this.app.vault.getFileByPath(path)?.stat.size ?? 0;
+    }
+    return total;
   }
 
   /**
    * Whether the PDF shows the notebook as `hash` says it is now, for the
    * state mark. Quiet: reads at most the PDF's Info, once per change.
    */
-  async check(id: string, hash: string): Promise<void> {
+  async check(id: string, hash: string, optionsKey?: string): Promise<void> {
     const entry = this.entry(id);
     if (!entry?.enabled || this.queue.busy(id) || entry.error === "duplicate") return;
     const revision = this.revision(id);
     const pdf = await this.pdfAt(entry, entry.pdfPath).catch(() => null);
     if (revision !== this.revision(id) || !entry.enabled) return;
-    const dirty = !pdf || pdf.id !== id || pdf.hash !== hash;
+    const switched =
+      optionsKey !== undefined && entry.optionsKey !== undefined && entry.optionsKey !== optionsKey;
+    const dirty = !pdf || pdf.id !== id || pdf.hash !== hash || switched;
     if (entry.dirty === dirty && (!pdf || entry.error !== "missing")) return;
     entry.dirty = dirty;
     if (pdf && entry.error === "missing") delete entry.error;
@@ -617,10 +708,13 @@ export class CompanionPdfManager {
     checkFrontmatter(body);
     const meta = companionMetaFromBody(body);
     let id = meta?.id ?? null;
-    while (!id || (!meta && this.entry(id))) id = randomId();
+    // A copy made outside FineNotes carries the original's id: it gets its own.
+    if (id && this.heldByAnother(id, notebook)) id = null;
+    while (!id || (id !== meta?.id && this.entry(id))) id = randomId();
     const known = this.entry(id);
+    const fresh = id !== meta?.id;
     const preferred =
-      meta?.pdfPath ??
+      (fresh ? undefined : meta?.pdfPath) ??
       known?.pdfPath ??
       inCompanionFolder(folder ?? folderOf(notebook.path), companionName(notebook.path));
     const entry: CompanionEntry = known ?? {
@@ -641,6 +735,17 @@ export class CompanionPdfManager {
     await this.writeKeys(notebook, { id, pdfPath: path, followName: entry.followName });
     this.persist();
     return id;
+  }
+
+  /** Whether another notebook that still exists has this id in its frontmatter. */
+  private heldByAnother(id: string, notebook: TFile): boolean {
+    const entry = this.entry(id);
+    if (!entry || entry.notebookPath === notebook.path) return false;
+    const other = this.app.vault.getFileByPath(entry.notebookPath);
+    if (!other) return false;
+    const otherId: unknown =
+      this.app.metadataCache.getFileCache(other)?.frontmatter?.[COMPANION_ID_KEY];
+    return idText(otherId) === id;
   }
 
   /** Turns it off here and, through the frontmatter, on every device. The PDF stays. */

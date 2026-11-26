@@ -10,11 +10,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("obsidian", () => import("./fake-obsidian"));
 /** The renderer is stood in for: a PDF that is only its Subject, as our composer writes it. */
 const rendered = vi.fn(
-  async (_pages: unknown[], _sources: unknown, options: { subject?: string }) =>
-    new TextEncoder().encode(
-      `%PDF-1.7\n1 0 obj << /Subject (${options.subject ?? ""}) >> endobj\ntrailer << /Info 1 0 R >>\n%%EOF\n`,
-    ),
+  async (
+    _pages: unknown[],
+    _sources: unknown,
+    options: { subject?: string; between?: () => Promise<void> },
+  ) => {
+    // One page: the export waits for the pen between pages.
+    await options.between?.();
+    return tinyPdf(options.subject ?? "");
+  },
 );
+
+/** A PDF with only an Info dictionary and a classic cross-reference table, as our composer writes. */
+function tinyPdf(subject: string): Uint8Array {
+  let text = "%PDF-1.7\n";
+  const at = text.length;
+  text += `1 0 obj << /Subject (${subject}) >> endobj\n`;
+  const xref = text.length;
+  text += `xref\n1 1\n${String(at).padStart(10, "0")} 00000 n\r\n`;
+  text += `trailer << /Size 2 /Info 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return new TextEncoder().encode(text);
+}
 vi.mock("../../src/view/pdf-export", () => ({ exportPagesToPdf: rendered }));
 vi.mock("../../src/view/image-cache", () => ({
   VaultImageCache: class {
@@ -40,10 +56,7 @@ const NOTE = "School/Cell biology.notebook.md";
 const PDF = "School/Exports/Cell biology.pdf";
 
 /** Another device's PDF of this notebook, as it arrives by sync. */
-const foreignPdf = (id: string, hash: string) =>
-  new TextEncoder().encode(
-    `%PDF-1.7\n1 0 obj << /Subject (${companionPdfSubject(id, hash)}) >> endobj\ntrailer << /Info 1 0 R >>\n`,
-  );
+const foreignPdf = (id: string, hash: string) => tinyPdf(companionPdfSubject(id, hash));
 
 function vaultApp() {
   let clock = 1000;
@@ -52,6 +65,7 @@ function vaultApp() {
   const texts = new Map<string, string>();
   const storage = new Map<string, unknown>();
   const layoutReady: Array<() => void> = [];
+  const leafChanged: Array<(leaf: unknown) => void> = [];
   const put = (path: string, data: Uint8Array | string) => {
     const file = files.get(path) ?? new TFile(path);
     files.set(path, file);
@@ -117,18 +131,34 @@ function vaultApp() {
           : undefined,
       }),
     },
-    workspace: { onLayoutReady: (run: () => void) => layoutReady.push(run) },
+    workspace: {
+      onLayoutReady: (run: () => void) => layoutReady.push(run),
+      on: (name: string, listener: (leaf: unknown) => void) => {
+        if (name === "active-leaf-change") leafChanged.push(listener);
+        return {};
+      },
+    },
     loadLocalStorage: (key: string) => storage.get(key) ?? null,
     saveLocalStorage: vi.fn((key: string, value: unknown) => void storage.set(key, value)),
   };
-  return { app, vault, files, bytes, texts, storage, put, layoutReady };
+  return { app, vault, files, bytes, texts, storage, put, layoutReady, leafChanged };
 }
 
-function capture(pages = 1, title = "Cell biology"): Capture {
+/** The notebook's edit count as a capture made now would record it. */
+let revisionNow = () => 0;
+
+function capture(
+  pages = 1,
+  title = "Cell biology",
+  over: Partial<ReturnType<Capture>> = {},
+): Capture {
   const doc = emptyDocument();
   for (let i = 1; i < pages; i++) doc.pages.push(blankPage(`p${i}`));
   const snapshot = new DocumentEncoder().snapshot(doc);
   return () => ({
+    revision: revisionNow(),
+    optionsKey: "switches",
+    ...over,
     title,
     snapshot,
     paperWidth: 1000,
@@ -136,13 +166,14 @@ function capture(pages = 1, title = "Cell biology"): Capture {
     resources: [],
     options: { usePressure: true, highlighterAlpha: 0.4 },
     crop: (page) => page,
+    ...over,
   });
 }
 
 function setup(body = "Notes\n") {
   const v = vaultApp();
   const note = v.put(NOTE, body);
-  const manager = new CompanionPdfManager(v.app as never, "devA");
+  const manager = new CompanionPdfManager(v.app as never, "devA", { startDelay: 0 });
   return { ...v, note, manager };
 }
 
@@ -153,10 +184,12 @@ async function enabled() {
   await s.manager.requestExport(id, s.note as never, capture(), true);
   rendered.mockClear();
   s.vault.readBinary.mockClear();
+  revisionNow = () => s.manager.revisionOf(id);
   return { ...s, id };
 }
 
 beforeEach(() => {
+  revisionNow = () => 0;
   resetFakes();
   rendered.mockClear();
   vi.stubGlobal("window", { setTimeout, clearTimeout });
@@ -366,7 +399,7 @@ describe("an interrupted write", () => {
     s.put(stage, foreignPdf(s.id, "1111111111111111"));
     s.manager.markDirty(s.id);
     // A new session reads the journal from local storage.
-    const next = new CompanionPdfManager(s.app as never, "devA");
+    const next = new CompanionPdfManager(s.app as never, "devA", { startDelay: 0 });
     const plugin = { app: s.app, registerEvent: vi.fn(), register: vi.fn() };
     next.register(plugin as never, () => []);
     expect(s.files.has(PDF)).toBe(false);
@@ -408,5 +441,133 @@ describe("another device's scratch files", () => {
     expect(rendered).toHaveBeenCalledTimes(1);
     expect(s.files.has(stray)).toBe(true);
     expect(s.manager.state(s.id).mark).toBe("current");
+  });
+});
+
+describe("the review's cases", () => {
+  /** A view link whose pen the test holds. */
+  function penLink(s: Awaited<ReturnType<typeof enabled>>) {
+    const link = {
+      file: s.note,
+      penDown: false,
+      id: s.id,
+      uses: () => false,
+      activeLeafChanged: vi.fn(),
+      writeKeys: vi.fn(async () => false),
+    };
+    s.manager.register({ app: s.app, registerEvent: vi.fn(), register: vi.fn() } as never, () => [
+      link as never,
+    ]);
+    return link;
+  }
+
+  it("waits for the pen between pages, not only before an export", async () => {
+    const s = await enabled();
+    const link = penLink(s);
+    s.manager.markDirty(s.id);
+    let started = false;
+    rendered.mockImplementationOnce(async (_p, _s, options) => {
+      started = true;
+      // The pen comes down as the first page renders.
+      link.penDown = true;
+      await options.between?.();
+      return tinyPdf(options.subject ?? "");
+    });
+    const done = s.manager.requestExport(s.id, s.note as never, capture(2), false);
+    await vi.waitFor(() => expect(started).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 900));
+    // Still waiting: nothing written while the pen writes.
+    expect(s.manager.entry(s.id)?.dirty).toBe(true);
+    link.penDown = false;
+    await done;
+    expect(s.manager.entry(s.id)?.dirty).toBe(false);
+  });
+
+  it("an export that ended the app is not run again by itself (the crash guard)", async () => {
+    const s = await enabled();
+    s.manager.markDirty(s.id);
+    // The app ends during the render: the journal says an export was running.
+    rendered.mockImplementationOnce(async () => {
+      expect(
+        JSON.parse(s.storage.get("finenotes-companion-journal") as string).entries[s.id].exporting,
+      ).toBe(true);
+      throw new Error("the app ended here");
+    });
+    await s.manager.requestExport(s.id, s.note as never, capture(2), false);
+    const journal = JSON.parse(s.storage.get("finenotes-companion-journal") as string);
+    journal.entries[s.id].exporting = true;
+    s.storage.set("finenotes-companion-journal", JSON.stringify(journal));
+    const next = new CompanionPdfManager(s.app as never, "devA", { startDelay: 0 });
+    expect(next.state(s.id).mark).toBe("error");
+    rendered.mockClear();
+    await next.requestExport(s.id, s.note as never, capture(2), false);
+    expect(rendered).not.toHaveBeenCalled();
+    // Update now runs it, and lifts the hold.
+    await next.requestExport(s.id, s.note as never, capture(2), true);
+    expect(rendered).toHaveBeenCalledTimes(1);
+    expect(next.entry(s.id)?.halted).toBeUndefined();
+  });
+
+  it("over big imported PDFs, only Update now exports", async () => {
+    const s = await enabled();
+    const slides = s.put("Slides.pdf", new Uint8Array(1));
+    slides.stat.size = 70 * 1024 * 1024;
+    s.manager.markDirty(s.id);
+    await s.manager.requestExport(
+      s.id,
+      s.note as never,
+      capture(2, "Cell biology", { resources: ["Slides.pdf"] }),
+      false,
+    );
+    expect(rendered).not.toHaveBeenCalled();
+    expect(s.manager.state(s.id).mark).toBe("stale");
+    await s.manager.requestExport(
+      s.id,
+      s.note as never,
+      capture(2, "Cell biology", { resources: ["Slides.pdf"] }),
+      true,
+    );
+    expect(rendered).toHaveBeenCalledTimes(1);
+  });
+
+  it("an edit made after the capture (reopened while it waited) leaves the PDF behind", async () => {
+    const s = await enabled();
+    s.manager.markDirty(s.id);
+    const made = capture(2)();
+    // Written on again while the export waits in the queue.
+    s.manager.markDirty(s.id);
+    await s.manager.requestExport(s.id, s.note as never, () => made, false);
+    expect(rendered).toHaveBeenCalledTimes(1);
+    expect(s.manager.entry(s.id)?.dirty).toBe(true);
+  });
+
+  it("writes nothing for a notebook deleted while it rendered", async () => {
+    const s = await enabled();
+    s.manager.markDirty(s.id);
+    const before = s.bytes.get(PDF);
+    rendered.mockImplementationOnce(async (_p, _s, options) => {
+      s.files.delete(NOTE);
+      s.manager.deleted(NOTE);
+      return tinyPdf(options.subject ?? "");
+    });
+    await s.manager.requestExport(s.id, s.note as never, capture(2), false);
+    expect(s.bytes.get(PDF)).toBe(before);
+    expect([...s.files.keys()]).toEqual([PDF]);
+  });
+
+  it("a copy made outside FineNotes, turned on, gets an id and a PDF of its own", async () => {
+    const s = await enabled();
+    const copyPath = "School/Copy.notebook.md";
+    const copy = s.put(copyPath, s.texts.get(NOTE)!);
+    const id = await s.manager.enable(copy as never, s.texts.get(copyPath)!, "School/Exports");
+    expect(id).not.toBe(s.id);
+    expect(s.manager.entry(id)?.pdfPath).toBe("School/Exports/Copy.pdf");
+    expect(s.manager.entry(s.id)?.notebookPath).toBe(NOTE);
+    expect(companionMetaFromBody(s.texts.get(NOTE)!)?.pdfPath).toBe(PDF);
+  });
+
+  it("writes the id quoted, so YAML keeps it a string", async () => {
+    const s = await enabled();
+    expect(s.texts.get(NOTE)).toContain(`finenotes-companion-id: "${s.id}"`);
   });
 });

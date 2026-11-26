@@ -2568,6 +2568,8 @@ export class InkView extends TextFileView {
         writable: () => !this.guard.locked && !this.devicePagesSyncing(),
         penDown: () => this.writeHold.writing(performance.now()),
         uses: (path) => companionResources(this.doc).includes(path),
+        isLeaf: (leaf) => leaf === this.leaf,
+        hidden: () => docOf(this.contentEl).visibilityState === "hidden",
       },
       this.plugin.companionPdfs,
     );

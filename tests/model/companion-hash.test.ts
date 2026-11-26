@@ -5,8 +5,13 @@
  */
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { CompanionHasher, type CompanionHashSource } from "../../src/model/companion-hash";
-import { DocumentEncoder } from "../../src/model/serialize";
+import {
+  CompanionHasher,
+  canonicalJson,
+  type CompanionHashSource,
+} from "../../src/model/companion-hash";
+import { DocumentEncoder, decodeDocument, encodeDocument } from "../../src/model/serialize";
+import { SetTextBoxStyle } from "../../src/model/text-commands";
 import { blankPage, emptyDocument } from "../../src/model/document";
 
 const sha = async (text: string) => createHash("sha256").update(text).digest("hex");
@@ -88,5 +93,37 @@ describe("the content hash", () => {
     // Navigation is not in the pages' saved text: the view's scroll position.
     doc.view = { ...doc.view, scrollY: 999 } as typeof doc.view;
     expect(await hash(encoder.snapshot(doc).pages)).toBe(await hash(first.pages));
+  });
+});
+
+describe("the same notebook after a reload, or on another device", () => {
+  it("hashes the same though a command left its keys in another order", async () => {
+    const doc = emptyDocument();
+    const page = doc.pages[0];
+    page.textBoxes.push({
+      id: "t1",
+      x: 10,
+      y: 20,
+      w: 200,
+      text: "hi",
+      color: "#000000",
+      fontSize: 22,
+      rotation: 0.3,
+    } as (typeof page.textBoxes)[number]);
+    // Bold is added after rotation here; the loader puts it before.
+    new SetTextBoxStyle(page.id, "t1", { bold: true }).apply(doc);
+    const live = new DocumentEncoder().snapshot(doc).pages;
+    const saved = encodeDocument(doc);
+    // Two devices read the same file.
+    const deviceA = new DocumentEncoder().snapshot(decodeDocument(saved)).pages;
+    const deviceB = new DocumentEncoder().snapshot(decodeDocument(saved)).pages;
+    expect(live[0].json).not.toBe(deviceA[0].json);
+    const hash = (pages: typeof live) =>
+      new CompanionHasher(sha).hash(source({ pages, resources: [] }));
+    expect(await hash(live)).toBe(await hash(deviceA));
+    expect(await hash(deviceA)).toBe(await hash(deviceB));
+    expect(canonicalJson('{"b":1,"a":{"d":[{"f":1,"e":2}],"c":3}}')).toBe(
+      '{"a":{"c":3,"d":[{"e":2,"f":1}]},"b":1}',
+    );
   });
 });

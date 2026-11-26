@@ -1575,6 +1575,7 @@ export const notebooks = {
   "notebooks.companion.markStale": "Needs update",
   "notebooks.companion.markBusy": "Updating",
   "notebooks.companion.chooseFolder": "Choose the PDF's folder",
+  "notebooks.companion.folderIs": "The PDF's folder: {folder}. Choose another",
   "notebooks.companion.chooseFolderPlaceholder": "Choose a folder for the PDF…",
   "notebooks.companion.updateNow": "Update PDF now",
   "notebooks.companion.openPdf": "Open PDF",

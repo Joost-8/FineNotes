@@ -91,6 +91,12 @@ export interface CompanionEntry {
   seen?: CompanionSeen;
   error?: CompanionErrorCode;
   transaction?: CompanionTransaction;
+  /** An export is rendering: found at start, the app ended during it (the crash guard). */
+  exporting?: true;
+  /** Automatic exports wait for Update now (an export may have ended the app). */
+  halted?: true;
+  /** This device's export switches the PDF was last made or accepted with. */
+  optionsKey?: string;
 }
 
 export interface CompanionJournal {
@@ -168,7 +174,8 @@ function keyLines(keys: CompanionKeys, current: CompanionFrontmatterMeta | null)
   const pdf = keys.pdfPath === undefined ? (current?.pdfPath ?? null) : keys.pdfPath;
   const follow = keys.followName === undefined ? (current?.followName ?? null) : keys.followName;
   const lines: string[] = [];
-  if (id !== null) lines.push(`${COMPANION_ID_KEY}: ${id}`);
+  // Quoted: an id of digits (or digits and one "e") would read back as a number.
+  if (id !== null) lines.push(`${COMPANION_ID_KEY}: "${id}"`);
   if (pdf !== null) lines.push(`${COMPANION_PDF_KEY}: ${JSON.stringify(pdf)}`);
   if (follow !== null) lines.push(`${COMPANION_FOLLOW_KEY}: ${follow ? "true" : "false"}`);
   return lines;
@@ -359,6 +366,9 @@ export function parseCompanionJournal(raw: unknown): CompanionJournal {
     const seen = readSeen(value.seen);
     if (seen) entry.seen = seen;
     if (ERROR_CODES.includes(value.error as CompanionErrorCode)) entry.error = value.error;
+    if (value.exporting === true) entry.exporting = true;
+    if (value.halted === true) entry.halted = true;
+    if (typeof value.optionsKey === "string") entry.optionsKey = value.optionsKey;
     const tx = value.transaction;
     if (
       tx &&
