@@ -7,23 +7,24 @@
  * `TemplatePickerModal` so the UI matches normal notebooks 1-to-1.
  */
 
-import { type App, type TFile, Notice, setIcon } from "obsidian";
+import { type App, type TFile, Notice, Scope, setIcon } from "obsidian";
 import type GoodObsidianPlugin from "../main";
 import { t } from "../i18n/translate";
 import { attachmentDefaults, penPreferencesOf } from "../settings-data";
 import { PALETTE, SIZES, VIEW_TYPE_INK } from "../constants";
 import { pushRecentColor } from "../model/colors";
-import { InsertImage } from "../model/commands";
+import { InsertImage, SetBackdrop } from "../model/commands";
 import { resolveAttachmentFolder } from "../model/attachment-folders";
 import { newImageElement, placeImageBox } from "../model/images";
 import { addSavedPen, isPenId, samePen, savedPensOf } from "../model/saved-pens";
 import { DEFAULT_PAGE_GEOMETRY, type InkDocument, type Page } from "../model/document";
-import { attachDotClock, dotClockOf } from "../model/dot-ids";
+import { dotClockOf } from "../model/dot-ids";
 import {
   INLINE_DEFAULT_HEIGHT,
   finishInlineSketchPage,
   initialInlineManualHeight,
   inlineClampedResizeHeight,
+  inlineEditDocument,
   inlineGrowHeight,
   inlineGrowHeightForPoint,
   isInlineSketchPage,
@@ -42,6 +43,13 @@ import { SavedPenModal } from "./saved-pen-modal";
 import { penOfState, Toolbar, type ToolbarState } from "./toolbar";
 import { normalizeLayout, type BarItemId, type ToolbarLayout } from "./toolbar-layout";
 import { editClosedNotebook, notebookIsOpen, readClosedNotebook } from "./notebook-transaction";
+import { deviceIdOf } from "./device-pages-session";
+import {
+  type InlineEditorHandle,
+  claimInlineEditor,
+  makeRoomFor,
+  releaseInlineEditor,
+} from "./inline-editor-registry";
 
 export interface EmbedInlineEditRequest {
   plugin: GoodObsidianPlugin;
@@ -72,13 +80,6 @@ const INLINE_BAR_ITEMS = new Set<BarItemId>([
   "sticky",
 ]);
 
-const DEFAULT_INLINE_LAYOUT: ToolbarLayout = {
-  start: ["undo", "redo"],
-  middle: ["select", "pen", "eraser", "shape", "text", "accessories"],
-  end: ["stylus"],
-  off: [],
-};
-
 const ISOLATED_EVENTS = [
   "mousedown",
   "pointerdown",
@@ -102,17 +103,7 @@ function inlineLayoutFrom(raw: unknown, savedPenIds: ReadonlySet<string>): Toolb
   return { start, middle, end, off: full.off };
 }
 
-let activeEditor: EmbedInlineEditor | null = null;
-
-function setActiveEditor(editor: EmbedInlineEditor | null): void {
-  activeEditor = editor;
-}
-
-export function getActiveEmbedInlineEditor(): EmbedInlineEditor | null {
-  return activeEditor;
-}
-
-export class EmbedInlineEditor {
+export class EmbedInlineEditor implements InlineEditorHandle {
   private surface: InkSurface | null = null;
   private toolbar: Toolbar | null = null;
   private images: VaultImageCache | null = null;
@@ -131,6 +122,7 @@ export class EmbedInlineEditor {
   private paperIsDark = false;
   private imageFolder: string | undefined;
   private cleanups: Array<() => void> = [];
+  private disposed = false;
 
   constructor(private readonly req: EmbedInlineEditRequest) {
     this.onlyStylus = req.plugin.stylusOnly;
@@ -154,13 +146,12 @@ export class EmbedInlineEditor {
 
   async start(): Promise<void> {
     const { app, slotEl, notebookFile, pageId, plugin } = this.req;
-    while (activeEditor && activeEditor !== this) {
-      if (activeEditor.hostSlot === slotEl || !(await activeEditor.close())) {
-        return;
-      }
+    // Another block open: it saves and closes first; one that cannot save stays open.
+    if (!(await makeRoomFor(slotEl)) || this.closed || !slotEl.isConnected) {
+      this.req.onClosed?.();
+      return;
     }
-    if (this.closed || !slotEl.isConnected) return;
-    setActiveEditor(this);
+    claimInlineEditor(this);
 
     const contentEditable = slotEl.getAttribute("contenteditable");
     slotEl.setAttribute("contenteditable", "false");
@@ -183,19 +174,20 @@ export class EmbedInlineEditor {
       }
       const fullDoc = await readClosedNotebook(app, notebookFile, plugin.settings.paperWidth);
       if (this.closed || this.closing || !slotEl.isConnected) {
-        if (activeEditor === this) setActiveEditor(null);
+        this.dispose();
         return;
       }
-      const target =
-        fullDoc.pages.find((p) => p.id === pageId) ?? fullDoc.pages[this.req.pageNumber - 1];
-      if (!target) throw new Error(t("notebooks.handwrite.errPageNotFound"));
+      // Ids for new ink count on from every page of the notebook, not this one alone.
+      const editing = inlineEditDocument(fullDoc, pageId, deviceIdOf(app));
+      if (!editing) throw new Error(t("notebooks.handwrite.errPageNotFound"));
+      const target = editing.page;
 
       this.imageFolder = resolveAttachmentFolder(
         fullDoc,
         "images",
         attachmentDefaults(plugin.settings),
       );
-      const clone: Page = structuredClone(target);
+      const clone: Page = target;
       this.basePage = structuredClone(target);
       if (isInlineSketchPage(clone)) {
         this.manualHeight = initialInlineManualHeight(clone);
@@ -203,13 +195,7 @@ export class EmbedInlineEditor {
           clone.geometry = { ...clone.geometry, height: INLINE_DEFAULT_HEIGHT };
         }
       }
-      this.doc = {
-        version: fullDoc.version,
-        view: { scrollY: 0, width: clone.geometry.width, scale: 1 },
-        pages: [clone],
-      };
-      const clock = dotClockOf(fullDoc);
-      if (clock) attachDotClock(this.doc, clock);
+      this.doc = editing.doc;
 
       this.mount();
     } catch (error) {
@@ -236,7 +222,7 @@ export class EmbedInlineEditor {
   private effectivePaperTheme(): PaperTheme {
     if (this.isTransparent()) {
       const base = this.paperIsDark ? DARK_PAPER : LIGHT_PAPER;
-      return { ...base, desk: "transparent" };
+      return { ...base, desk: "transparent", seeThrough: true };
     }
     return { ...LIGHT_PAPER, desk: "transparent" };
   }
@@ -432,24 +418,19 @@ export class EmbedInlineEditor {
           this.onlyStylus = on;
           this.toolbar?.setOnlyStylusMode(on);
           this.surface?.onlyStylusChanged();
+          this.syncFingerScroll();
           void plugin.setOnlyStylusMode(on);
-        },
-        onLayout: (next) => {
-          plugin.settings.inlineToolbarLayout = next;
-          void plugin.saveSettings();
         },
       },
       {
         defaultSize: plugin.settings.defaultSize,
         reservedColors: [plugin.settings.defaultColor, ...(plugin.settings.customColors ?? [])],
-        layout:
-          plugin.settings.inlineToolbarLayout ??
-          inlineLayoutFrom(plugin.settings.toolbarLayout, savedPenIds),
+        // The notebook's own layout, less what a block has no use for.
+        layout: inlineLayoutFrom(plugin.settings.toolbarLayout, savedPenIds),
         allowedItems,
         popoverBounds: slotEl,
         pillRow: true,
         startOptionsTucked: true,
-        resetLayout: DEFAULT_INLINE_LAYOUT,
         onlyStylusMode: plugin.stylusOnly,
         fingerDrawing: plugin.fingerDrawing,
       },
@@ -458,13 +439,13 @@ export class EmbedInlineEditor {
     // Mount native inline actions directly inside the Toolbar's own `.goodobsidian-bar-doc` group
     const barEl = toolbarHost.querySelector<HTMLElement>(".goodobsidian-toolbar");
     const endGroup = barEl?.querySelector<HTMLElement>(".goodobsidian-bar-doc") ?? barEl;
-    if (endGroup) {
-      // 1. Native FineNotes Paper & Templates picker (`TemplatePickerModal`)
+    // A page on a PDF slide keeps its slide: no paper to choose.
+    if (endGroup && page.backdrop.kind !== "pdf") {
       const paperBtn = endGroup.createEl("button", {
         cls: "clickable-icon",
         attr: { type: "button", "aria-label": t("notebooks.handwrite.paperTemplate") },
       });
-      setIcon(paperBtn, "file-spreadsheet");
+      setIcon(paperBtn, "notepad-text");
       paperBtn.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -478,7 +459,8 @@ export class EmbedInlineEditor {
           allowTransparent: expandable,
           hideSizeControls: expandable,
           onApply: ({ backdrop }) => {
-            p.backdrop = backdrop;
+            // A command, so Undo takes the paper back too.
+            this.surface?.applyCommand(new SetBackdrop(p.id, backdrop));
             plugin.settings.inlineLastBackdrop = structuredClone(backdrop);
             void plugin.saveSettings();
             this.revision++;
@@ -491,8 +473,8 @@ export class EmbedInlineEditor {
           },
         }).open();
       });
-
-      // 3. Open in full notebook — jumps directly to this exact page via `pageIndex`
+    }
+    if (endGroup) {
       const openBtn = endGroup.createEl("button", {
         cls: "clickable-icon",
         attr: { type: "button", "aria-label": t("notebooks.handwrite.openInNotebook") },
@@ -515,7 +497,6 @@ export class EmbedInlineEditor {
         });
       });
 
-      // 4. Done (matching native toolbar icon button)
       const doneBtn = endGroup.createEl("button", {
         cls: "clickable-icon goodobsidian-inline-done-icon",
         attr: { type: "button", "aria-label": t("notebooks.handwrite.done") },
@@ -568,6 +549,7 @@ export class EmbedInlineEditor {
       },
     );
     this.surface.setInlineWidthLocked(true);
+    this.syncFingerScroll();
     this.surface.setBackdropPainter(new VaultBackdropRenderer(null));
     this.images.onReady = (path) => this.surface?.imageReady(path);
     this.surface.setImagePainter(this.images);
@@ -577,14 +559,26 @@ export class EmbedInlineEditor {
     slotEl.tabIndex = -1;
     slotEl.focus({ preventScroll: true });
 
+    // Esc and Mod+Enter finish. Obsidian's hotkeys take Mod+Enter at the
+    // window before a keydown here would hear it, so both go through a scope
+    // of the editor's own, asked before the app's (obsidian-host.md).
+    const keymap = (app as { keymap?: { pushScope(s: Scope): void; popScope(s: Scope): void } })
+      .keymap;
+    if (keymap) {
+      const scope = new Scope((app as { scope?: Scope }).scope);
+      const finish = (e: KeyboardEvent): false => {
+        // Esc first leaves what the surface is in the middle of (a text box, a selection).
+        if (e.key === "Escape" && this.surface?.handleKeyDown(e)) return false;
+        void this.close();
+        return false;
+      };
+      scope.register([], "Escape", finish);
+      scope.register(["Mod"], "Enter", finish);
+      keymap.pushScope(scope);
+      this.cleanups.push(() => keymap.popScope(scope));
+    }
     const onKey = (e: KeyboardEvent): void => {
       if (e.defaultPrevented) return;
-      if (e.key === "Escape" || ((e.metaKey || e.ctrlKey) && e.key === "Enter")) {
-        e.preventDefault();
-        e.stopPropagation();
-        void this.close();
-        return;
-      }
       if (this.surface?.handleKeyDown(e)) {
         e.stopPropagation();
       }
@@ -598,6 +592,11 @@ export class EmbedInlineEditor {
     slotEl.addEventListener("paste", onPaste, true);
     this.cleanups.push(() => slotEl.removeEventListener("keydown", onKey, true));
     this.cleanups.push(() => slotEl.removeEventListener("paste", onPaste, true));
+  }
+
+  /** With the pen only, a finger scrolls the note across the block; else it draws. */
+  private syncFingerScroll(): void {
+    this.stageEl?.toggleClass("is-finger-scroll", this.onlyStylus);
   }
 
   private isTransparent(): boolean {
@@ -772,7 +771,7 @@ export class EmbedInlineEditor {
     return this.saves;
   }
 
-  close(): Promise<boolean> {
+  close(force = false): Promise<boolean> {
     if (this.closing) return this.closing;
     this.closing = (async () => {
       if (this.saveTimer !== null) {
@@ -785,25 +784,37 @@ export class EmbedInlineEditor {
       slotEl.inert = true;
       const ok = await this.flushSave(true);
       slotEl.inert = wasInert;
-      if (!ok && slotEl.isConnected && this.surface) {
+      // Not saved, and the block still on screen: it stays open to try again.
+      if (!ok && !force && slotEl.isConnected && this.surface) {
         if (hadFocus && slotEl.ownerDocument.activeElement === slotEl.ownerDocument.body) {
           slotEl.focus({ preventScroll: true });
         }
         this.closing = null;
         return false;
       }
-      this.closed = true;
-      this.toolbar?.destroy();
-      this.toolbar = null;
-      this.surface?.destroy();
-      this.surface = null;
-      this.images?.destroy();
-      this.images = null;
-      for (const cleanup of this.cleanups.splice(0).reverse()) cleanup();
-      if (activeEditor === this) setActiveEditor(null);
-      this.req.onClosed?.();
+      this.dispose();
       return ok;
     })();
     return this.closing;
+  }
+
+  /** Take everything down: the surface's canvases, the toolbar, listeners, the claim. */
+  private dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.closed = true;
+    if (this.saveTimer !== null) {
+      window.clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+    this.toolbar?.destroy();
+    this.toolbar = null;
+    this.surface?.destroy();
+    this.surface = null;
+    this.images?.destroy();
+    this.images = null;
+    for (const cleanup of this.cleanups.splice(0).reverse()) cleanup();
+    releaseInlineEditor(this);
+    this.req.onClosed?.();
   }
 }

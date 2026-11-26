@@ -205,8 +205,7 @@ import {
   parseNudges,
   recordUse,
 } from "./model/nudges";
-import { EmbedInlineEditor } from "./view/embed-inline-editor";
-import { registerHandwriteHere } from "./view/handwrite-here";
+import { inlineEditorHost, registerHandwriteHere } from "./view/handwrite-here";
 import { InkView } from "./view/ink-view";
 import { starsOf } from "./model/favorites";
 import {
@@ -845,19 +844,7 @@ export default class GoodObsidianPlugin extends Plugin {
         usePressure: () => this.settings.pressureWidth,
         highlighterAlpha: () => this.settings.highlighterAlpha,
         paper: () => shownPaperTheme(this.settings, document.body.hasClass("theme-dark")),
-        openInlineEditor: ({ slotEl, file, page, pageNumber, sourcePath, onClosed }) => {
-          const editor = new EmbedInlineEditor({
-            plugin: this,
-            app: this.app,
-            slotEl,
-            notebookFile: file,
-            pageId: page.id,
-            pageNumber,
-            sourcePath,
-            onClosed,
-          });
-          void editor.start();
-        },
+        ...inlineEditorHost(this),
       }),
     );
     this.registerEvent(

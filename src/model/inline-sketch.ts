@@ -4,7 +4,9 @@
  */
 
 import { resolveSpacing } from "../canvas/backdrop";
-import { blankPage, type Page, type SyntheticBackdrop } from "./document";
+import { DEFAULT_PAGE_HEIGHT } from "../constants";
+import { blankPage, type InkDocument, type Page, type SyntheticBackdrop } from "./document";
+import { DotClock, attachDotClock, dotClockOf, idsIn } from "./dot-ids";
 
 export const INLINE_SKETCH_PREFIX = "hw-";
 export const INLINE_SKETCH_WIDTH = 1024;
@@ -15,7 +17,13 @@ export const INLINE_GROW_STEP = 160;
 export const INLINE_TOP_PAD = 28;
 export const INLINE_BOTTOM_PAD = 28;
 export const INLINE_RESIZE_PAD = 12;
-export const INLINE_MAX_HEIGHT = 4096;
+/**
+ * A block is at most one page tall. The editor's canvas layers are as tall as
+ * the block on screen, so this bounds them to what a notebook page in its
+ * own view costs (at most about 1400 x 2000 device px a layer on an iPad);
+ * a longer drawing belongs on a notebook page.
+ */
+export const INLINE_MAX_HEIGHT = DEFAULT_PAGE_HEIGHT;
 
 export function isInlineSketchId(id: string): boolean {
   return id.startsWith(INLINE_SKETCH_PREFIX);
@@ -96,13 +104,20 @@ export function trimInlinePageTop(page: Page): number {
       stroke.pts[i] -= shiftY;
     }
   }
-  for (const image of page.images) image.y -= shiftY;
-  for (const text of page.textBoxes) text.y -= shiftY;
-  for (const table of page.tables ?? []) table.y -= shiftY;
-  for (const graph of page.graphs ?? []) graph.y -= shiftY;
-  for (const eq of page.equations ?? []) eq.y -= shiftY;
-  for (const comment of page.comments ?? []) comment.y -= shiftY;
-  for (const region of page.regions ?? []) region.y -= shiftY;
+  // Everything placed on the page moves with the ink: pictures, text boxes,
+  // tables, graphs, equations, comments, regions and section headings.
+  for (const [key, value] of Object.entries(page)) {
+    if (key === "strokes" || !Array.isArray(value)) continue;
+    for (const item of value as unknown[]) {
+      if (
+        typeof item === "object" &&
+        item !== null &&
+        typeof (item as { y?: unknown }).y === "number"
+      ) {
+        (item as { y: number }).y -= shiftY;
+      }
+    }
+  }
 
   page.geometry = {
     ...page.geometry,
@@ -269,24 +284,34 @@ function mergeById<T extends { id: string }>(
   return out;
 }
 
-function mergeOptionalById<T extends { id: string }>(
-  base: readonly T[] | undefined,
-  latest: readonly T[] | undefined,
-  local: readonly T[] | undefined,
-): T[] | undefined {
-  const merged = mergeById(base, latest, local);
-  return merged.length > 0 ? merged : undefined;
+/** A list every item of which has a string id: merged item by item. */
+function isIdList(value: unknown): value is Array<{ id: string }> {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (item) =>
+        typeof item === "object" &&
+        item !== null &&
+        typeof (item as { id?: unknown }).id === "string",
+    )
+  );
 }
+
+/** The lists every page has, even empty. */
+const REQUIRED_LISTS = new Set(["strokes", "images", "textBoxes"]);
+
+const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 
 /**
  * Three-way merges local inline edits (`local`) against the latest page on disk
  * (`latest`) using the snapshot from when the session loaded or last saved
- * (`base`). Preserves any strokes or elements synced from another device while
- * this inline editor was open, while honoring explicit local additions and
- * deletions.
+ * (`base`). Every field of the page is merged, not a known few: a list of
+ * elements with ids (strokes, tasks, links, sections …) item by item, so what
+ * another device added meanwhile stays; any other field (the paper, the
+ * title, chapters …) is the session's when the session changed it, else the
+ * one on disk.
  */
 export function mergeInlinePageEdits(base: Page, latest: Page, local: Page): Page {
-  const backdropChanged = JSON.stringify(local.backdrop) !== JSON.stringify(base.backdrop);
   const heightChanged = local.geometry.height !== base.geometry.height;
   const mergedHeight = heightChanged
     ? Math.max(
@@ -295,40 +320,58 @@ export function mergeInlinePageEdits(base: Page, latest: Page, local: Page): Pag
       )
     : latest.geometry.height;
 
-  const merged: Page = {
-    ...structuredClone(latest),
-    geometry: { ...local.geometry, height: mergedHeight },
-    backdrop: structuredClone(backdropChanged ? local.backdrop : latest.backdrop),
-    strokes: mergeById(base.strokes, latest.strokes, local.strokes),
-    images: mergeById(base.images, latest.images, local.images),
-    textBoxes: mergeById(base.textBoxes, latest.textBoxes, local.textBoxes),
+  const merged = structuredClone(latest) as unknown as Record<string, unknown>;
+  const b = base as unknown as Record<string, unknown>;
+  const l = local as unknown as Record<string, unknown>;
+  const keys = new Set([...Object.keys(b), ...Object.keys(merged), ...Object.keys(l)]);
+  for (const key of keys) {
+    if (key === "id" || key === "geometry") continue;
+    const [was, now, mine] = [b[key], merged[key], l[key]];
+    if (
+      (isIdList(was) || was === undefined) &&
+      (isIdList(now) || now === undefined) &&
+      isIdList(mine)
+    ) {
+      const list = mergeById(was, now, mine);
+      // An optional list left empty is absent, as the file format keeps it.
+      if (list.length > 0 || REQUIRED_LISTS.has(key)) merged[key] = list;
+      else delete merged[key];
+      continue;
+    }
+    if (same(mine, was)) continue;
+    if (mine === undefined) delete merged[key];
+    else merged[key] = structuredClone(mine);
+  }
+  const page = merged as unknown as Page;
+  page.geometry = { ...local.geometry, height: mergedHeight };
+  return page;
+}
+
+/**
+ * The one-page notebook an inline editor writes in, from the whole notebook
+ * it was read from: a copy of `pageId`'s page, with a clock for new ids
+ * raised past every id in every page of the notebook, so a stroke, text box
+ * or picture made in one block never takes the id of one in another block
+ * (the notebook view keys its strokes by id). A notebook kept as page files
+ * brings its own clock; a single-file one gets one for `device`.
+ */
+export function inlineEditDocument(
+  full: InkDocument,
+  pageId: string,
+  device: string,
+): { doc: InkDocument; page: Page } | null {
+  const target = full.pages.find((p) => p.id === pageId);
+  if (!target) return null;
+  const page = structuredClone(target);
+  const doc: InkDocument = {
+    version: full.version,
+    view: { scrollY: 0, width: page.geometry.width, scale: 1 },
+    pages: [page],
   };
-
-  const tables = mergeOptionalById(base.tables, latest.tables, local.tables);
-  if (tables) merged.tables = tables;
-  else delete merged.tables;
-
-  const graphs = mergeOptionalById(base.graphs, latest.graphs, local.graphs);
-  if (graphs) merged.graphs = graphs;
-  else delete merged.graphs;
-
-  const equations = mergeOptionalById(base.equations, latest.equations, local.equations);
-  if (equations) merged.equations = equations;
-  else delete merged.equations;
-
-  const comments = mergeOptionalById(base.comments, latest.comments, local.comments);
-  if (comments) merged.comments = comments;
-  else delete merged.comments;
-
-  const regions = mergeOptionalById(base.regions, latest.regions, local.regions);
-  if (regions) merged.regions = regions;
-  else delete merged.regions;
-
-  const connectors = mergeOptionalById(base.connectors, latest.connectors, local.connectors);
-  if (connectors) merged.connectors = connectors;
-  else delete merged.connectors;
-
-  return merged;
+  const clock = dotClockOf(full) ?? new DotClock(device);
+  clock.raise(idsIn(full));
+  attachDotClock(doc, clock);
+  return { doc, page };
 }
 
 function decodeLinkTarget(raw: string): string {

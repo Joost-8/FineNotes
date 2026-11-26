@@ -1,33 +1,29 @@
 /**
- * "Handwrite here" command for Markdown notes:
- * 1. Reuses the backing `.notebook.md` already linked in the note (if any), or
- *    creates `<NoteName>.notebook.md` in the configured inline handwriting
- *    folder (default: Obsidian's attachments folder).
- * 2. Appends a compact expandable `hw-<8-hex>` sketch page (transparent by default).
- * 3. Inserts a standard `![[Notebook#id=hw-<8-hex>]]` embed at the cursor.
- * 4. Activates inline editing immediately via `PageEmbeds`.
+ * "Handwrite here" for Markdown notes:
+ * 1. The note's notebook: the one its blocks already use, else the notebook
+ *    named after the note in Obsidian's attachment folder for it, made on
+ *    first use (one file per page per device, as every new notebook is).
+ *    "Handwrite here (choose notebook…)" picks another instead.
+ * 2. A short, transparent `hw-<8 hex>` page is added to it.
+ * 3. `![[Notebook#id=hw-…]]` goes in at the cursor, and opens for writing.
  */
 
 import { type Editor, MarkdownView, Notice, TFile, addIcon, normalizePath } from "obsidian";
 import type GoodObsidianPlugin from "../main";
 import { t } from "../i18n/translate";
 import { emptyDocument, type Page } from "../model/document";
+import { devicePagesNotebookText } from "../model/device-pages-writer";
 import {
   INLINE_SKETCH_PREFIX,
   createInlineSketchPage,
   findLinkedNotebookInMarkdown,
 } from "../model/inline-sketch";
-import {
-  cleanTitle,
-  joinVaultPath,
-  newNoteBody,
-  normalizeFolder,
-  stripInkSuffix,
-} from "../model/new-notebook";
-import { buildInkFile } from "../model/serialize";
-import { HandwriteSetupModal, InlineNotebookPickerModal } from "./handwrite-modals";
+import { cleanTitle, newNoteBody, stripInkSuffix } from "../model/new-notebook";
+import { InlineNotebookPickerModal } from "./handwrite-modals";
 import { embedInsertion } from "./page-embed-model";
 import { editClosedNotebook, notebookIsOpen } from "./notebook-transaction";
+import { EmbedInlineEditor, type EmbedInlineEditRequest } from "./embed-inline-editor";
+import { closeAnyInlineEditor, closeInlineEditorIn } from "./inline-editor-registry";
 
 const HANDWRITE_HERE_ICON = "finenotes-handwrite-here";
 const HANDWRITE_HERE_SVG =
@@ -50,44 +46,48 @@ function newSketchId(): string {
   return INLINE_SKETCH_PREFIX + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+function parentOf(path: string): string {
+  return path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+}
+
 async function ensureFolder(plugin: GoodObsidianPlugin, folder: string): Promise<void> {
   if (!folder || plugin.app.vault.getFolderByPath(folder)) return;
   try {
     await plugin.app.vault.createFolder(folder);
   } catch {
-    /* Folder may have been created concurrently. */
+    /* Made meanwhile by something else. */
   }
 }
 
-async function createBackingNotebook(
+/**
+ * The notebook named `name` in the note's attachment folder: the one there
+ * already, or a new one holding `initialPage`.
+ */
+async function notebookFor(
   plugin: GoodObsidianPlugin,
   sourcePath: string,
-  preferredName: string | undefined,
+  name: string,
   initialPage: Page,
 ): Promise<{ file: TFile; created: boolean }> {
   const { app } = plugin;
-  const base = cleanTitle(stripInkSuffix(preferredName ?? "Handwriting")) || "Handwriting";
+  const base = cleanTitle(stripInkSuffix(name)) || t("notebooks.handwrite.blockName");
   const fileName = `${base}.notebook.md`;
-  const customFolder = normalizeFolder(plugin.settings.inlineHandwriteFolder ?? "");
-  let targetPath: string;
-  if (customFolder) {
-    await ensureFolder(plugin, customFolder);
-    targetPath = normalizePath(joinVaultPath(customFolder, fileName));
-  } else {
-    targetPath = normalizePath(
-      await app.fileManager.getAvailablePathForAttachment(fileName, sourcePath),
-    );
-    const parent = targetPath.includes("/") ? targetPath.slice(0, targetPath.lastIndexOf("/")) : "";
-    await ensureFolder(plugin, parent);
-  }
-
-  const found = app.vault.getFileByPath(targetPath);
-  if (found) return { file: found, created: false };
-
+  // Obsidian's own rule for where this note's attachments go; it answers with
+  // a free name, so the one already there is looked for beside it first.
+  const available = normalizePath(
+    await app.fileManager.getAvailablePathForAttachment(fileName, sourcePath),
+  );
+  const folder = parentOf(available);
+  const existing = app.vault.getFileByPath(
+    normalizePath(folder ? `${folder}/${fileName}` : fileName),
+  );
+  if (existing && plugin.isInkFile(existing)) return { file: existing, created: false };
+  await ensureFolder(plugin, folder);
   const doc = emptyDocument(plugin.settings.paperWidth);
   doc.pages = [initialPage];
+  // Made as every new notebook is: one file per page per device (#274).
   const body = newNoteBody(base, new Date().toISOString());
-  const file = await app.vault.create(targetPath, buildInkFile(body, doc));
+  const file = await app.vault.create(available, devicePagesNotebookText(body, doc));
   return { file, created: true };
 }
 
@@ -95,51 +95,35 @@ async function resolveBackingNotebook(
   plugin: GoodObsidianPlugin,
   source: TFile,
   markdown: string,
-  forcePick: boolean,
+  pick: boolean,
   initialPage: Page,
 ): Promise<{ file: TFile; created: boolean } | null> {
   const { app } = plugin;
-  if (!plugin.settings.inlineHandwriteMode) {
-    const chosen = await HandwriteSetupModal.prompt(app, "once");
-    if (!chosen) return null;
-    plugin.settings.inlineHandwriteMode = chosen;
-    try {
-      await plugin.saveSettings();
-    } catch (error) {
-      if (plugin.settings.inlineHandwriteMode === chosen) {
-        delete plugin.settings.inlineHandwriteMode;
-      }
-      throw error;
-    }
-  }
-
-  const mode = plugin.settings.inlineHandwriteMode ?? "once";
   const linked = findLinkedNotebookInMarkdown(markdown);
   const linkedDest = linked ? app.metadataCache.getFirstLinkpathDest(linked, source.path) : null;
   const currentNotebook = linkedDest instanceof TFile ? linkedDest : null;
-  const defaultCreateName = cleanTitle(stripInkSuffix(source.basename)) || "Handwriting";
+  const noteName = cleanTitle(stripInkSuffix(source.basename)) || source.basename;
 
-  const shouldPick = forcePick || mode === "always" || (mode === "once" && !currentNotebook);
-  if (shouldPick) {
+  if (pick) {
     const choice = await InlineNotebookPickerModal.pick(app, {
-      defaultCreateName,
+      defaultCreateName: noteName,
       currentNotebook,
       placeholder: t("notebooks.handwrite.pickPlaceholder"),
     });
     if (!choice) return null;
     if (choice.kind === "existing") return { file: choice.file, created: false };
-    return createBackingNotebook(plugin, source.path, choice.name, initialPage);
+    return notebookFor(plugin, source.path, choice.name, initialPage);
   }
-
+  // One notebook per note: the one its blocks use, else the note's own.
   if (currentNotebook) return { file: currentNotebook, created: false };
-  return createBackingNotebook(plugin, source.path, defaultCreateName, initialPage);
+  return notebookFor(plugin, source.path, noteName, initialPage);
 }
 
 export async function insertInlineHandwriting(
   plugin: GoodObsidianPlugin,
   editor: Editor,
   source: TFile,
-  options?: { forcePick?: boolean },
+  options?: { pick?: boolean },
 ): Promise<void> {
   const pageId = newSketchId();
   const sketchPage = createInlineSketchPage(pageId, {
@@ -152,7 +136,7 @@ export async function insertInlineHandwriting(
     plugin,
     source,
     editor.getValue(),
-    options?.forcePick === true,
+    options?.pick === true,
     sketchPage,
   );
   if (!resolved) return;
@@ -181,13 +165,45 @@ export async function insertInlineHandwriting(
   plugin.activateInlineEmbed(notebook, pageId);
 }
 
+/** What the notebook embeds need to open an editor over a block, and close it again. */
+export function inlineEditorHost(plugin: GoodObsidianPlugin): {
+  openInlineEditor: (req: {
+    slotEl: HTMLElement;
+    file: TFile;
+    page: Page;
+    pageNumber: number;
+    sourcePath: string;
+    onClosed: () => void;
+  }) => void;
+  closeInlineEditor: (slotEl?: HTMLElement) => void;
+} {
+  return {
+    openInlineEditor: ({ slotEl, file, page, pageNumber, sourcePath, onClosed }) => {
+      const req: EmbedInlineEditRequest = {
+        plugin,
+        app: plugin.app,
+        slotEl,
+        notebookFile: file,
+        pageId: page.id,
+        pageNumber,
+        sourcePath,
+        onClosed,
+      };
+      void new EmbedInlineEditor(req).start();
+    },
+    closeInlineEditor: (slotEl) => {
+      void (slotEl ? closeInlineEditorIn(slotEl) : closeAnyInlineEditor());
+    },
+  };
+}
+
 export function registerHandwriteHere(plugin: GoodObsidianPlugin): void {
   ensureHandwriteIcon();
   let inserting = false;
-  const run = (editor: Editor, file: TFile, forcePick: boolean): void => {
+  const run = (editor: Editor, file: TFile, pick: boolean): void => {
     if (inserting) return;
     inserting = true;
-    void insertInlineHandwriting(plugin, editor, file, { forcePick })
+    void insertInlineHandwriting(plugin, editor, file, { pick })
       .catch((error: unknown) => {
         new Notice(
           t("notebooks.handwrite.errInsertFailed", {
@@ -226,6 +242,9 @@ export function registerHandwriteHere(plugin: GoodObsidianPlugin): void {
       return true;
     },
   });
+
+  // Plugin off: an open block saves and closes, and lets go of its canvases.
+  plugin.register(() => void closeAnyInlineEditor());
 
   plugin.registerEvent(
     plugin.app.workspace.on("editor-menu", (menu, editor, info) => {
