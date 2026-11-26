@@ -191,8 +191,12 @@ export function placeLines<S extends PageInk>(
     const home = homeOf(line.strokes);
     const allX = line.strokes.flatMap((s) => xsOf(s.pts));
     const left = Math.min(...allX);
+    // The level line stands at the height the writer's line has at its middle: at its left
+    // end a climbing line is lowest, and the level line landed on the page's next line of ink
+    // (Beautify on "I'm the captain", 26 November).
+    const middle = 0.5 * (left + Math.max(...allX));
     const baseY = home
-      ? home.slope * left + home.level
+      ? home.slope * middle + home.level
       : Math.max(...line.strokes.flatMap((s) => every(s.pts, 1)));
     // A kept word stands on the written words' level line: lifted by where the writer's own
     // line was under its middle ("B-214." stayed above a tilted line, 25 November).

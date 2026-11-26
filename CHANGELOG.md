@@ -156,6 +156,10 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- **Beautify on a slanted line.** Words Beautify left alone no longer end up
+  below the line, on top of the next one, and a rewritten "I" no longer gets
+  a second bar.
+
 - **S Pen side button on tablets that report no hovering**
   ([discussion #209](https://github.com/Joost-8/FineNotes/discussions/209)).
   On some tablets (a Galaxy Tab S10 Ultra), Obsidian passes the hovering
