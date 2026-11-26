@@ -92,6 +92,7 @@ import {
 import { type PenCursorStyle, penCursorStyleOf } from "./view/pen-cursor";
 import { LearnWindow } from "./view/learn-window";
 import { fullScreenGroups, parseFullScreen, storedFullScreen } from "./view/full-screen-model";
+import { EINK_STORAGE_KEY, EinkScreen } from "./view/eink-screen";
 import { type PillDock, parsePillDock } from "./view/pill-dock-model";
 import { type BarDock, parseBarDock, pillAfterBarMove } from "./view/bar-dock-model";
 import { parsePillRowOn } from "./view/pill-row-model";
@@ -674,6 +675,7 @@ export default class GoodObsidianPlugin extends Plugin {
       },
     });
     this.installFullScreen();
+    this.installEink();
     // The chosen speech model shows under Settings › Models on this device from the start.
     this.speech.store();
     await this.setUpKeyStore();
@@ -3008,6 +3010,40 @@ export default class GoodObsidianPlugin extends Plugin {
     await this.saveSettings();
     for (const view of this.openNotebooks()) view.syncPaperTheme();
     this.pageEmbeds?.repaintAll();
+  }
+
+  // --- E-ink screen (#309) -------------------------------------------------------
+
+  /** The popout windows' bodies, which take the e-ink class as the main one does. */
+  private readonly popoutBodies = new Set<HTMLElement>();
+
+  /** The E-ink screen setting on this device (`view/eink-screen.ts`). */
+  readonly eink = new EinkScreen({
+    load: () => this.app.loadLocalStorage(EINK_STORAGE_KEY) as unknown,
+    save: (choice) => this.app.saveLocalStorage(EINK_STORAGE_KEY, choice),
+    bodies: () => [
+      ...(typeof document === "undefined" ? [] : [document.body]),
+      ...this.popoutBodies,
+    ],
+    apply: (on) => {
+      for (const view of this.openNotebooks()) view.setEinkScreen(on);
+    },
+  });
+
+  private installEink(): void {
+    this.registerEvent(
+      this.app.workspace.on("window-open", (_win, popout) => {
+        this.popoutBodies.add(popout.document.body);
+        this.eink.sync();
+      }),
+    );
+    this.registerEvent(
+      this.app.workspace.on("window-close", (_win, popout) => {
+        this.popoutBodies.delete(popout.document.body);
+      }),
+    );
+    this.eink.start();
+    this.register(() => this.eink.stop());
   }
 
   // --- Full screen (tablets) ---------------------------------------------------

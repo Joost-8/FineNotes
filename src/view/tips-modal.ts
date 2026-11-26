@@ -22,6 +22,7 @@ import {
   featureRow,
 } from "./feature-rows";
 import { closeMenuOnPressOutside } from "./menu-dismiss";
+import { prefersReducedMotion } from "./motion";
 
 /** Features a search inside Tips lists at most. */
 const TIPS_SEARCH_HITS = 12;
@@ -517,7 +518,7 @@ export class TipsModal extends Modal {
   }
 
   private slideIn(el: HTMLElement, direction: number): void {
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    if (prefersReducedMotion()) return;
     el.animate(
       [
         { transform: `translateX(${direction * 28}px)`, opacity: 0 },

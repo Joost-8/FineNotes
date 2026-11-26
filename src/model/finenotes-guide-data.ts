@@ -293,6 +293,18 @@ export const GUIDE_ENTRIES: readonly GuideEntry[] = [
     settings: ["penCursor"],
   },
   {
+    id: "settingEinkScreen",
+    area: "settings",
+    title: "E-ink screen (Boox and other paper-like screens)",
+    words:
+      "e-ink, eink, e-paper, epaper, boox, onyx, paper screen, e-reader, ghosting, slow screen, refresh, lag on boox, input lag e-ink",
+    what: "An e-ink screen is the paper-like display of an e-reader or e-note tablet such as an Onyx Boox: it shows a still page without a backlight and is easy on the eyes, but it changes slowly, and what changed often leaves a faint ghost until the screen refreshes. With E-ink screen on, FineNotes draws for such a screen: its bars, menus and dialogs stop animating, and the layer that shows the stroke being written stays in place between strokes, so the screen has less to redraw. Auto (the default) turns it on when the device is a known Boox and leaves it off everywhere else; On and Off decide for this device only, and each device keeps its own choice.",
+    where: "Settings › Writing › E-ink screen",
+    notes:
+      "Not shown on an iPad or iPhone. Most of the delay on an e-ink tablet is the screen itself: on a Boox, setting Obsidian's refresh mode to Fast or Ultrafast in the Boox E-Ink Center or in Obsidian's App Optimization makes ink appear much sooner, at the cost of more ghosting. Auto reads the device's model name; a Boox it does not know stays off until you choose On.",
+    seen: "lag on boox, ink appears late on e-ink tablet, ghosting, screen flashes",
+  },
+  {
     id: "settingCustomColors",
     area: "settings",
     title: "Custom colours in the pen's colour row",

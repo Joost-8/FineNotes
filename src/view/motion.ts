@@ -32,9 +32,24 @@ export interface PageSnapshot {
   desk: string;
 }
 
-/** Whether the person asked the system for less motion. */
-export function prefersReducedMotion(): boolean {
-  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+/**
+ * Whether FineNotes draws for an e-ink screen (`model/eink.ts`), set by the
+ * plugin. There every animation is a slow, ghosting redraw of the panel,
+ * so the chrome holds still as if the system asked for less motion.
+ */
+let einkStill = false;
+
+/** Hold every animation still, or let them move again (the E-ink screen setting). */
+export function setEinkStill(still: boolean): void {
+  einkStill = still;
+}
+
+/**
+ * Whether the person asked the system for less motion, or the screen is
+ * e-ink. `win` is the window asking: a popout's own, or the main one.
+ */
+export function prefersReducedMotion(win: Window = window): boolean {
+  return einkStill || win.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
 }
 
 /** Whether this browser runs CSS `linear()` easings (Safari 17.2, Chrome 113). */

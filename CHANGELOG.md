@@ -25,6 +25,16 @@ extracted from the matching section of this file by `release.yml`.
   name (the button says Replace), so a link to it, or a copy synced to a
   drive, always shows the newest version; the notebook remembers the name for
   next time. Left empty, every export makes a new file, as before.
+- **E-ink screen** ([discussion #309](https://github.com/Joost-8/FineNotes/discussions/309)).
+  A new row in Settings › Writing for paper-like screens such as an Onyx
+  Boox: FineNotes' bars, menus and dialogs stop animating, and the layer
+  that shows the stroke being written stays in place between strokes, so
+  the screen has less to redraw. **Auto** (the default) turns it on for a
+  known Boox and leaves it off everywhere else; On and Off decide for this
+  device only. Most of the delay on an e-ink tablet is the screen itself:
+  on a Boox, a faster refresh mode for Obsidian in the E-Ink Center helps
+  most.
+
 - **Handwrite here** (PR #312, thanks @bendi087): in a Markdown note, the command puts a
   handwriting block at the cursor and opens it for the Pencil in place; the blocks are pages of
   one notebook per note and show in reading view and exported PDFs.
