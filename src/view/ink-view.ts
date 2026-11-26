@@ -5163,7 +5163,14 @@ export class InkView extends TextFileView {
           });
           // A line copied or erased on a practice sheet: its Learn button
           // counts it, once the pen rests.
-          if (this.isPractice) this.quietWork.run("learn", writing, () => this.syncLearnButton());
+          if (this.isPractice) {
+            this.quietWork.run("learn", writing, () => {
+              // As before #275 (each edit reset it in `syncSingle`): the
+              // sheet-full sharing invite stays off until Joost decides it.
+              this.practiceFull = null;
+              this.syncLearnButton();
+            });
+          }
           // Undoing or redoing "Convert to notebook" flips `single`. Only
           // then: it re-reads every practice sheet, and lays out the panel (#275).
           if (this.chromeKey() !== this.syncedChrome) this.syncSingle();
