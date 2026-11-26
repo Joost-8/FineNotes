@@ -211,6 +211,10 @@ export function unsureCandidates(lines: readonly LineChoice[]): Question[] {
  * are sure enough not to be asked about again: `sure` with 1 for each word of
  * `read` whose core is one of `answered` (lower case). Whether it is written
  * still goes by the usual bars and the read-back.
+ *
+ * Only where Grape's letters agree (`sure` above 0): a word the reread turned
+ * into an answered word ("lemna" read, "lemma" answered once, "lemon"
+ * written) is still the line's question, since the list now pulls toward it.
  */
 export function sureOfAnswered(
   read: readonly string[],
@@ -219,7 +223,7 @@ export function sureOfAnswered(
 ): number[] {
   return sure.map((s, i) => {
     const word = plainWord(wordCore(read[i] ?? ""));
-    return word !== null && answered.has(word) ? 1 : s;
+    return s > 0 && word !== null && answered.has(word) ? 1 : s;
   });
 }
 

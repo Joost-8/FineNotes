@@ -338,4 +338,9 @@ describe("sureOfAnswered", () => {
     const now = [{ ...lines[0], sure: after }];
     expect(pickQuestions(unsureCandidates(now), 4).map((q) => q.word)).toEqual([3]);
   });
+
+  it("still asks about a word the reread turned into an answered word", () => {
+    // Letters "lemna", text "lemma" after the reread: wordSureness gives it 0.
+    expect(sureOfAnswered(["lemma"], [0], new Set(["lemma"]))).toEqual([0]);
+  });
 });
