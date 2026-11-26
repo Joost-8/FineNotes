@@ -36,6 +36,11 @@ export const ai = {
   "ai.menu.generateImage": "Generate image…",
   "ai.menu.transcribeRecording": "Transcribe recording…",
   "ai.menu.settings": "AI settings…",
+  "ai.menu.beautify": "Beautify",
+  "ai.menu.beautifyAbout": "Rewrites in your hand: your ink to neatest",
+  "ai.menu.neatness": "How neat Beautify writes",
+  "ai.menu.likeMyInk": "Most like my ink",
+  "ai.menu.neatest": "Neatest",
   "ai.menu.setUp": "Set up AI…",
   "ai.menu.needsEndpoint": "Needs your endpoint's URL in settings",
   "ai.menu.speechOnDevice": "Recordings are transcribed on this device",
@@ -581,6 +586,21 @@ export const ai = {
   "ai.ocr.modelMostAccurate": "Scanned-page reader, most accurate (OCR model)",
   "ai.ocr.purpose":
     "It reads the printed text of scanned PDF pages on this device, so search, the text-snapping highlighter and Copy text work on them; the pages never leave the device.",
+  // --- Beautify: the handwriting writer ---------------------------------------
+  "ai.neaten.modelLabel": "Dostoyev (handwriting writer model)",
+  "ai.neaten.modelPurpose":
+    "Beautify uses it to write the words you select again, neater, in your own hand, on this device; your ink never leaves it.",
+  "ai.neaten.needsSheetTitle": "Beautify can write in your hand",
+  "ai.neaten.needsSheet":
+    "This time Beautify only tidied your lines. To have it also write words again, neater, in your own hand: tap Write practice sheet, copy at least {min} of its lines, then choose Beautify again. Grape learns from the same sheet.",
+  "ai.neaten.writeSheet": "Write practice sheet",
+  "ai.neaten.modelNewer":
+    "This version of Dostoyev needs a newer FineNotes. Update FineNotes to use it.",
+  "ai.neaten.modelBroken":
+    "Dostoyev, the handwriting writer, is damaged on this device. Download it again in Settings, Models on this device.",
+  "ai.neaten.failed": "Beautify could not rewrite these words, so it only tidied them.",
+  "ai.neaten.noMemory":
+    "There is not enough memory on this device right now to write in your hand. Try again in a moment.",
   "ai.ocr.tierFast": "Fast",
   "ai.ocr.tierAccurate": "Accurate",
   "ai.ocr.tierMostAccurate": "Most accurate",

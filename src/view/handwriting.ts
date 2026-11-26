@@ -14,6 +14,8 @@ import type { HwrWorkerClient } from "../recognition/hwr/client";
 import type { PageInk } from "../recognition/hwr/lines";
 import type { HwrModelInfo, SuggestItem, SuggestResult } from "../recognition/hwr/protocol";
 import type { LineReading, PageReading } from "../recognition/hwr/recognizer";
+import type { InkStroke } from "../recognition/hwr/features";
+import type { Rows, TaggedLine } from "../recognition/writer/rows";
 
 /**
  * Where the model comes from: a file the user picked, else the model learned
@@ -226,6 +228,57 @@ export class HandwritingReader {
       this.dispose();
       throw error;
     }
+  }
+
+  /** The client with the model loaded; a failure lets the worker go. */
+  private async withClient<T>(run: (client: HwrWorkerClient) => Promise<T>): Promise<T> {
+    await this.model();
+    const client = this.client;
+    if (!client) throw new Error("the recogniser stopped");
+    try {
+      return await run(client);
+    } catch (error) {
+      this.dispose();
+      throw error;
+    }
+  }
+
+  /**
+   * Neaten: read lines as a page is read (word list, language model), with
+   * each letter's confidence and each word's strokes.
+   */
+  readForNeaten(
+    lines: readonly (readonly PageInk[])[],
+    lexicon: WordListSource | null,
+  ): Promise<LineReading[]> {
+    return this.withClient(async (client) => {
+      await this.sendLexicon(client, lexicon);
+      return client.readLines(
+        lines.map((line) => [...line]),
+        true,
+        true,
+        false,
+        { wordInk: true, reread: lexicon !== null },
+      );
+    });
+  }
+
+  /** Neaten: copied lines as the writer is shown them (writer/grape-rows.ts). */
+  tagLines(
+    lines: { text: string; strokes: InkStroke[] }[],
+    rows: { tol: number; norm: string },
+  ): Promise<{ lines: (TaggedLine | null)[]; rowsMatch: boolean }> {
+    return this.withClient((client) => client.tagLines(lines, rows));
+  }
+
+  /** Neaten: what the model reads in a written line's rows. */
+  readRows(rows: Rows): Promise<string> {
+    return this.withClient((client) => client.readRows(rows));
+  }
+
+  /** Neaten: the same, with how sure the model is of each character it reads. */
+  readRowsSure(rows: Rows): Promise<{ text: string; sure: number[] }> {
+    return this.withClient((client) => client.readRowsSure(rows));
   }
 
   /** What a few strokes say: on one line (lines joined by spaces), or line by line. */

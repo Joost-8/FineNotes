@@ -1092,10 +1092,16 @@ export interface LineGeometry {
 /**
  * The lines of running text in this ink, top to bottom. What is needed to set
  * written ink into a line: scale it to the line's x-height and stand it on
- * the baseline.
+ * the baseline. With `maxLevelSlope` (Beautify, which the user asked for:
+ * `ASKED_LEVEL_SLOPE`), lines climbing up to that slope are found whole, as
+ * `tidyInk` finds them, not in pieces.
  */
-export function measureLines(strokes: readonly PageInk[]): LineGeometry[] {
-  return fitLines(strokes)
+export function measureLines(strokes: readonly PageInk[], maxLevelSlope?: number): LineGeometry[] {
+  const steep =
+    maxLevelSlope === undefined
+      ? undefined
+      : { only: new Set(strokes.map((s) => s.id)), max: maxLevelSlope };
+  return fitLines(strokes, steep)
     .filter((line) => line.based)
     .map((line) => ({
       x0: line.box[0],

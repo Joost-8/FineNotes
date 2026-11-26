@@ -22,6 +22,9 @@ import { ExplorerFolderNotebooks } from "./view/explorer-folder-notebooks";
 import type { SharingFeature } from "./view/sharing-feature";
 import { loadSharing } from "./view/sharing-load";
 import { WordCheck } from "./view/word-check";
+import { NeatenService } from "./view/neaten";
+import type { NeatnessControl } from "./view/neatness-row";
+import { neatnessOf } from "./recognition/writer/neatness";
 import {
   followPairRename,
   isNotebookOwnFolder,
@@ -548,6 +551,18 @@ export default class GoodObsidianPlugin extends Plugin {
   /** Checking words read on the device, and the answers to learn from. */
   readonly wordCheck = new WordCheck(this.app, () => this.pluginDir);
 
+  /** Neaten: selected handwriting rewritten in the writer's own hand (view/neaten.ts). */
+  readonly neaten = new NeatenService({
+    app: this.app,
+    models: this.models,
+    handwriting: this.handwriting,
+    lexicon: () => this.wordCheck.lexicon(),
+    learningHost: () => this.learningHost(),
+    answers: (note, pageId) => this.wordCheck.answersOn(note, pageId),
+    pauseOcr: () => this.ocr.pause(),
+    neatness: () => neatnessOf(this.settings.beautifyNeatness),
+  });
+
   /** "Help improve Grape", in a build that has it (`view/sharing-load.ts`); else null. */
   sharing: SharingFeature | null = null;
 
@@ -871,6 +886,7 @@ export default class GoodObsidianPlugin extends Plugin {
     this.register(() => {
       this.learner.dispose();
       this.handwriting.dispose();
+      this.neaten.dispose();
       this.speech.dispose();
       this.translator.dispose();
       this.ocr.dispose();
@@ -2703,6 +2719,18 @@ export default class GoodObsidianPlugin extends Plugin {
     if (this.fingerDrawing === on) return;
     this.fingerDrawing = on;
     for (const view of this.openNotebooks()) view.setFingerDrawing(on);
+  }
+
+  /** Beautify's neatness slider at the AI menu's end, while Beautify can write in the hand; null when it only tidies. */
+  beautifyNeatness(): NeatnessControl | null {
+    if (!this.neaten.writesInHand()) return null;
+    return {
+      get: () => this.settings.beautifyNeatness,
+      set: (neatness) => {
+        this.settings.beautifyNeatness = neatnessOf(neatness);
+        void this.saveSettings();
+      },
+    };
   }
 
   /** Remember the lasso's type and what it picks up, for the next session. */

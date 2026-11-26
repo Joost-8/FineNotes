@@ -19,14 +19,22 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
-- **Tidy handwriting.** Lasso some lines and choose **Tidy** in the ⋯ menu, or
-  hold a handwritten word and tap the brush beside **Correct** to tidy its line:
-  lines are set level (on the paper's rules when it has them), a wandering
-  baseline is straightened, lines that start together share a margin, and
-  shaky strokes are smoothed. Nothing is read or redrawn, so no word can
-  change; formulas and tables are left alone. Lines written at a slant of up
-  to about 30° are levelled too, and when there is nothing to tidy a notice
-  says so. One undo puts it back.
+- **Beautify handwriting.** Lasso some lines and choose **Beautify** in the ⋯
+  menu, or hold a handwritten word and tap the brush beside **Correct** to
+  beautify its line. Your words are written again, neater, in your own hand,
+  where yours were, by Dostoyev (handwriting writer model, a
+  one-time download, run on your device); every line is set level (on the
+  paper's rules when it has them), wandering baselines are straightened,
+  margins aligned and shaky strokes smoothed. Writing in your hand needs your
+  practice sheets (at least 10 copied lines); without them Beautify only
+  tidies. Formulas and tables are left alone. One undo puts it all back. How
+  neat it writes is a slider at the end of the AI menu, from most like your
+  ink to neatest. For the word Grape is least sure of on each line, at most,
+  Beautify first opens the word card (as **Correct** does): answer it and that
+  word is written too, and Grape learns from it; close the card and the word
+  stays as you wrote it. A word whose new writing does not read back as itself
+  stays as you wrote it too, level with the line, and nothing is pushed past
+  the page's edge.
 - **Insert space on boards, and on paper without lines**
   ([discussion #276](https://github.com/Joost-8/FineNotes/discussions/276)).
   With the lasso on **By line**, press anywhere on a board and drag down: everything

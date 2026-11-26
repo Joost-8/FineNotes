@@ -1,0 +1,302 @@
+{
+  "format": 1,
+  "id": "dostoyev",
+  "version": "1.0",
+  "name": "Dostoyev",
+  "research": "A long (models/GA-long-last.npz)",
+  "kind": "dual",
+  "graphs": {
+    "encode": {
+      "file": "dostoyev-1.0-encode.int8.onnx",
+      "inputs": [
+        {
+          "role": "ref.rows",
+          "name": "rx",
+          "type": "float32",
+          "dims": [1, "R", 10]
+        },
+        {
+          "role": "ref.mask",
+          "name": "rmask",
+          "type": "bool",
+          "dims": [1, "R"]
+        },
+        {
+          "role": "ref.char",
+          "name": "rcid",
+          "type": "int64",
+          "dims": [1, "R"]
+        },
+        {
+          "role": "ref.place",
+          "name": "rk",
+          "type": "int64",
+          "dims": [1, "R"]
+        },
+        {
+          "role": "ref.length",
+          "name": "rd",
+          "type": "int64",
+          "dims": [1, "R"]
+        },
+        {
+          "role": "ref.separator",
+          "name": "rsep",
+          "type": "bool",
+          "dims": [1, "R"]
+        },
+        {
+          "role": "drop",
+          "name": "drop",
+          "type": "bool",
+          "dims": [1]
+        }
+      ],
+      "outputs": [
+        {
+          "role": "memory",
+          "name": "mem",
+          "type": "float32",
+          "dims": [1, "R", 256]
+        },
+        {
+          "role": "valid",
+          "name": "valid",
+          "type": "bool",
+          "dims": [1, "R"]
+        },
+        {
+          "role": "summary",
+          "name": "g",
+          "type": "float32",
+          "dims": [1, 256]
+        }
+      ]
+    },
+    "durations": {
+      "file": "dostoyev-1.0-durations.int8.onnx",
+      "inputs": [
+        {
+          "role": "text.char",
+          "name": "tid",
+          "type": "int64",
+          "dims": [1, "L"]
+        },
+        {
+          "role": "text.mask",
+          "name": "tmask",
+          "type": "bool",
+          "dims": [1, "L"]
+        },
+        {
+          "role": "summary",
+          "name": "g",
+          "type": "float32",
+          "dims": [1, 256]
+        }
+      ],
+      "outputs": [
+        {
+          "role": "logits",
+          "name": "logits",
+          "type": "float32",
+          "dims": [1, "L", 14]
+        }
+      ]
+    },
+    "velocity": {
+      "file": "dostoyev-1.0-velocity.int8.onnx",
+      "inputs": [
+        {
+          "role": "rows",
+          "name": "x",
+          "type": "float32",
+          "dims": [1, "T", 10]
+        },
+        {
+          "role": "time",
+          "name": "tau",
+          "type": "float32",
+          "dims": [1]
+        },
+        {
+          "role": "mask",
+          "name": "mask",
+          "type": "bool",
+          "dims": [1, "T"]
+        },
+        {
+          "role": "char",
+          "name": "cid",
+          "type": "int64",
+          "dims": [1, "T"]
+        },
+        {
+          "role": "place",
+          "name": "k",
+          "type": "int64",
+          "dims": [1, "T"]
+        },
+        {
+          "role": "length",
+          "name": "d",
+          "type": "int64",
+          "dims": [1, "T"]
+        },
+        {
+          "role": "memory",
+          "name": "mem",
+          "type": "float32",
+          "dims": [1, "R", 256]
+        },
+        {
+          "role": "valid",
+          "name": "valid",
+          "type": "bool",
+          "dims": [1, "R"]
+        },
+        {
+          "role": "summary",
+          "name": "g",
+          "type": "float32",
+          "dims": [1, 256]
+        }
+      ],
+      "outputs": [
+        {
+          "role": "velocity",
+          "name": "v",
+          "type": "float32",
+          "dims": [1, "T", 10]
+        }
+      ]
+    }
+  },
+  "rows": {
+    "encoding": "grape2-raw",
+    "channels": 10,
+    "tol": 0.01,
+    "norm": "skew=0,slant=0,scale=core",
+    "mean": [
+      0.09701651334762573, -0.004017073195427656, 0.02700645662844181, 0.004006850998848677,
+      -0.03775981813669205, -0.009690672159194946, 0.27845945954322815, -0.046463411301374435,
+      0.03065359964966774, 0.21908874809741974
+    ],
+    "std": [
+      0.2388756424188614, 0.237570658326149, 0.10653979331254959, 0.11517775058746338,
+      0.11142346262931824, 0.11936979740858078, 0.3485608696937561, 0.11219682544469833,
+      0.0749591812491417, 0.41363009810447693
+    ]
+  },
+  "reference": {
+    "lines": 6,
+    "curves": 144,
+    "hold": 6.0
+  },
+  "sampling": {
+    "steps": 8,
+    "sigma": 0.7,
+    "guidance": 1.5,
+    "lowGuidance": 0.35,
+    "lowMix": 0.35,
+    "maxDur": 14
+  },
+  "chars": [
+    "<blank>",
+    " ",
+    "!",
+    "\"",
+    "#",
+    "&",
+    "'",
+    "(",
+    ")",
+    "*",
+    "+",
+    ",",
+    "-",
+    ".",
+    "/",
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    ":",
+    ";",
+    "?",
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F",
+    "G",
+    "H",
+    "I",
+    "J",
+    "K",
+    "L",
+    "M",
+    "N",
+    "O",
+    "P",
+    "Q",
+    "R",
+    "S",
+    "T",
+    "U",
+    "V",
+    "W",
+    "X",
+    "Y",
+    "Z",
+    "[",
+    "]",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h",
+    "i",
+    "j",
+    "k",
+    "l",
+    "m",
+    "n",
+    "o",
+    "p",
+    "q",
+    "r",
+    "s",
+    "t",
+    "u",
+    "v",
+    "w",
+    "x",
+    "y",
+    "z",
+    "$",
+    "%",
+    "=",
+    "<",
+    ">",
+    "@",
+    "_",
+    "^",
+    "~",
+    "|",
+    "{",
+    "}",
+    "\\",
+    "`"
+  ]
+}

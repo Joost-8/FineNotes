@@ -3708,7 +3708,7 @@ describe("Tidy on a selection", () => {
     expect(one.calls.changed).toBe(0);
     expect(one.history.undo(one.doc)).toBeNull();
     // Never silent: the user asked, so a notice says nothing was there to tidy.
-    expect(notices).toEqual(["Nothing to tidy: already level, or not a line of writing."]);
+    expect(notices).toEqual(["Nothing to beautify: already neat, or not a line of writing."]);
   });
 
   it("levels a line climbing 16 degrees: steeper than an automatic tidy would", () => {
@@ -3721,18 +3721,64 @@ describe("Tidy on a selection", () => {
     expect(notices).toEqual([]);
   });
 
+  describe("Beautify (Tidy and Neaten as one action, design rulings 2026-11-24)", () => {
+    /** The tidy surface with the writer's callbacks and what selectionFrameEl needs. */
+    function beautifySurface(neaten?: () => Promise<{ kind: string }>, can = true) {
+      const t = tidySurface(climbingLine());
+      const state = t.surface as unknown as Record<string, unknown>;
+      const callbacks = state.callbacks as Record<string, unknown>;
+      if (neaten) callbacks.onNeaten = neaten;
+      callbacks.canNeaten = () => can;
+      state.selection = { pageId: "p1", strokes: t.page.strokes, images: [], textBoxes: [] };
+      state.selectionFrameEl = { addClass: () => undefined, removeClass: () => undefined };
+      return t;
+    }
+    const spread = (s: Stroke[]): number =>
+      Math.max(...s.map(bottomOf)) - Math.min(...s.map(bottomOf));
+
+    it("tidies at once where no writer can be had", async () => {
+      const { surface, history, page: p } = beautifySurface(undefined, false);
+      await run<Promise<void>>(surface, "beautifySelection");
+      expect(spread(p.strokes)).toBeLessThan(5);
+      expect(history.canUndo()).toBe(true);
+    });
+
+    it("tidies when the writer has nothing to rewrite", async () => {
+      let asked = 0;
+      const { surface, page: p } = beautifySurface(() => {
+        asked++;
+        return Promise.resolve({ kind: "tidy" });
+      });
+      await run<Promise<void>>(surface, "beautifySelection");
+      expect(asked).toBe(1);
+      expect(spread(p.strokes)).toBeLessThan(5);
+    });
+
+    it("changes nothing when the work was stopped (an edit, the selection left)", async () => {
+      const {
+        surface,
+        history,
+        page: p,
+      } = beautifySurface(() => Promise.resolve({ kind: "stopped" }));
+      const before = spread(p.strokes);
+      await run<Promise<void>>(surface, "beautifySelection");
+      expect(spread(p.strokes)).toBe(before);
+      expect(history.canUndo()).toBe(false);
+    });
+  });
+
   it("offers the brush on a held word of a 16 degree line, and none on a lone word", () => {
     const strokes = climbingLine(Math.tan((16 * Math.PI) / 180));
     const steep = tidySurface(strokes);
     const action = run<SelectionAction | null>(
       steep.surface,
-      "tidyLineAction",
+      "beautifyLineAction",
       steep.page,
       strokes[5],
     );
-    expect(action?.id).toBe("tidy-line");
+    expect(action?.id).toBe("beautify-line");
     const word = strokes.slice(0, 4);
     const lone = tidySurface(word);
-    expect(run(lone.surface, "tidyLineAction", lone.page, word[1])).toBeNull();
+    expect(run(lone.surface, "beautifyLineAction", lone.page, word[1])).toBeNull();
   });
 });
