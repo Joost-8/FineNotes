@@ -34,16 +34,16 @@ import {
   folderOf,
   followedCompanionPath,
   followsName,
-  freeCompanionPath,
   inCompanionFolder,
   isCompanionNotebookPath,
   isCompanionScratch,
-  isTypedPdf,
+  companionPlace,
   parseCompanionJournal,
   sameStat,
   withCompanionKeys,
 } from "../model/companion-pdf";
 import { CompanionHasher } from "../model/companion-hash";
+import type { ExportName } from "../export/export-name";
 import { CompanionQueue } from "../model/companion-queue";
 import {
   recoverCompanionWrite,
@@ -109,6 +109,18 @@ export const COMPANION_AUTO_PDF_LIMIT = 60 * 1024 * 1024;
 /** How long after a close the first export waits. */
 const START_DELAY_MS = 3000;
 const PEN_POLL_MS = 400;
+
+/**
+ * The Export dialog's record of a notebook's typed PDF name and the file
+ * its export last wrote (FineNotes#318, `settings.exportNames`). The
+ * companion reads and writes the same record, so both agree on which file
+ * is the notebook's own: the only one either replaces.
+ */
+export interface CompanionExportNames {
+  get(notebookPath: string): ExportName | undefined;
+  /** This notebook's typed name now writes `file` (kept only while it has a typed name). */
+  setFile(notebookPath: string, file: string): void;
+}
 
 /** What an open notebook view offers the manager. */
 export interface CompanionViewLink {
@@ -238,8 +250,8 @@ export class CompanionPdfManager {
   private readonly listeners = new Set<() => void>();
   private views: () => Iterable<CompanionViewLink> = () => [];
   private penDown: () => boolean = () => false;
-  /** The notebook's PDF name typed in the Export dialog (FineNotes#318), if any. */
-  private exportName: (notebookPath: string) => string | undefined = () => undefined;
+  /** The notebook's PDF name typed in the Export dialog and the file it last wrote (#318). */
+  private names: CompanionExportNames = { get: () => undefined, setFile: () => undefined };
   private stopped = false;
 
   constructor(
@@ -289,10 +301,10 @@ export class CompanionPdfManager {
   register(
     plugin: Plugin,
     views: () => Iterable<CompanionViewLink>,
-    exportName: (notebookPath: string) => string | undefined = () => undefined,
+    names?: CompanionExportNames,
   ): void {
     this.views = views;
-    this.exportName = exportName;
+    if (names) this.names = names;
     this.penDown = () => [...this.views()].some((view) => view.penDown);
     const { vault, workspace } = plugin.app;
     plugin.registerEvent(vault.on("rename", (file, oldPath) => void this.renamed(file, oldPath)));
@@ -498,13 +510,9 @@ export class CompanionPdfManager {
     return {
       exists: (path) => this.exists(path),
       owned: async (path) => {
-        const typed = Object.values(this.journal.entries).some(
-          (e) => e.pdfPath === path && isTypedPdf(path, this.exportName(e.notebookPath)),
-        );
-        if (typed) return true;
         const [id] = Object.entries(this.journal.entries).find(([, e]) => e.pdfPath === path) ?? [];
         const entry = this.entry(id ?? null);
-        return !!entry && (await this.pdfAt(entry, path))?.id === id;
+        return !!id && !!entry && (await this.isOwn(id, entry, path));
       },
       create: async (path, bytes) => {
         await this.ensureFolder(path);
@@ -609,7 +617,7 @@ export class CompanionPdfManager {
     const hash = await captureHash(this.app, made);
     const pdf = await this.pdfAt(entry, target);
     // A file of the notebook's typed export name is the user's to replace (#318).
-    if (pdf && pdf.id !== id && !isTypedPdf(target, this.exportName(entry.notebookPath)))
+    if (pdf && pdf.id !== id && !this.exportWrote(entry.notebookPath, target))
       throw new CompanionError("occupied");
     if (!pdf && !force) throw new CompanionError("missing");
     const sameSwitches = entry.optionsKey === undefined || entry.optionsKey === made.optionsKey;
@@ -656,6 +664,7 @@ export class CompanionPdfManager {
     entry.optionsKey = made.optionsKey;
     delete entry.error;
     delete entry.halted;
+    this.recordOwn(entry);
     this.persist();
   }
 
@@ -701,16 +710,9 @@ export class CompanionPdfManager {
   }
 
   /** A path for this notebook's PDF at `preferred`, or a free name beside it when another file is there. */
-  private async placeFor(
-    id: string,
-    entry: CompanionEntry,
-    notebook: TFile,
-    preferred: string,
-  ): Promise<string> {
-    if (!this.exists(preferred)) return preferred;
-    if (isTypedPdf(preferred, this.exportName(notebook.path))) return preferred;
-    if ((await this.pdfAt(entry, preferred))?.id === id) return preferred;
-    return freeCompanionPath(notebook.path, folderOf(preferred), (path) => this.exists(path));
+  private async placeFor(id: string, entry: CompanionEntry, preferred: string): Promise<string> {
+    const own = this.exists(preferred) && (await this.isOwn(id, entry, preferred));
+    return companionPlace(preferred, this.namesIn(folderOf(preferred)), own);
   }
 
   /**
@@ -733,7 +735,7 @@ export class CompanionPdfManager {
       known?.pdfPath ??
       inCompanionFolder(
         folder ?? folderOf(notebook.path),
-        companionFileName(notebook.path, this.exportName(notebook.path)),
+        companionFileName(notebook.path, this.names.get(notebook.path)?.name),
       );
     const entry: CompanionEntry = known ?? {
       notebookPath: notebook.path,
@@ -743,7 +745,7 @@ export class CompanionPdfManager {
       dirty: true,
     };
     this.journal.entries[id] = entry;
-    const path = await this.placeFor(id, entry, notebook, preferred);
+    const path = await this.placeFor(id, entry, preferred);
     entry.notebookPath = notebook.path;
     entry.pdfPath = path;
     entry.followName = followsName(path, notebook.path);
@@ -751,6 +753,7 @@ export class CompanionPdfManager {
     entry.dirty = true;
     delete entry.error;
     await this.writeKeys(notebook, { id, pdfPath: path, followName: entry.followName });
+    this.recordOwn(entry);
     this.persist();
     return id;
   }
@@ -791,12 +794,8 @@ export class CompanionPdfManager {
     if (!entry?.enabled) return;
     let next = inCompanionFolder(folder, fileNameOf(entry.pdfPath));
     if (next.toLowerCase() === entry.pdfPath.toLowerCase()) return;
-    if (
-      this.exists(next) &&
-      !isTypedPdf(next, this.exportName(notebook.path)) &&
-      (await this.pdfAt(entry, next))?.id !== id
-    ) {
-      next = freeCompanionPath(notebook.path, folder, (path) => this.exists(path));
+    if (this.exists(next) && !(await this.isOwn(id, entry, next))) {
+      next = await this.placeFor(id, entry, next);
     }
     const current = await this.pdfAt(entry, entry.pdfPath);
     if (current?.id === id && !this.exists(next)) await this.movePdf(entry, next);
@@ -805,7 +804,37 @@ export class CompanionPdfManager {
     entry.followName = followsName(next, notebook.path);
     delete entry.error;
     await this.writeKeys(notebook, { pdfPath: next, followName: entry.followName });
+    this.recordOwn(entry);
     this.persist();
+  }
+
+  /** Whether the notebook's export last wrote `path` (#318's own file). */
+  private exportWrote(notebookPath: string, path: string): boolean {
+    const file = this.names.get(notebookPath)?.file;
+    return !!file && file.toLowerCase() === path.toLowerCase();
+  }
+
+  /**
+   * Whether the file at `path` is this notebook's own, so it may be
+   * replaced: the file its export last wrote, the one this device's
+   * companion wrote, or a PDF whose Subject names this notebook. Anything
+   * else (another notebook's PDF, a PDF a page is drawn on, the user's own
+   * file) is never written over.
+   */
+  private async isOwn(id: string, entry: CompanionEntry, path: string): Promise<boolean> {
+    if (this.exportWrote(entry.notebookPath, path)) return true;
+    return (await this.pdfAt(entry, path))?.id === id;
+  }
+
+  /** The names of the files in `folder` now. */
+  private namesIn(folder: string): Set<string> {
+    const dir = folder ? this.app.vault.getFolderByPath(folder) : this.app.vault.getRoot();
+    return new Set((dir?.children ?? []).map((child) => child.name));
+  }
+
+  /** The export's record follows the companion's file, so both agree on the own file. */
+  private recordOwn(entry: CompanionEntry): void {
+    if (this.names.get(entry.notebookPath)) this.names.setFile(entry.notebookPath, entry.pdfPath);
   }
 
   /**
@@ -817,6 +846,8 @@ export class CompanionPdfManager {
   async moveTo(notebook: TFile, id: string, path: string): Promise<void> {
     const entry = this.entry(id);
     if (!entry?.enabled || path.toLowerCase() === entry.pdfPath.toLowerCase()) return;
+    // A file there that is not this notebook's own is never taken over.
+    if (this.exists(path) && !(await this.isOwn(id, entry, path))) return;
     const current = await this.pdfAt(entry, entry.pdfPath);
     if (current?.id === id && !this.exists(path)) await this.movePdf(entry, path);
     else entry.dirty = true;
@@ -824,6 +855,7 @@ export class CompanionPdfManager {
     entry.followName = followsName(path, notebook.path);
     delete entry.error;
     await this.writeKeys(notebook, { pdfPath: path, followName: entry.followName });
+    this.recordOwn(entry);
     this.persist();
   }
 
@@ -847,10 +879,8 @@ export class CompanionPdfManager {
     const target = entry.pdfPath;
     const tx = companionTransaction(target, id, this.device, Date.now());
     await this.ensureFolder(target);
-    // The name was typed for this export: whatever file has it is the user's to replace.
-    const io = { ...this.writeIO(), owned: () => Promise.resolve(true) };
     await this.internally([tx.target, tx.stage, tx.backup], () =>
-      replaceCompanionPdf(entry, tx, stamped, io),
+      replaceCompanionPdf(entry, tx, stamped, this.writeIO()),
     );
     const file = this.app.vault.getFileByPath(target);
     if (file) {
@@ -866,6 +896,7 @@ export class CompanionPdfManager {
     if (made) entry.optionsKey = made.optionsKey;
     delete entry.error;
     delete entry.halted;
+    this.recordOwn(entry);
     this.persist();
   }
 
@@ -900,6 +931,7 @@ export class CompanionPdfManager {
     };
     this.journal.entries[id] = entry;
     await this.writeKeys(notebook, { id, pdfPath: path, followName: entry.followName });
+    this.recordOwn(entry);
     this.persist();
   }
 
@@ -938,7 +970,7 @@ export class CompanionPdfManager {
         if (!entry.enabled || !renamedNote) continue;
         // The name is printed in the PDF's headers.
         this.markDirty(id);
-        if (!entry.followName || this.exportName(note) || this.exportName(from)) continue;
+        if (!entry.followName || this.names.get(note) || this.names.get(from)) continue;
         const next = followedCompanionPath(entry.pdfPath, note);
         if (next === entry.pdfPath || this.exists(next)) continue;
         if ((await this.pdfAt(entry, entry.pdfPath))?.id === id) await this.movePdf(entry, next);

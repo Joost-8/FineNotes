@@ -14,6 +14,7 @@
  *   write is trusted without reading it back.
  */
 import { INK_FILE_SUFFIXES } from "../constants";
+import { pdfName } from "../export/export-name";
 import type { InkDocument } from "./document";
 import { stripInkSuffix } from "./new-notebook";
 
@@ -261,20 +262,24 @@ export function inCompanionFolder(folder: string, name: string): string {
 }
 
 /**
- * A free path for a new companion in `folder`: the notebook's name, or
- * `Name 1.pdf`, `Name 2.pdf`… when a file is already there (a manual export,
- * say). Compared case-insensitively, as iPadOS, macOS and Windows do.
+ * Where a companion goes when `preferred` is wanted: there when no file is,
+ * or when the file there is the notebook's own (`own`: the one its export
+ * or its companion last wrote); else a free name beside it (`Name 1.pdf`),
+ * never over someone else's file. The Export dialog's own rule (#318,
+ * `pdfName`), so both name a notebook's PDF alike. `taken`: the names in
+ * that folder now.
  */
-export function freeCompanionPath(
-  notePath: string,
-  folder: string,
-  taken: (path: string) => boolean,
+export function companionPlace(
+  preferred: string,
+  taken: ReadonlySet<string>,
+  own: boolean,
 ): string {
-  const base = companionName(notePath).slice(0, -".pdf".length);
-  for (let i = 0; ; i++) {
-    const path = inCompanionFolder(folder, i === 0 ? `${base}.pdf` : `${base} ${i}.pdf`);
-    if (!taken(path)) return path;
-  }
+  const name = fileNameOf(preferred);
+  const base = name.replace(/\.pdf$/i, "");
+  return inCompanionFolder(
+    folderOf(preferred),
+    pdfName(base, name, taken, own ? name : undefined).name,
+  );
 }
 
 /** Where the PDF goes when the notebook is renamed and the PDF follows its name. */
@@ -289,11 +294,6 @@ export function followedCompanionPath(pdfPath: string, notePath: string): string
  */
 export function companionFileName(notePath: string, typed?: string): string {
   return typed ? `${typed}.pdf` : companionName(notePath);
-}
-
-/** Whether `pdfPath` is the file of the notebook's typed export name: the user's to replace. */
-export function isTypedPdf(pdfPath: string, typed: string | undefined): boolean {
-  return !!typed && fileNameOf(pdfPath).toLowerCase() === `${typed}.pdf`.toLowerCase();
 }
 
 /** Whether a PDF's name is the notebook's own (it follows the name), not one the user gave it. */

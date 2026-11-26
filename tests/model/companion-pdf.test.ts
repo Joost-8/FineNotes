@@ -19,10 +19,9 @@ import {
   companionTransaction,
   followedCompanionPath,
   followsName,
-  freeCompanionPath,
+  companionPlace,
   isCompanionNotebookPath,
   isCompanionScratch,
-  isTypedPdf,
   parseCompanionJournal,
   sameStat,
   withCompanionKeys,
@@ -132,13 +131,17 @@ describe("paths and names", () => {
     expect(companionName("School/Cell biology.notebook.md")).toBe("Cell biology.pdf");
     expect(isCompanionNotebookPath("School/Cell biology.notebook.md")).toBe(true);
     expect(isCompanionNotebookPath("School/Cell biology.md")).toBe(false);
-    const taken = new Set(["exports/cell biology.pdf", "exports/cell biology 1.pdf"]);
-    expect(
-      freeCompanionPath("School/Cell biology.notebook.md", "Exports", (p) =>
-        taken.has(p.toLowerCase()),
-      ),
-    ).toBe("Exports/Cell biology 2.pdf");
-    expect(freeCompanionPath("Cell.notebook.md", "", () => false)).toBe("Cell.pdf");
+    const taken = new Set(["Cell biology.pdf", "Cell biology 1.pdf"]);
+    // Someone else's file of that name: a free name beside it, as the Export dialog does.
+    expect(companionPlace("Exports/Cell biology.pdf", taken, false)).toBe(
+      "Exports/Cell biology 2.pdf",
+    );
+    // The notebook's own file (its export's or its companion's): that file, replaced in place.
+    expect(companionPlace("Exports/cell biology.pdf", taken, true)).toBe(
+      "Exports/Cell biology.pdf",
+    );
+    // Nothing there: the name as wanted.
+    expect(companionPlace("Cell.pdf", new Set(), false)).toBe("Cell.pdf");
   });
 
   it("follows a renamed notebook in the PDF's own folder; a name the user gave does not follow", () => {
@@ -242,11 +245,5 @@ describe("one name for an export and the companion (#318)", () => {
     expect(companionFileName("School/Cell.notebook.md", "Hand-in 3")).toBe("Hand-in 3.pdf");
     expect(companionFileName("School/Cell.notebook.md")).toBe("Cell.pdf");
     expect(companionFileName("School/Cell.notebook.md", "")).toBe("Cell.pdf");
-  });
-
-  it("knows the typed name's file, in any case", () => {
-    expect(isTypedPdf("Exports/hand-in 3.PDF", "Hand-in 3")).toBe(true);
-    expect(isTypedPdf("Exports/Cell.pdf", "Hand-in 3")).toBe(false);
-    expect(isTypedPdf("Exports/Cell.pdf", undefined)).toBe(false);
   });
 });

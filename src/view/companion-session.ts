@@ -285,6 +285,14 @@ export class CompanionSession implements CompanionViewLink {
     return this.enabled && entry?.pdfPath.toLowerCase() === path.toLowerCase();
   }
 
+  /** The companion's file name when it is in `folder`: a file the Export dialog may replace. */
+  ownIn(folder: string): string | undefined {
+    const path = this.enabled ? this.manager?.entry(this.id)?.pdfPath : undefined;
+    if (!path) return undefined;
+    const at = path.lastIndexOf("/");
+    return (at < 0 ? "" : path.slice(0, at)) === folder ? path.slice(at + 1) : undefined;
+  }
+
   /** A PDF name typed in the Export dialog (#318): the companion moves to it. */
   async moveTo(path: string): Promise<void> {
     const file = this.host.file;

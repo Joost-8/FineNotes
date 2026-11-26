@@ -6542,8 +6542,10 @@ export class InkView extends TextFileView {
       return new Set((dir?.children ?? []).map((child) => child.name));
     };
     // The PDF this notebook's export last wrote under its typed name: the only file it replaces (#318).
+    // Its Companion PDF's file is its own too (one rule for both, #310).
     const own = (): string | undefined =>
-      ownPdfName(exportNamesOf(this.settings.exportNames)[note.path], folder);
+      ownPdfName(exportNamesOf(this.settings.exportNames)[note.path], folder) ??
+      this.companion.ownIn(folder);
     const preview = this.previewSources();
     // Plain paper or with the template, with the tapes or without, as the
     // dialog's switches were last left.

@@ -78,7 +78,12 @@ function vaultApp() {
   const vault = {
     getFileByPath: (path: string) => files.get(path) ?? null,
     getAbstractFileByPath: (path: string) => files.get(path) ?? null,
-    getFolderByPath: () => ({}),
+    getFolderByPath: (folder: string) => ({
+      children: [...files.values()].filter(
+        (f) => f.path.slice(0, Math.max(0, f.path.lastIndexOf("/"))) === folder,
+      ),
+    }),
+    getRoot: () => ({ children: [...files.values()].filter((f) => !f.path.includes("/")) }),
     createFolder: vi.fn(async () => {}),
     getFiles: vi.fn(() => [...files.values()]),
     readBinary: vi.fn(
@@ -572,35 +577,78 @@ describe("the review's cases", () => {
   });
 });
 
-describe("one name for the export and the companion (#318)", () => {
+describe("one name and one own file for the export and the companion (#318)", () => {
   const TYPED = "School/Exports/Biology hand-in.pdf";
+  const NAME = "Biology hand-in";
 
-  /** The manager hearing a typed export name for the notebook. */
-  function typedSetup(typed: Record<string, string>) {
+  /** The manager on the Export dialog's record: a typed name, and the file it last wrote. */
+  function typedSetup(file?: string) {
     const s = setup();
+    const names = new Map<string, { name: string; file?: string }>([
+      [NOTE, file ? { name: NAME, file } : { name: NAME }],
+    ]);
     s.manager.register(
       { app: s.app, registerEvent: vi.fn(), register: vi.fn() } as never,
       () => [],
-      (path) => typed[path],
+      {
+        get: (path) => names.get(path),
+        setFile: (path, written) => {
+          const entry = names.get(path);
+          if (entry) names.set(path, { name: entry.name, file: written });
+        },
+      },
     );
-    return s;
+    return { ...s, names };
   }
 
   const stamp = async (_bytes: Uint8Array, id: string, hash: string) =>
     tinyPdf(companionPdfSubject(id, hash));
 
-  it("turned on, the companion takes the typed name, even over the user's file of that name", async () => {
-    const s = typedSetup({ [NOTE]: "Biology hand-in" });
+  it("a same-named file that is not this notebook's own gets a free name, never overwritten", async () => {
+    const s = typedSetup();
     s.put(TYPED, foreignPdf("bbbbbbbbbbbbbbbb", "0000000000000000"));
+    const theirs = s.bytes.get(TYPED);
     const id = await s.manager.enable(s.note as never, s.texts.get(NOTE)!, "School/Exports");
-    expect(s.manager.entry(id)?.pdfPath).toBe(TYPED);
-    // Not someone else's: the export replaces it.
+    expect(s.manager.entry(id)?.pdfPath).toBe("School/Exports/Biology hand-in 1.pdf");
     await s.manager.requestExport(id, s.note as never, capture(), true);
-    expect(s.manager.state(id).mark).toBe("current");
-    expect(new TextDecoder().decode(s.bytes.get(TYPED))).toContain(id);
+    expect(s.bytes.get(TYPED)).toBe(theirs);
+    expect(s.files.has("School/Exports/Biology hand-in 1.pdf")).toBe(true);
+    // The record now names the companion's file as the own one.
+    expect(s.names.get(NOTE)?.file).toBe("School/Exports/Biology hand-in 1.pdf");
   });
 
-  it("a new typed name moves the companion's file there, the frontmatter with it", async () => {
+  it("export, then companion: the file the export wrote is replaced in place", async () => {
+    const s = typedSetup(TYPED);
+    // A plain export under the typed name: no Subject.
+    s.put(TYPED, new TextEncoder().encode("%PDF-1.7 an export"));
+    const id = await s.manager.enable(s.note as never, s.texts.get(NOTE)!, "School/Exports");
+    expect(s.manager.entry(id)?.pdfPath).toBe(TYPED);
+    await s.manager.requestExport(id, s.note as never, capture(), true);
+    expect(new TextDecoder().decode(s.bytes.get(TYPED))).toContain(id);
+    expect(s.manager.state(id).mark).toBe("current");
+  });
+
+  it("companion, then export: the companion's write is the record's own file", async () => {
+    const s = typedSetup();
+    const id = await s.manager.enable(s.note as never, s.texts.get(NOTE)!, "School/Exports");
+    await s.manager.requestExport(id, s.note as never, capture(), true);
+    expect(s.manager.entry(id)?.pdfPath).toBe(TYPED);
+    // What the Export dialog's own() reads: the companion's file.
+    expect(s.names.get(NOTE)?.file).toBe(TYPED);
+    // The export then writes it through the companion's writer: still the companion, up to date.
+    const hash = await captureHash(s.app as never, capture()());
+    await s.manager.writeExport(
+      id,
+      TYPED,
+      new Uint8Array(5),
+      { hash, optionsKey: "switches" },
+      stamp,
+    );
+    expect(new TextDecoder().decode(s.bytes.get(TYPED))).toContain(`${id} ${hash}`);
+    expect(s.manager.state(id).mark).toBe("current");
+  });
+
+  it("a new typed name moves the companion's file there, never onto someone else's file", async () => {
     const s = await enabled();
     await s.manager.moveTo(s.note as never, s.id, TYPED);
     expect(s.app.fileManager.renameFile).toHaveBeenCalled();
@@ -609,6 +657,10 @@ describe("one name for the export and the companion (#318)", () => {
       pdfPath: TYPED,
       followName: false,
     });
+    const other = "School/Exports/Someone else's.pdf";
+    s.put(other, foreignPdf("bbbbbbbbbbbbbbbb", "0000000000000000"));
+    await s.manager.moveTo(s.note as never, s.id, other);
+    expect(s.manager.entry(s.id)?.pdfPath).toBe(TYPED);
   });
 
   it("an export to the companion's file goes through its writer: Subject, hash, up to date", async () => {
@@ -634,12 +686,10 @@ describe("one name for the export and the companion (#318)", () => {
   });
 
   it("a notebook renamed keeps its typed PDF name", async () => {
-    const s = typedSetup({
-      [NOTE]: "Biology hand-in",
-      "School/Cells.notebook.md": "Biology hand-in",
-    });
+    const s = typedSetup();
     const id = await s.manager.enable(s.note as never, s.texts.get(NOTE)!, "School/Exports");
     await s.manager.requestExport(id, s.note as never, capture(), true);
+    s.names.set("School/Cells.notebook.md", s.names.get(NOTE)!);
     await s.vault.rename(s.note, "School/Cells.notebook.md");
     await s.manager.renamed(s.files.get("School/Cells.notebook.md") as never, NOTE);
     expect(s.manager.entry(id)?.pdfPath).toBe(TYPED);
@@ -647,8 +697,8 @@ describe("one name for the export and the companion (#318)", () => {
   });
 
   it("Keep updated after an export of a typed name links exactly that file", async () => {
-    const s = typedSetup({ [NOTE]: "Biology hand-in" });
-    const bytes = foreignPdf("bbbbbbbbbbbbbbbb", "0000000000000000");
+    const s = typedSetup(TYPED);
+    const bytes = new TextEncoder().encode("%PDF-1.7 an export");
     s.put(TYPED, bytes);
     await s.manager.adopt(
       s.note as never,

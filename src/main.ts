@@ -645,12 +645,18 @@ export default class GoodObsidianPlugin extends Plugin {
     await this.loadSettings();
     // Before anything with words in it is made.
     await this.language.start();
-    // A notebook's typed export name (#318) names its companion PDF too.
-    this.companionPdfs.register(
-      this,
-      () => this.openNotebooks().map((view) => view.companion),
-      (path) => exportNamesOf(this.settings.exportNames)[path]?.name,
-    );
+    // A notebook's typed export name (#318) names its companion PDF too, and
+    // both keep one record of the file that is the notebook's own.
+    this.companionPdfs.register(this, () => this.openNotebooks().map((view) => view.companion), {
+      get: (path) => exportNamesOf(this.settings.exportNames)[path],
+      setFile: (path, file) => {
+        const names = exportNamesOf(this.settings.exportNames);
+        const entry = names[path];
+        if (!entry || entry.file === file) return;
+        this.settings.exportNames = { ...names, [path]: { name: entry.name, file } };
+        void this.saveSettings();
+      },
+    });
     this.addCommand({
       id: "update-companion-pdf",
       name: t("notebooks.companion.updateNow"),
