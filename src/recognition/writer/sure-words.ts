@@ -21,6 +21,7 @@
 
 import type { CharReading } from "../hwr/char-readings";
 import { plainWord } from "../hwr/corrections";
+import { holdsExponent, isLone } from "./own-ink";
 import { opcodes } from "./repair";
 
 export interface SureBars {
@@ -172,19 +173,51 @@ export const ASK_BELOW = 0.9;
  * under `ASK_BELOW` (Joost, 25 November, after ten cards for two lines:
  * "way fewer and dependent on the amount of lines"). Lines in order.
  */
-export function pickQuestions(candidates: readonly Question[], perLine = 1): Question[] {
+export function pickQuestions(
+  candidates: readonly Question[],
+  /** At most this many on a line; a function gives each line its own (`questionBudget` of its words). */
+  perLine: number | ((line: number) => number) = 1,
+  /** At most this many in all (`questionBudget`): the least sure are kept. */
+  limit = Infinity,
+): Question[] {
+  const onLine = (line: number): number =>
+    Math.max(0, typeof perLine === "number" ? perLine : perLine(line));
   const byLine = new Map<number, Question[]>();
   for (const q of candidates) {
     if (q.sure >= ASK_BELOW) continue;
     byLine.set(q.line, [...(byLine.get(q.line) ?? []), q]);
   }
-  return [...byLine.keys()]
+  const picked = [...byLine.keys()]
     .sort((a, b) => a - b)
     .flatMap((line) =>
       (byLine.get(line) ?? [])
         .sort((a, b) => a.sure - b.sure || a.word - b.word)
-        .slice(0, Math.max(0, perLine)),
+        .slice(0, onLine(line)),
     );
+  if (picked.length <= limit) return picked;
+  const kept = new Set(
+    [...picked]
+      .sort((a, b) => a.sure - b.sure || a.line - b.line || a.word - b.word)
+      .slice(0, Math.max(0, limit)),
+  );
+  return picked.filter((q) => kept.has(q));
+}
+
+/** Never more cards than this for one Beautify, however much is selected. */
+export const MOST_CARDS = 8;
+
+/**
+ * How many cards a line, or one whole Beautify, may show, by its words
+ * (Joost, 26 November: "a limit adjusted to the number of words, as to not
+ * overwhelm", then "two per 8, but the scale does not have to be linear"):
+ * two for 8 words, growing with the square root after that (3 at 16, 4 at
+ * 32, 5 at 50), one for up to 4 words, eight at most. The cards go to the
+ * least sure words first, where Grape is wrong most: on donated handwriting
+ * 37 % of the words under 0.5 were misread, 24 % of those from 0.5 to 0.9,
+ * 7 % above (`research/handwriting-rig/gen/neaten_tally.mjs`).
+ */
+export function questionBudget(words: number): number {
+  return Math.min(MOST_CARDS, Math.max(1, Math.round(2 * Math.sqrt(words / 8))));
 }
 
 /** A line's words as Beautify sees them before asking: their text, ink, whether sure, and how sure. */
@@ -195,11 +228,22 @@ export interface LineChoice {
   sure: readonly number[];
 }
 
-/** The words Beautify could ask about: not sure enough to write, with a letter or digit, and ink. */
-export function unsureCandidates(lines: readonly LineChoice[]): Question[] {
+/**
+ * The words Beautify could ask about: not sure enough to write, with a letter or digit
+ * (more than one: a lone word keeps the writer's ink, so a card goes to a real word), and ink.
+ */
+export function unsureCandidates(
+  lines: readonly LineChoice[],
+  /** `lone`: single letters and digits too ("Beautify this word" on one: the writer pointed at it). */
+  options: { lone?: boolean } = {},
+): Question[] {
   return lines.flatMap((line, li) =>
     line.read.flatMap((w, word) =>
-      !line.rewrite[word] && /[\p{L}\p{N}]/u.test(w) && line.words[word]?.length
+      !line.rewrite[word] &&
+      /[\p{L}\p{N}]/u.test(w) &&
+      !holdsExponent(w) &&
+      (options.lone || !isLone(w)) &&
+      line.words[word]?.length
         ? [{ line: li, word, sure: line.sure[word] ?? 0 }]
         : [],
     ),
@@ -209,10 +253,11 @@ export function unsureCandidates(lines: readonly LineChoice[]): Question[] {
 /**
  * After the questions: which words of a line are written. A word asked about
  * and not answered stays the writer's ink; an answered one is sure by now;
- * every other word with ink is written as read, and the read-back keeps one
- * that does not read back as itself in the writer's ink (Joost, 25 November:
- * the words not asked about are handled without a card). `asked` holds the
- * first stroke id of each word asked about.
+ * every other word with ink is marked for writing, and `own-ink.ts` then keeps
+ * the writer's ink for a lone word or one Grape's sureness of is under
+ * `WRITE_UNASKED_FROM`; the read-back keeps one that does not read back as
+ * itself (Joost, 25 November: the words not asked about get no card). `asked`
+ * holds the first stroke id of each word asked about.
  */
 export function writeUnasked(
   line: Pick<LineChoice, "words" | "rewrite">,
@@ -280,6 +325,8 @@ export interface LineWords {
   rewrite: boolean[];
   /** How sure Grape is of each word (`wordSureness`); a joined word takes its parts' least. */
   sure?: number[];
+  /** Whether the writer answered about each word (`applyAnswers`' `known`); a joined word is known if its letters are. */
+  known?: boolean[];
 }
 
 interface Part {
@@ -287,6 +334,7 @@ interface Part {
   ink: string[];
   rewrite: boolean;
   sure: number;
+  known: boolean;
 }
 
 /**
@@ -304,6 +352,7 @@ export function joinPunctuation(line: LineWords): LineWords {
       ink: line.ink[i] ?? [],
       rewrite: line.rewrite[i] ?? false,
       sure: line.sure?.[i] ?? 0,
+      known: line.known?.[i] ?? false,
     };
     const bare = !/[\p{L}\p{N}]/u.test(word);
     const last = parts[parts.length - 1];
@@ -322,6 +371,7 @@ export function joinPunctuation(line: LineWords): LineWords {
     ink: parts.map((p) => p.ink),
     rewrite: parts.map((p) => p.rewrite),
     ...(line.sure ? { sure: parts.map((p) => p.sure) } : {}),
+    ...(line.known ? { known: parts.map((p) => p.known) } : {}),
   };
 }
 
@@ -334,5 +384,6 @@ function join(a: Part, b: Part): Part {
     ink: [...a.ink, ...b.ink],
     rewrite: a.rewrite && b.rewrite,
     sure,
+    known: bare(a) ? b.known : bare(b) ? a.known : a.known && b.known,
   };
 }
