@@ -1491,8 +1491,12 @@ export class Renderer {
     this.backdropSize = { w: width, h: height };
     const ctx = this.backdrop.ctx;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = desk;
-    ctx.fillRect(0, 0, width, height);
+    if (desk === "transparent") {
+      ctx.clearRect(0, 0, width, height);
+    } else {
+      ctx.fillStyle = desk;
+      ctx.fillRect(0, 0, width, height);
+    }
   }
 
   /**
@@ -1500,6 +1504,7 @@ export class Renderer {
    * page's paper matches it, so every page stays apart from it.
    */
   private deskOf(doc: InkDocument): string {
+    if (this.paper.desk === "transparent") return "transparent";
     const papers: string[] = [];
     for (const box of this.boxesOnScreen(doc.pages.length)) {
       const page = doc.pages[box.index];
@@ -1523,6 +1528,10 @@ export class Renderer {
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
     ctx.imageSmoothingEnabled = true;
+    if (this.desk === "transparent") {
+      ctx.clearRect(0, 0, this.dry.canvas.width, this.dry.canvas.height);
+      return;
+    }
     ctx.fillStyle = this.desk;
     ctx.fillRect(0, 0, this.dry.canvas.width, this.dry.canvas.height);
     const sprite = this.shadowSprite();

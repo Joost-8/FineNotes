@@ -19,6 +19,9 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Handwrite here** (PR #312, thanks @bendi087): in a Markdown note, the command puts a
+  handwriting block at the cursor and opens it for the Pencil in place; the blocks are pages of
+  one notebook per note and show in reading view and exported PDFs.
 - **Ask AI knows the PDFs in your tabs.** The AI button now works on a PDF's
   tab: Ask opens over the slide, and "explain this slide" means the one in
   view (or the one you read last before going back to the notes). It can

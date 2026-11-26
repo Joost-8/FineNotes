@@ -783,6 +783,8 @@ import { SizeWait, backingScale } from "./surface-size";
 import { StrokeIndex } from "./stroke-index";
 import { REST_MS, ViewRest } from "./view-rest";
 import { IdSequence, strokeIdsOf, textBoxIdsOf } from "./id-sequence";
+import { INLINE_GROW_REACH_PX, inGrowBand } from "./inline-surface-model";
+import { flashPageRing } from "./page-flash";
 import { newSession, type SurfaceSession, type SurfaceSessionOptions } from "./surface-session";
 import { SnippetDrag, bindSnippetGrip } from "./snippet-drag";
 import { SlideDots } from "./slide-dots";
@@ -1053,6 +1055,13 @@ export interface InkSurfaceCallbacks {
    * anything may have changed, anywhere.
    */
   onChange: (pages?: readonly string[]) => void;
+  /** Reserve room below the live ink on a dedicated embedded page. */
+  growInlinePage?: (y: number, buffer: number) => boolean;
+  /**
+   * A finger on the page is the host's to scroll with (a "Handwrite here"
+   * block in pen-only mode): its touches are neither cancelled nor stopped.
+   */
+  fingerScrollsHost?: () => boolean;
   /** Something the host may display changed (stroke count, zoom, current page). */
   onStatus?: () => void;
   /** The Zoom box opened from a marquee or closed with its ×: the toolbar's switch follows. */
@@ -3534,6 +3543,7 @@ export class InkSurface {
         if (cancelsStylusTouch(event.type, event.changedTouches)) event.preventDefault();
         return;
       }
+      if (this.callbacks.fingerScrollsHost?.() === true) return;
       if (onTextBox(event.target)) return;
       // The lasso's menu scrolls by itself when it is taller than the view
       // (the custom colour picker): a finger there must not be cancelled.
@@ -5815,7 +5825,12 @@ export class InkSurface {
     this.joined = joined;
     if (rejoined) this.strokeIndex?.rebuild(this.doc.pages);
     // A board among the pages (discussion #160) is left out of their column.
-    this.pageLayout = layoutNotebook(this.doc.pages, { direction, joined });
+    const locked = this.inlineWidthLocked;
+    this.pageLayout = layoutNotebook(this.doc.pages, {
+      direction,
+      joined,
+      ...(locked ? { marginX: 0, marginY: 0 } : {}),
+    });
     renderer.setLayout(this.pageLayout);
     // Fit the page stack to the available width, but never magnify past 1:1 —
     // on a wide desktop pane an upscaled page looks like a zoom bug, and the
@@ -5824,10 +5839,14 @@ export class InkSurface {
     // point of the whole design.
     // A row fits one page (and its margins) to the pane, not the whole row.
     const fit = this.pageLayout.fitWidth;
-    this.baseScale = fit > 0 ? Math.min(1, cssW / fit) : 1;
+    this.baseScale = fit > 0 ? (locked ? cssW / fit : Math.min(1, cssW / fit)) : 1;
     // The options row opening or closing is no new pane: the page keeps its
     // size, as for the keyboard, and only moves (`followTopShift` below).
     this.updateZoomFloor(cssH, topShift !== 0);
+    if (locked) {
+      this.userZoom = 1;
+      this.scroller.setPosition(0, 0);
+    }
     // A panel opening beside a page that is zoomed in keeps the page the size
     // it was, instead of shrinking it with the pane (a notebook of wide
     // slides and narrow pages fits so small that the sidebar halved it).
@@ -6381,6 +6400,37 @@ export class InkSurface {
    */
   private freePageEdges = false;
 
+  private inlineWidthLocked = false;
+
+  setInlineWidthLocked(locked: boolean): void {
+    if (this.inlineWidthLocked === locked) return;
+    this.inlineWidthLocked = locked;
+    this.scroller.cancel();
+    this.pinch = null;
+    this.zoomAnim = null;
+    this.userZoom = 1;
+    this.scroller.setPosition(0, 0);
+    this.layout();
+  }
+
+  /** Re-render a resized or re-styled inline page without stretching its cached tile. */
+  refreshInlinePage(pageId: string): void {
+    this.renderer?.invalidatePage(pageId);
+    this.layout();
+    if (this.builder) this.drawWet();
+    this.requestFrame();
+  }
+
+  /** Briefly pulses an accent outline around `pageIndex` (or its drawn ink) after jumping from an embed. */
+  flashPage(pageIndex: number): void {
+    this.syncViewport();
+    const box = this.pageLayout.boxes[pageIndex];
+    const page = this.doc.pages[pageIndex];
+    if (!box || !page) return;
+    const view = { scale: this.scale, offsetX: this.offsetX, scrollY: this.viewport.scrollY };
+    flashPageRing(this.surfaceEl, this.win, box, page, view);
+  }
+
   /** The setting "Lock fit to width", read at each layout (`ScrollExtent.holdX`). */
   holdFitWidth: () => boolean = () => false;
 
@@ -6904,6 +6954,7 @@ export class InkSurface {
    * value past the limits, everything else clamps first.
    */
   private applyZoom(nextZoom: number, anchorX: number, anchorY: number): void {
+    if (this.inlineWidthLocked) return;
     let before = this.toLayout(anchorX, anchorY);
     // A row's pages slide together as it zooms in (`syncRowGap`): keep the
     // point of the page under the fingers fixed, not the layout point.
@@ -6976,6 +7027,7 @@ export class InkSurface {
   }
 
   private onWheel(event: WheelEvent): void {
+    if (this.inlineWidthLocked) return;
     event.preventDefault();
     this.releaseBoardHold();
     const unit = event.deltaMode === 1 ? WHEEL_LINE_PX : event.deltaMode === 2 ? this.cssH : 1;
@@ -9323,6 +9375,7 @@ export class InkSurface {
         this.scroller.cancel();
         return;
       }
+      if (this.inlineWidthLocked) return;
       this.zoomAnim = null;
       this.rowSettle = null;
       this.pinch = { raw: this.userZoom, centerX, centerY };
@@ -11503,6 +11556,19 @@ export class InkSurface {
     cancel: (box) => this.inkCancel(box),
   };
 
+  private extendInlineInk(box: PageBox, sample: PointerSample): PageBox {
+    if (!this.inlineWidthLocked || !this.callbacks.growInlinePage) return box;
+    const at = this.toPage(box, sample);
+    const buffer = INLINE_GROW_REACH_PX / this.unitScale;
+    if (!inGrowBand(at, box, buffer) || !this.callbacks.growInlinePage(at.y, buffer)) return box;
+    this.renderer?.invalidatePage(box.id);
+    this.layout();
+    const grown = this.pageLayout.boxes[box.index] ?? box;
+    this.activePage = grown;
+    if (this.builder) this.drawWet();
+    return grown;
+  }
+
   private inkDown(box: PageBox, at: Pt, sample: PointerSample): void {
     const mode = this.toolState.tool === "shape" ? shapeModeFor(this.toolState) : "auto";
     if (mode !== "auto") {
@@ -11520,6 +11586,7 @@ export class InkSurface {
     builder.add({ ...sample, ...at });
     this.strokeInput = sample.pointerType ?? "";
     this.builder = builder;
+    box = this.extendInlineInk(box, sample);
     this.snap = null;
     this.diagHold = { fired: false, verdict: "" };
     this.restartHold(at);
@@ -11641,6 +11708,7 @@ export class InkSurface {
       this.scheduleWet();
       return;
     }
+    for (const sample of samples) box = this.extendInlineInk(box, sample);
     // Keeping a sample is cheap and happens at once; outlining the stroke is
     // not, so it waits for the next frame (`scheduleWet`), once however many
     // moves came in meanwhile.
@@ -11671,6 +11739,7 @@ export class InkSurface {
       return;
     }
     this.cancelCircleHold();
+    box = this.extendInlineInk(box, sample);
     this.finishStroke(box, { ...sample, ...this.toPage(box, sample) });
   }
 
