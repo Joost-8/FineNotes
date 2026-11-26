@@ -63,6 +63,7 @@ import {
   type HandwriteBlocks,
   handwriteBlocksOf,
 } from "./model/handwrite-blocks";
+import { EMBED_CODES, drawEmbedPictures } from "./view/embed-pictures";
 import { InlineNotebookPickerModal } from "./view/handwrite-modals";
 import {
   ASSETS_FOLDER,
@@ -279,15 +280,14 @@ function stylusClickNames(): Record<StylusClickAction, string> {
 }
 
 /** The sections, as the list names them. */
-/** The link forms the ⓘ of "How to embed a notebook" lists, one line each. */
-const EMBED_HELP_LINES = [
-  "settings.notes.syntaxWhole",
-  "settings.notes.syntaxPage",
-  "settings.notes.syntaxRegion",
-  "settings.notes.syntaxSketch",
-  "settings.notes.syntaxMarkdown",
-  "settings.notes.syntaxWhere",
-] as const;
+/** What each embed form shows, under its picture. */
+const EMBED_MEANINGS = {
+  whole: "settings.notes.meaningWhole",
+  page: "settings.notes.meaningPage",
+  region: "settings.notes.meaningRegion",
+  sketch: "settings.notes.meaningSketch",
+  markdown: "settings.notes.meaningMarkdown",
+} as const;
 
 /** The Notes section's state in the list: where sketches go. */
 function notesStatus(mode: HandwriteBlocks): string {
@@ -1787,17 +1787,12 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
   private drawEmbedHelp(setting: Setting): void {
     // Open from the start: the section has the room, and this is its reference.
     const panel = setting.descEl.createDiv({ cls: "goodobsidian-embed-help" });
-    for (const key of EMBED_HELP_LINES) {
-      // "![[…]]: what it shows": the link as code, the rest as words.
-      const line = panel.createDiv();
-      const text = t(key);
-      const cut = text.startsWith("!") ? text.indexOf(": ") : -1;
-      if (cut < 0) line.setText(text);
-      else {
-        line.createEl("code", { text: text.slice(0, cut) });
-        line.appendText(text.slice(cut));
-      }
-    }
+    // A picture of each way to embed, its link as typed and what it shows (embed-pictures.ts).
+    drawEmbedPictures(panel, (form) => ({
+      code: EMBED_CODES[form],
+      meaning: t(EMBED_MEANINGS[form]),
+    }));
+    panel.createDiv({ text: t("settings.notes.syntaxWhere") });
     setting.addExtraButton((button) => {
       button
         .setIcon("info")

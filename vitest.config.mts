@@ -115,6 +115,7 @@ export default defineConfig({
         "src/view/pending-page.ts",
         "src/view/inline-editor-keys.ts",
         "src/model/handwrite-blocks.ts",
+        "src/view/embed-pictures.ts",
         "src/canvas/align-snap.ts",
         "src/canvas/paper-style.ts",
         "src/canvas/margin-paper.ts",

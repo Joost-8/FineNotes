@@ -25817,6 +25817,37 @@ button.clickable-icon.goodobsidian-ask-window-button {
   white-space: normal;
   overflow-wrap: anywhere;
 }
+/* One card per way to embed: 2 a row where there is room, 1 on a narrow pane. */
+.goodobsidian-embed-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr));
+  gap: var(--size-4-3);
+  margin-bottom: var(--size-4-2);
+}
+.goodobsidian-embed-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-1);
+  min-width: 0;
+  user-select: text;
+}
+.goodobsidian-embed-picture {
+  width: 100%;
+  height: auto;
+}
+.goodobsidian-art-svg .ga-embed-title {
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-linecap: round;
+  stroke-width: 3;
+}
+.goodobsidian-art-svg .ga-embed-sketch {
+  fill: none;
+  stroke: var(--text-normal);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.4;
+}
 .goodobsidian-embed-help code {
   font-family: var(--font-monospace);
   overflow-wrap: anywhere;
