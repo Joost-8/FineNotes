@@ -632,8 +632,11 @@ describe("the rows", () => {
     const { tab } = makeTab(makePlugin({ imageVendor: "openai" }));
     for (const { def, section } of rows(tab)) {
       if (!def.name || section === "nav" || DEFAULT_PEN_NAMES.includes(def.name)) continue;
+      // A reference, not a setting: its cards take the whole row (Joost, 2026-11-26).
+      if (def.name === "How to embed a notebook") continue;
       expect(tab.markOf(def.name), def.name).toBeDefined();
     }
+    expect(tab.markOf("How to embed a notebook")).toBeUndefined();
     expect(tab.markOf("Pencil tilt")).toEqual({ art: "tilt" });
     expect(tab.markOf("Stickers folder")).toEqual({ icon: "sticker" });
   });
