@@ -85,6 +85,7 @@ import { acquirePdfWorker, releasePdfWorker } from "./pdf-worker";
 import { thumbnailRasterScale } from "./page-sidebar";
 import { FolderSuggestModal } from "./folder-suggest";
 import { LibraryActions } from "./library-actions";
+import { bindCardHold } from "./card-hold";
 import { RenameModal } from "./rename-modal";
 import { pickImageFile } from "./image-import";
 import { VaultPdfSuggestModal } from "./pdf-import-modal";
@@ -439,6 +440,7 @@ export class LibraryView extends ItemView {
     root.addClass("goodobsidian-library");
     // Obsidian opens the command palette on a pull down; this list pulls to refresh instead.
     root.dataset.ignoreSwipe = "true";
+    bindCardHold(root, (path) => this.pickByHold(path));
 
     const head = root.createDiv({ cls: "goodobsidian-library-head" });
     // The folder rail's own toggle: Obsidian's sidebar button is hidden in the simple look.
@@ -1337,6 +1339,7 @@ export class LibraryView extends ItemView {
             : tn("notebooks.home.itemCount", folder.count),
     });
     card.toggleClass("is-selected", this.selected.has(folder.path));
+    card.dataset.holdKey = folder.path;
     const open = (): void =>
       this.selecting ? this.toggleSelected(card, folder.path) : this.openFolder(folder.path);
     card.addEventListener("click", open);
@@ -1690,6 +1693,7 @@ export class LibraryView extends ItemView {
     }
 
     card.toggleClass("is-selected", this.selected.has(entry.path));
+    card.dataset.holdKey = entry.path;
     card.toggleClass("is-previewed", this.previewPath === entry.path);
     // One tap shows the preview; a second one on the same cover opens it.
     card.addEventListener("click", () => {
@@ -2722,6 +2726,24 @@ export class LibraryView extends ItemView {
     this.contentEl.toggleClass("is-selecting", on);
     this.syncBar();
     this.paintNow();
+  }
+
+  /**
+   * A card held: picking several starts (if it had not) with that card picked.
+   * Marks by class only: a repaint would take the card from under the finger
+   * and end a drag the hold turns into.
+   */
+  private pickByHold(path: string): void {
+    if (!this.selecting) {
+      this.selecting = true;
+      this.selected.clear();
+      this.contentEl.addClass("is-selecting");
+    }
+    this.selected.add(path);
+    this.contentEl.querySelectorAll<HTMLElement>("[data-hold-key]").forEach((card) => {
+      if (card.dataset.holdKey === path) card.addClass("is-selected");
+    });
+    this.syncBar();
   }
 
   /** A tap in picking mode: the item is in or out; the card shows a tick. */

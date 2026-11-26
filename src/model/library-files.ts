@@ -14,6 +14,7 @@ import { t, tn } from "../i18n/translate";
 import { freeName } from "./library-style";
 import { NOTEBOOK_FILE_SUFFIX } from "../constants";
 import { OWN_FOLDERS, OWN_FOLDER_PAGES, inkFileSuffix, stripInkSuffix } from "./new-notebook";
+import { devicePagesFolderOfFile, readDeviceFileName } from "./device-pages";
 
 /** Whether `path` lies below `folder`. */
 function under(path: string, folder: string): boolean {
@@ -118,10 +119,36 @@ export interface TrashPlan {
 }
 
 /**
+ * The page folders (`X/Pages/<id>`) whose notebook is gone: no notebook in
+ * `X` outlives `going`, the folder holds a `_meta` file, and nothing in it but
+ * page files. A notebook sent to the trash without its folder leaves these,
+ * and they are no files of the user's. A folder of the user's own that only
+ * looks like one (`Pages/ch1/intro.draft.md`) has no `_meta` and stays.
+ */
+function lostPageFolders(
+  files: readonly string[],
+  isNotebook: (path: string) => boolean,
+  going: ReadonlySet<string>,
+): Set<string> {
+  const live = new Set(files.filter((p) => isNotebook(p) && !going.has(p)).map(parentPath));
+  const meta = new Set<string>();
+  const mixed = new Set<string>();
+  for (const p of files) {
+    const folder = parentPath(p);
+    const name = readDeviceFileName(baseName(p));
+    if (devicePagesFolderOfFile(p) === null || name === null) mixed.add(folder);
+    else if (name.kind === "meta") meta.add(folder);
+  }
+  return new Set(
+    [...meta].filter((folder) => !mixed.has(folder) && !live.has(parentPath(parentPath(folder)))),
+  );
+}
+
+/**
  * Deleting `picked`: every notebook picked, or in a picked folder, with the
  * folder of its own, and every other file picked. A folder goes whole only
  * when nothing else is in it; otherwise only the notebooks in it go, and the
- * rest stays.
+ * rest stays. Page files a gone notebook left go with a picked folder too.
  */
 export function trashPlan(
   picked: readonly Picked[],
@@ -141,7 +168,13 @@ export function trashPlan(
       others.add(item.path);
     }
   }
-  const doomed = new Set<string>(others);
+  // Page files left by a notebook that is gone, or goes now, go with a picked folder.
+  const lostFolders = lostPageFolders(files, isNotebook, notebooks);
+  const lost = files.filter(
+    (p) =>
+      lostFolders.has(parentPath(p)) && picked.some((item) => item.folder && under(p, item.path)),
+  );
+  const doomed = new Set<string>([...others, ...lost]);
   for (const note of notebooks) {
     doomed.add(note);
     const unit = notebookUnit(note, files, isNotebook);

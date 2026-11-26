@@ -129,6 +129,67 @@ describe("trashPlan", () => {
     expect(plan.kept).toBe(1);
   });
 
+  it("takes the page files a notebook left behind, with their folder", () => {
+    // As in the vault on 2026-11-26: the note went to the trash without its folder.
+    const files = [
+      "Untitled notebook 5/Pages/77xw5f4g/p1.d5l84mu4.md",
+      "Untitled notebook 5/Pages/77xw5f4g/_meta.d5l84mu4.md",
+    ];
+    const plan = trashPlan([{ path: "Untitled notebook 5", folder: true }], files, isNotebook);
+    expect(plan).toEqual({ trash: ["Untitled notebook 5"], notebooks: [], files: [], kept: 0 });
+  });
+
+  it("keeps the page files of a notebook that stays, and the user's notes beside lost ones", () => {
+    const files = [
+      "Uni/Physics/Physics.notebook.md",
+      "Uni/Physics/Pages/77xw5f4g/p1.d5l84mu4.md",
+      "Uni/Old/Pages/k1i0x7o0/p1.d5l84mu4.md",
+      "Uni/Old/Pages/k1i0x7o0/_meta.d5l84mu4.md",
+      "Uni/Old/My notes.md",
+      "Uni/Old/Pages/notes.md",
+    ];
+    const plan = trashPlan(
+      [{ path: "Uni/Old", folder: true }],
+      files.filter((p) => !p.startsWith("Uni/Physics")),
+      isNotebook,
+    );
+    expect(plan.trash).toEqual(["Uni/Old/Pages/k1i0x7o0"]);
+    expect(plan.kept).toBe(2);
+    const kept = trashPlan([{ path: "Uni", folder: true }], files, isNotebook);
+    expect(kept.trash).toContain("Uni/Physics");
+    expect(kept.trash).toContain("Uni/Old/Pages/k1i0x7o0");
+    expect(kept.kept).toBe(2);
+  });
+
+  it("never takes the user's own files that only look like page files", () => {
+    const files = [
+      "Book/Pages/ch1/intro.draft.md",
+      "Book/Pages/ch1/notes.md",
+      "Book/Pages/ch2/plan.v2.md",
+      "Book/Pages/ch2/_meta.v2.md",
+      "Book/Pages/ch2/sketch.png",
+    ];
+    const plan = trashPlan([{ path: "Book", folder: true }], files, isNotebook);
+    expect(plan.trash).toEqual([]);
+    expect(plan.kept).toBe(5);
+  });
+
+  it("takes the pages of notebooks that go in the same Delete", () => {
+    const files = [
+      "X/A.notebook.md",
+      "X/B.notebook.md",
+      "X/Pages/aaaa/p1.dev1.md",
+      "X/Pages/aaaa/_meta.dev1.md",
+      "X/Pages/bbbb/p1.dev1.md",
+      "X/Pages/bbbb/_meta.dev1.md",
+    ];
+    const plan = trashPlan([{ path: "X", folder: true }], files, isNotebook);
+    expect(plan.trash).toEqual(["X"]);
+    expect(plan.kept).toBe(0);
+    // Picking the pages folder alone, with its notebooks staying, takes nothing.
+    expect(trashPlan([{ path: "X/Pages", folder: true }], files, isNotebook).trash).toEqual([]);
+  });
+
   it("takes a plain notebook alone", () => {
     const plan = trashPlan(
       [{ path: "Uni/Algebra.notebook.md", folder: false }],
