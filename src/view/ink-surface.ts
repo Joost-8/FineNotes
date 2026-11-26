@@ -782,7 +782,8 @@ import { SizeWait, backingScale } from "./surface-size";
 import { StrokeIndex } from "./stroke-index";
 import { REST_MS, ViewRest } from "./view-rest";
 import { IdSequence, strokeIdsOf, textBoxIdsOf } from "./id-sequence";
-import { INLINE_GROW_REACH_PX, flashRing, inGrowBand } from "./inline-surface-model";
+import { INLINE_GROW_REACH_PX, inGrowBand } from "./inline-surface-model";
+import { flashPageRing } from "./page-flash";
 import { newSession, type SurfaceSession, type SurfaceSessionOptions } from "./surface-session";
 import { SnippetDrag, bindSnippetGrip } from "./snippet-drag";
 import { SlideDots } from "./slide-dots";
@@ -6424,20 +6425,9 @@ export class InkSurface {
     this.syncViewport();
     const box = this.pageLayout.boxes[pageIndex];
     const page = this.doc.pages[pageIndex];
-    if (!box || !page || !(this.scale > 0)) return;
-    const at = flashRing(box, drawnBounds(page), {
-      scale: this.scale,
-      offsetX: this.offsetX,
-      scrollY: this.viewport.scrollY,
-    });
-    const ring = this.surfaceEl.createDiv({ cls: "goodobsidian-page-flash" });
-    ring.setCssProps({
-      left: `${at.left}px`,
-      top: `${at.top}px`,
-      width: `${at.width}px`,
-      height: `${at.height}px`,
-    });
-    this.win.setTimeout(() => ring.remove(), 1500);
+    if (!box || !page) return;
+    const view = { scale: this.scale, offsetX: this.offsetX, scrollY: this.viewport.scrollY };
+    flashPageRing(this.surfaceEl, this.win, box, page, view);
   }
 
   /** The setting "Lock fit to width", read at each layout (`ScrollExtent.holdX`). */
