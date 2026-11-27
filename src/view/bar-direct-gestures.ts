@@ -282,6 +282,8 @@ export function bindDirectBarGestures(ctx: DirectBarGesturesHost): () => void {
   let dockPreview: HTMLElement | null = null;
   let candidateDock: BarDock = ctx.barDock();
   let swallowClickUntil = 0;
+  /** The slow tap's own click, sent while the browser's is swallowed. */
+  let passClick = false;
 
   const setMoreToolsHighlight = (on: boolean): void => {
     ctx.accessoriesButton?.()?.toggleClass("is-drop-target", on);
@@ -505,6 +507,7 @@ export function bindDirectBarGestures(ctx: DirectBarGesturesHost): () => void {
     const before = startLayout;
     let after = currentLayout;
     const id = draggedId;
+    const held = draggedButton;
     const slots = essentialsSlots;
     let landedOnBar = false;
     let tuckedToMore = false;
@@ -546,6 +549,16 @@ export function bindDirectBarGestures(ctx: DirectBarGesturesHost): () => void {
 
     if (!wasHeld) return;
     swallowClickUntil = Date.now() + SWALLOW_CLICK_MS;
+    // Held but let go where it was: a slow tap, so the button does its job.
+    if (wasMode === "icon" && !didDrag && held?.isConnected) {
+      passClick = true;
+      try {
+        held.click();
+      } finally {
+        passClick = false;
+      }
+      return;
+    }
 
     if (wasMode === "dock") {
       if (nextDock !== ctx.barDock()) ctx.onCommitDock?.(nextDock);
@@ -648,7 +661,7 @@ export function bindDirectBarGestures(ctx: DirectBarGesturesHost): () => void {
   };
 
   const onClickCapture = (e: MouseEvent): void => {
-    if (Date.now() < swallowClickUntil) {
+    if (!passClick && Date.now() < swallowClickUntil) {
       e.preventDefault();
       e.stopImmediatePropagation();
     }

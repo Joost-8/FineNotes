@@ -409,7 +409,11 @@ export class ToolbarEditor {
     this.newPenChip(head);
     if (this.h.newPen?.remove) {
       // Beside New pen, while a pen button is carried: dropped here, it goes.
-      const trash = head.createDiv({ cls: "goodobsidian-edit-trash is-hidden" });
+      const trash = head.createDiv({ cls: "goodobsidian-edit-trash" });
+      // A live preview redraws the tray mid-drag: a pen still carried keeps it.
+      const carried = this.press?.dragging === true && isPenSlot(this.press.id);
+      trash.toggleClass("is-hidden", !carried);
+      trash.toggleClass("is-target", carried && this.overTrash);
       setIcon(trash, "trash-2");
       trash.setAttribute("aria-label", t("toolbar.edit.deletePen"));
       this.trash = trash;
