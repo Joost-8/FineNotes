@@ -184,6 +184,7 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- On Android, dragging a tool from ⋯ to the bar, or a pen from its options onto the bar, no longer stops or sticks part-way; a bar docked left or right can be held by its sides to move it.
 - Picking another pinned pen while "Until the pen lifts" was waiting no longer reopens the options ([#338](https://github.com/Joost-8/FineNotes/pull/338)).
 - **Toolbar details** ([#336](https://github.com/Joost-8/FineNotes/pull/336), thanks @koltensaccount): no tooltip over the toolbar's empty space; the page shows the desk colour while thumbnails slide; the page selection bar and the strip under a bottom toolbar take the toolbar's look.
 - **Beautify on a slanted line.** Words Beautify left alone no longer end up

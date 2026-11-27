@@ -46,6 +46,10 @@ export function bindPenTypeDrag(pen: HTMLElement, options: PenTypeDragOptions): 
   let gap = 0;
   let overBar = false;
   let swallowUntil = 0;
+  /** The pointer id of the finger on the pen, so the window fallback hears only that finger. */
+  let touchPointer: number | null = null;
+  /** Ends a finger's drag from the window too, should the pen's own touch events stop. */
+  let stopFallback: (() => void) | null = null;
 
   const along = (x: number, y: number): number => (options.upright() ? y : x);
 
@@ -119,7 +123,31 @@ export function bindPenTypeDrag(pen: HTMLElement, options: PenTypeDragOptions): 
     const svg = pen.querySelector("svg");
     if (svg) ghost.appendChild(svg.cloneNode(true));
     pen.addClass("is-lifted");
+    if (touchId !== null) watchTouchEnd(winOf(pen));
     place(startX, startY);
+  };
+
+  /**
+   * The touch pointer's end, heard on the window: the pen's own touchend
+   * normally comes after it and ends the drag first; when it never comes, this
+   * does, a tick later. On Android a pen dragged onto the bar stayed lifted
+   * until Escape (Oskar, 2026-11-27); why its touchend never came is not proven.
+   */
+  const watchTouchEnd = (win: Window): void => {
+    const done = (e: PointerEvent): void => {
+      if (e.pointerType !== "touch") return;
+      if (touchPointer !== null && e.pointerId !== touchPointer) return;
+      const cancelled = e.type === "pointercancel";
+      win.setTimeout(() => {
+        if (ghost) end(cancelled);
+      }, 0);
+    };
+    win.addEventListener("pointerup", done, true);
+    win.addEventListener("pointercancel", done, true);
+    stopFallback = () => {
+      win.removeEventListener("pointerup", done, true);
+      win.removeEventListener("pointercancel", done, true);
+    };
   };
 
   const end = (cancelled: boolean): void => {
@@ -128,6 +156,8 @@ export function bindPenTypeDrag(pen: HTMLElement, options: PenTypeDragOptions): 
     touchId = null;
     stopPointer?.();
     stopPointer = null;
+    stopFallback?.();
+    stopFallback = null;
     if (activeWin) {
       activeWin.removeEventListener("keydown", onKeyDown, true);
       activeWin.removeEventListener("blur", onBlur);
@@ -226,6 +256,7 @@ export function bindPenTypeDrag(pen: HTMLElement, options: PenTypeDragOptions): 
   });
 
   pen.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "touch") touchPointer = event.pointerId;
     if (event.pointerType !== "mouse" || event.button !== 0) return;
     press(event.clientX, event.clientY);
     const win = winOf(pen);

@@ -154,6 +154,8 @@ export default defineConfig({
         "src/view/pill-dock-model.ts",
         "src/view/bar-dock-model.ts",
         "src/view/toolbar-lock.ts",
+        "src/view/bar-hold-edge.ts",
+        "src/view/touch-keeper.ts",
         "src/view/pill-row-model.ts",
         "src/view/view-routing.ts",
         "src/view/toolbar-layout.ts",

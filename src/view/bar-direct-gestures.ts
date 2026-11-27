@@ -19,11 +19,13 @@
  * Safari / WebKit pointer + touch protections.
  */
 
-import { setIcon } from "obsidian";
+import { Platform, setIcon } from "obsidian";
 import { type BarDock, dockCandidate, isBarUpright } from "./bar-dock-model";
 import { isElement, onWindowMoved, winOf } from "./host-window";
 import { HOLD_MS, POINTER_SLOP_PX, TOUCH_SLOP_PX } from "./page-drag-model";
 import { toolbarLocked } from "./toolbar-lock";
+import { holdsBarEdge } from "./bar-hold-edge";
+import { keepInPage } from "./touch-keeper";
 import {
   BAR_ITEM_ICONS,
   type BarItemId,
@@ -273,6 +275,8 @@ export function bindDirectBarGestures(ctx: DirectBarGesturesHost): () => void {
   let startX = 0;
   let startY = 0;
   let draggedButton: HTMLButtonElement | null = null;
+  /** The button under a finger that held the bar by its side: a still release still presses it. */
+  let edgeButton: HTMLButtonElement | null = null;
   let draggedId: BarItemId | null = null;
   let startLayout: ToolbarLayout | null = null;
   let currentLayout: ToolbarLayout | null = null;
@@ -356,6 +360,7 @@ export function bindDirectBarGestures(ctx: DirectBarGesturesHost): () => void {
     holdTriggered = false;
     hasDragged = false;
     draggedButton = null;
+    edgeButton = null;
     draggedId = null;
     startLayout = null;
     currentLayout = null;
@@ -425,6 +430,7 @@ export function bindDirectBarGestures(ctx: DirectBarGesturesHost): () => void {
     if (e.cancelable) e.preventDefault();
 
     if (mode === "dock") {
+      if (dist > DRAG_START_PX) hasDragged = true;
       candidateDock = dockCandidate(
         e.clientX,
         e.clientY,
@@ -507,7 +513,7 @@ export function bindDirectBarGestures(ctx: DirectBarGesturesHost): () => void {
     const before = startLayout;
     let after = currentLayout;
     const id = draggedId;
-    const held = draggedButton;
+    const held = wasMode === "dock" ? edgeButton : draggedButton;
     const slots = essentialsSlots;
     let landedOnBar = false;
     let tuckedToMore = false;
@@ -550,7 +556,7 @@ export function bindDirectBarGestures(ctx: DirectBarGesturesHost): () => void {
     if (!wasHeld) return;
     swallowClickUntil = Date.now() + SWALLOW_CLICK_MS;
     // Held but let go where it was: a slow tap, so the button does its job.
-    if (wasMode === "icon" && !didDrag && held?.isConnected) {
+    if (!didDrag && held?.isConnected) {
       passClick = true;
       try {
         held.click();
@@ -586,8 +592,23 @@ export function bindDirectBarGestures(ctx: DirectBarGesturesHost): () => void {
     const target = isElement(e.target) ? e.target : null;
     const button = target?.closest<HTMLButtonElement>("button[data-item]") ?? null;
     const interactive = target?.closest("button, input, select, textarea, [role='button']");
+    // On Android, a finger at an upright bar's side holds the bar, whatever
+    // touch adjustment aimed it at (Oskar, 2026-11-27).
+    const edge =
+      Platform.isAndroidApp === true &&
+      holdsBarEdge(
+        e.clientX,
+        e.clientY,
+        barEl.getBoundingClientRect(),
+        isBarUpright(ctx.barDock()),
+        e.pointerType,
+      );
 
-    if (button && barEl.contains(button) && ctx.onCommitLayout && ctx.canReorder()) {
+    if (edge && ctx.onCommitDock) {
+      mode = "dock";
+      candidateDock = ctx.barDock();
+      edgeButton = button && barEl.contains(button) ? button : null;
+    } else if (button && barEl.contains(button) && ctx.onCommitLayout && ctx.canReorder()) {
       const id = button.getAttribute("data-item") as BarItemId | null;
       const layout = ctx.layout();
       if (!id) return;
@@ -702,8 +723,12 @@ export function bindMoreToolsDrag(ctx: MoreToolsDragHost): MoreToolsDragHandle {
   let currentLayout: ToolbarLayout | null = null;
   let ghostEl: HTMLElement | null = null;
   let swallowClickUntil = 0;
+  /** Takes the held row out of the page once the drag is over (touch-keeper.ts). */
+  let releaseRow: (() => void) | null = null;
 
   const cleanup = (): void => {
+    releaseRow?.();
+    releaseRow = null;
     if (holdTimer !== null) {
       (boundWin ?? winOf(barEl)).clearTimeout(holdTimer);
       holdTimer = null;
@@ -892,6 +917,8 @@ export function bindMoreToolsDrag(ctx: MoreToolsDragHost): MoreToolsDragHandle {
       ghostEl = createGhostChip(doc, id, draggedRow);
       moveGhost(ghostEl, startX, startY);
       barEl.addClass("is-reordering");
+      // Closing ⋯ drops the row the finger is on; Android would then scroll.
+      releaseRow = keepInPage(draggedRow);
       ctx.onDismissMenu();
     }, HOLD_MS);
 

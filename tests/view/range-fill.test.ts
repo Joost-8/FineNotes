@@ -144,5 +144,5 @@ describe("every slider", () => {
       if (sliders > dragged) missing.push(`${path}: ${sliders} sliders, ${dragged} dragRange`);
     }
     expect(missing).toEqual([]);
-  });
+  }, 30_000); // walks every source file: slow on a fresh worktree (release-and-ci.md, 2026-11-27)
 });
