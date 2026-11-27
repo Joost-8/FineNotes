@@ -99,3 +99,32 @@ export function pastedTextOrigin(
     y: Math.max(0, Math.min(at.y, page.height)),
   };
 }
+
+/**
+ * The picture a paste event carries, if any. An empty file is no picture:
+ * Android hands every paste an empty `image.png` once the app was left, which
+ * would otherwise win over FineNotes' own clipboard and paste nothing.
+ */
+export function imageFileOf<
+  F extends { readonly type: string; readonly name: string; readonly size: number },
+>(
+  data: {
+    readonly files: ArrayLike<F>;
+    readonly items: ArrayLike<{
+      readonly kind: string;
+      readonly type: string;
+      getAsFile(): F | null;
+    }>;
+  } | null,
+): F | null {
+  if (!data) return null;
+  for (const file of Array.from(data.files)) {
+    if (file.size > 0 && isPictureFile(file.type, file.name)) return file;
+  }
+  for (const item of Array.from(data.items)) {
+    if (item.kind !== "file") continue;
+    const file = item.getAsFile();
+    if (file && file.size > 0 && isPictureFile(file.type || item.type, file.name)) return file;
+  }
+  return null;
+}

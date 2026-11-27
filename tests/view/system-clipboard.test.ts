@@ -48,10 +48,15 @@ describe("readSystemClipboard", () => {
     vi.stubGlobal("navigator", { clipboard: { read: () => Promise.resolve(items) } });
 
   it("reads a HEIC photo as a picture (discussion #112)", async () => {
-    holding(item(["image/heic"]));
+    holding(item(["image/heic"], { "image/heic": "heic bytes" }));
     const found = await readSystemClipboard();
     expect(found.kind).toBe("image");
     if (found.kind === "image") expect(found.file.type).toBe("image/heic");
+  });
+
+  it("takes an empty picture as none, and pastes the text beside it (Android)", async () => {
+    holding(item(["image/png"]), item(["text/plain"], { "text/plain": "Fourier" }));
+    expect(await readSystemClipboard()).toEqual({ kind: "text", text: "Fourier" });
   });
 
   it("says something was kept from the page when an item has no types (iPad Photos)", async () => {
@@ -95,6 +100,16 @@ describe("writeSelectionText", () => {
     } finally {
       stop();
     }
+  });
+
+  it("writes plain text only where a rich write pastes as nothing (Android)", async () => {
+    const write = vi.fn(async () => undefined);
+    const writeText = vi.fn(async () => undefined);
+    vi.stubGlobal("navigator", { clipboard: { write, writeText } });
+    vi.stubGlobal("ClipboardItem", class {});
+    expect(await writeSelectionText(selection, () => true, true)).toBe(true);
+    expect(write).not.toHaveBeenCalled();
+    expect(writeText).toHaveBeenCalledWith(selection.text);
   });
 
   it("falls back to plain text only while the selection is still current", async () => {

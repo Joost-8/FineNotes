@@ -47,14 +47,19 @@ export function writeSystemText(text: string): Promise<void> {
   });
 }
 
-/** Write both clipboard representations in the gesture. This text represents editable ink. */
+/**
+ * Write both clipboard representations in the gesture. This text represents
+ * editable ink. `plainOnly`: Android's WebView takes a `ClipboardItem` and
+ * then pastes it as nothing, so there only the plain text is written.
+ */
 export async function writeSelectionText(
   selection: { text: string; html: string },
   stillCurrent: () => boolean,
+  plainOnly = false,
 ): Promise<boolean> {
   const clip = typeof navigator !== "undefined" ? navigator.clipboard : undefined;
   if (!clip || !cleanPastedText(selection.text)) return false;
-  if (typeof clip.write === "function" && typeof ClipboardItem !== "undefined") {
+  if (!plainOnly && typeof clip.write === "function" && typeof ClipboardItem !== "undefined") {
     try {
       await clip.write([
         new ClipboardItem({
@@ -102,7 +107,11 @@ async function fromItems(items: readonly ClipboardItem[]): Promise<SystemPaste> 
       const pick = pickClipboardType(item.types);
       if (pick?.kind === "image") {
         const blob = await item.getType(pick.type);
-        return { kind: "image", file: new File([blob], "Pasted image", { type: pick.type }) };
+        // Android reads back an empty picture: no picture at all.
+        if (blob.size > 0) {
+          return { kind: "image", file: new File([blob], "Pasted image", { type: pick.type }) };
+        }
+        continue;
       }
       if (pick?.kind === "text" && text === null) {
         text = await (await item.getType(pick.type)).text();

@@ -736,7 +736,7 @@ import { edgeScrollSpeed } from "./page-drag-model";
 import { CalcCard, type CalcCardActions, type CalcCardContent } from "./calc-card";
 import { CalcGlow } from "./calc-glow";
 import { FINGER_HOLD_MS, FingerHold } from "../input/finger-hold";
-import { cleanPastedText, inkFirst, isPictureFile, pastedTextOrigin } from "./paste-choice";
+import { cleanPastedText, imageFileOf, inkFirst, pastedTextOrigin } from "./paste-choice";
 import {
   canReadSystemClipboard,
   onSystemTextWritten,
@@ -16954,10 +16954,14 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
         const version = clipboard.version;
         const rich = selectionText(copied);
         if (rich) {
-          void writeSelectionText(rich, () => clipboard.version === version).then((written) => {
-            if (written) clipboard.noteOwnText(cleanPastedText(rich.text), version);
-          });
-        } else {
+          const android = Platform.isAndroidApp; // a rich write pastes as nothing there
+          void writeSelectionText(rich, () => clipboard.version === version, android).then(
+            (written) => {
+              if (written) clipboard.noteOwnText(cleanPastedText(rich.text), version);
+            },
+          );
+        } else if (!Platform.isAndroidApp) {
+          // Android pastes every clipboard picture empty: no 13 s render for nothing.
           copySelectionPngToSystemClipboard(clipboard, version, () =>
             this.selectionPicture({ ...group, images: copied.images }, null).then(
               (shot) => shot?.blob ?? null,
@@ -23710,19 +23714,6 @@ function isEditable(target: EventTarget | null): boolean {
  * The first picture file a paste carries, or `null`. Looked for in `files`
  * and then among the items, since engines fill one or the other.
  */
-function imageFileOf(data: DataTransfer | null): File | null {
-  if (!data) return null;
-  for (const file of Array.from(data.files)) {
-    if (isPictureFile(file.type, file.name)) return file;
-  }
-  for (const item of Array.from(data.items)) {
-    if (item.kind !== "file") continue;
-    const file = item.getAsFile();
-    if (file && isPictureFile(file.type || item.type, file.name)) return file;
-  }
-  return null;
-}
-
 /** `setIcon`, with a text fallback for mobile builds where an icon comes up blank. */
 /**
  * A closed shape, whole: a side dot copies it, and a side dot's arrow may be

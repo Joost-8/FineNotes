@@ -3,6 +3,7 @@ import {
   PASTED_TEXT_ROOM,
   cleanPastedText,
   clipboardHidSomething,
+  imageFileOf,
   inkFirst,
   isPictureFile,
   pastedTextOrigin,
@@ -134,5 +135,27 @@ describe("pastedTextOrigin", () => {
       x: 0,
       y: 10,
     });
+  });
+});
+
+describe("imageFileOf", () => {
+  const file = (size: number, type = "image/png", name = "image.png") => ({ size, type, name });
+  const data = (files: ReturnType<typeof file>[], items: ReturnType<typeof file>[] = []) => ({
+    files,
+    items: items.map((f) => ({ kind: "file", type: f.type, getAsFile: () => f })),
+  });
+
+  it("finds a picture among the files or the items", () => {
+    const png = file(120);
+    expect(imageFileOf(data([png]))).toBe(png);
+    expect(imageFileOf(data([], [png]))).toBe(png);
+    expect(imageFileOf(data([file(10, "text/plain", "a.txt")]))).toBeNull();
+    expect(imageFileOf(null)).toBeNull();
+  });
+
+  it("takes an empty picture as none: Android adds one to a paste once the app was left", () => {
+    expect(imageFileOf(data([file(0)], [file(0)]))).toBeNull();
+    const real = file(5);
+    expect(imageFileOf(data([file(0)], [real]))).toBe(real);
   });
 });
