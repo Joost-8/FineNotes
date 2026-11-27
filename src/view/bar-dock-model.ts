@@ -226,3 +226,58 @@ export function sideLift(centre: number, height: number, top: number, bottom: nu
   if (from + height > bottom) return Math.max(top - from, bottom - (from + height));
   return 0;
 }
+
+/** Minimum drag distance (px) before docking may leave the current edge. */
+const DOCK_DRAG_MIN_PX = 48;
+
+/**
+ * Which edge (`top` / `bottom` / `left` / `right`) a direct bar drag is aimed
+ * at, requiring both meaningful drag displacement from (`startX`, `startY`)
+ * and proximity to the candidate edge inside `hostBox` so a small sideways
+ * move along the current edge stays docked there. PURE.
+ */
+export function dockCandidate(
+  clientX: number,
+  clientY: number,
+  hostBox: Box,
+  currentDock: BarDock,
+  startX: number,
+  startY: number,
+): BarDock {
+  const dx = clientX - startX;
+  const dy = clientY - startY;
+  if (Math.hypot(dx, dy) < DOCK_DRAG_MIN_PX) return currentDock;
+
+  const height = Math.max(1, hostBox.bottom - hostBox.top);
+  const width = Math.max(1, hostBox.right - hostBox.left);
+  const vThreshold = Math.max(100, Math.min(220, height * 0.25));
+  const hThreshold = Math.max(100, Math.min(220, width * 0.25));
+
+  const distTop = clientY - hostBox.top;
+  const distBottom = hostBox.bottom - clientY;
+  const distLeft = clientX - hostBox.left;
+  const distRight = hostBox.right - clientX;
+
+  if (currentDock === "left") {
+    if (dy < -24 && distTop < vThreshold) return "top";
+    if (dy > 24 && distBottom < vThreshold) return "bottom";
+    if (dx > 40 && distRight < hThreshold * 1.5) return "right";
+    return currentDock;
+  }
+  if (currentDock === "right") {
+    if (dy < -24 && distTop < vThreshold) return "top";
+    if (dy > 24 && distBottom < vThreshold) return "bottom";
+    if (dx < -40 && distLeft < hThreshold * 1.5) return "left";
+    return currentDock;
+  }
+  if (currentDock === "top") {
+    if (dx < -24 && distLeft < hThreshold) return "left";
+    if (dx > 24 && distRight < hThreshold) return "right";
+    if (dy > 40 && distBottom < vThreshold * 1.5) return "bottom";
+    return currentDock;
+  }
+  if (dx < -24 && distLeft < hThreshold) return "left";
+  if (dx > 24 && distRight < hThreshold) return "right";
+  if (dy < -40 && distTop < vThreshold * 1.5) return "top";
+  return currentDock;
+}
