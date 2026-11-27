@@ -60,6 +60,11 @@ describe("readSystemClipboard", () => {
     expect(await readSystemClipboard()).toEqual({ kind: "text", text: "Fourier" });
   });
 
+  it("pastes the text of an item whose picture is empty (Chromium keeps both in one item)", async () => {
+    holding(item(["image/png", "text/plain"], { "text/plain": "Fourier" }));
+    expect(await readSystemClipboard()).toEqual({ kind: "text", text: "Fourier" });
+  });
+
   it("says something was kept from the page when an item has no types (iPad Photos)", async () => {
     holding(item([]));
     expect(await readSystemClipboard()).toEqual({ kind: "hidden" });

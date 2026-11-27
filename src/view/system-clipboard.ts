@@ -127,6 +127,10 @@ async function fromItems(items: readonly ClipboardItem[]): Promise<SystemPaste> 
         if (blob.size > 0) {
           return { kind: "image", file: new File([blob], "Pasted image", { type: pick.type }) };
         }
+        // Chromium lists every format in one item: read its text instead.
+        if (text === null && item.types.includes("text/plain")) {
+          text = await (await item.getType("text/plain")).text();
+        }
         continue;
       }
       if (pick?.kind === "text" && text === null) {
