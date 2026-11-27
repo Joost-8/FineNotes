@@ -4349,9 +4349,9 @@ export class InkView extends TextFileView {
     this.deviceTimer = 0;
     const guard = this.plugin.readingGuard;
     const path = this.file?.path;
-    if (this.deviceBusy || !this.surface || !path || guard.paused) return;
-    if (this.penIsDown) {
-      this.scheduleDeviceReading();
+    if (!this.surface || !path || guard.paused) return;
+    if (this.deviceBusy || this.penIsDown) {
+      this.scheduleDeviceReading(); // busy (the word check at a pen rest): come back
       return;
     }
     const doc = this.doc;
@@ -4514,7 +4514,7 @@ export class InkView extends TextFileView {
   /** Underline `words` on page `id`, a spelling as such (word-check.ts `spellingOf`). */
   private showFlags(id: string, words: ReadWord[], lang: PageLanguage, at?: CheckedPage): void {
     const marks = this.plugin.wordCheck.marks(words, at?.suggestions, lang);
-    this.surface?.setWordFlags(id, marks.flags, marks.spelling);
+    if (this.wordsChecked) this.surface?.setWordFlags(id, marks.flags, at && marks.spelling);
   }
 
   /**

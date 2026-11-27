@@ -238,6 +238,11 @@ export class NeatenService {
         void sheet().catch((error) => console.warn("FineNotes: practice sheet check", error));
       });
       this.host.models.offer(WRITER_MODEL.id, "ask");
+      // "Not now", or no answer: a download started later elsewhere does not open the sheet.
+      window.setTimeout(() => {
+        const kind = store.state.kind;
+        if (kind !== "downloading" && kind !== "verifying") stop();
+      }, 120_000);
     };
     void begin().catch((error) => console.warn("FineNotes: could not set up writing", error));
   }

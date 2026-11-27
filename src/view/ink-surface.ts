@@ -2907,7 +2907,7 @@ export class InkSurface {
   private linkSuggestions = new Map<string, readonly HandwrittenLink[]>();
   /** Words to check, by page id: a dotted underline each, red and wavy for the ones in `spelt`. */
   private wordFlags = new Map<string, ReadonlyArray<readonly string[]>>();
-  private readonly spelt = new WeakSet<readonly string[]>();
+  private readonly spelt = new Map<string, ReadonlySet<string>>();
   private readonly wordMarks: HTMLElement[] = [];
   /** The flagged word whose menu is open (page id, stroke key): drawn red. */
   private activeWordFlag: { pageId: string; key: string; strokes: readonly string[] } | null = null;
@@ -17769,7 +17769,7 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
 
   /** Underline words to check, as spelling those keyed in `spelling`; a tap calls `onFlaggedWord`. */
   setWordFlags(pageId: string, flags: readonly string[][], spelling?: Set<string>): void {
-    for (const f of flags) if (spelling?.has(strokeKey(f))) this.spelt.add(f);
+    if (spelling) this.spelt.set(pageId, spelling); // else the last ones stand till the next
     if (flags.length > 0) this.wordFlags.set(pageId, flags);
     else this.wordFlags.delete(pageId);
     this.syncSectionRibbons();
@@ -17822,7 +17822,7 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
           this.wordMarks.push(mark);
         }
         mark.removeClass("is-hidden");
-        mark.toggleClass("is-spelling", this.spelt.has(strokes));
+        mark.toggleClass("is-spelling", this.spelt.get(page.id)?.has(strokeKey(strokes)) === true);
         const active = this.activeWordFlag;
         mark.toggleClass(
           "is-active",

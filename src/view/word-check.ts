@@ -316,14 +316,14 @@ export class WordCheck {
    * for both left him unable to tell whether he was fixing his spelling or
    * Grape's reading):
    *
-   * - **You wrote** "�": a spelling question (`spellingOf`). The chips are
+   * - **You wrote** “…”: a spelling question (`spellingOf`). The chips are
    *   what it may have been meant as; one picked is a mistake with `meant`,
    *   the ink labelled as written, and that word alone is written again in
    *   the writer's hand (or, without the writer, its setup begins). Then
-   *   Grape misread it� (the ink does not say this), Add to dictionary.
-   * - **Grape read** "�": a reading question. When its ink fits list words
+   *   Grape misread it… (the ink does not say this), Add to dictionary.
+   * - **Grape read** “…”: a reading question. When its ink fits list words
    *   about as well as the reading (margin under `SUGGEST_MARGIN`), they are
-   *   the chips: what the ink may say. Then Type what it says, It says "�",
+   *   the chips: what the ink may say. Then Type what it says, It says “…”,
    *   and Add to dictionary.
    *
    * Which kind an answer is, Grape's misread or the writer's own mistake,
@@ -353,8 +353,14 @@ export class WordCheck {
         done();
         if (hand && kind === "misread") hand.offer(text);
       });
+    // What the ink spells before the list's second look, only when the writer
+    // opened the card: Beautify asks about words that look unsure, and nearly
+    // every word the second look changed is Grape putting itself right.
+    const before = asked ? undefined : word.word.wrote;
+    const asRead: ReadWord = { ...word.word, wrote: before };
+    if (before === undefined) delete asRead.wrote;
     // Written wrong: the text shows `text`; the label is what the ink says (corrections.ts).
-    const written = word.word.wrote ?? read;
+    const written = before ?? read;
     const meant = (text: string, write: boolean) =>
       void this.answer(word, "mistake", written, undefined, text).then(() => {
         done();
@@ -362,7 +368,7 @@ export class WordCheck {
         if (write) hand.write(text);
         else hand.offer(text);
       });
-    const fixes = this.spellingOf(word.word, found, word.language ?? "en");
+    const fixes = this.spellingOf(asRead, found, word.language ?? "en");
     // Stored as "ignore", the kind's name since the first corrections files.
     const add: WordPopoverRow = {
       icon: "eye-off",
@@ -386,7 +392,11 @@ export class WordCheck {
           spelling: true,
           chips: fixes,
           // The corrected word alone is written again in the hand (Joost, 2026-11-27).
-          onChip: (w) => meant(w, !!hand && hand.writes(w)),
+          // Grape's own reading picked: the ink says it, so that is the label.
+          onChip: (w) =>
+            before !== undefined && w === read
+              ? reply("mistake", read)
+              : meant(w, !!hand && hand.writes(w)),
           rows: [misread, add],
         },
         closed,

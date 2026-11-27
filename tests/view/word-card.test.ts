@@ -185,6 +185,31 @@ describe("a word Grape's second look changed (recive read as revive, Joost 2026-
     expect(card.chips).toEqual(["revive", "receive", "recite"]);
   });
 
+  it("picking Grape's own reading labels the ink as read: the second look was right", async () => {
+    const { check, store } = await setup();
+    changed(check).onChip("revive");
+    const [answer] = await saved(store);
+    expect(answer).toMatchObject({ kind: "mistake", read: "revive", text: "revive" });
+    expect(answer.meant).toBeUndefined();
+  });
+
+  it("Beautify's card asks about the reading, not about the letters before the second look", async () => {
+    const { check } = await setup();
+    shown.length = 0;
+    check.ask(
+      {
+        ...word({ margin: 0.2, words: ["revive", "receive", "recite"] }),
+        word: { text: "revive", wrote: "recive", strokeIds: ["s1", "s2"] },
+      },
+      { x: 0, y: 0 },
+      () => {},
+      () => {},
+      true,
+    );
+    expect(shown[0].spelling).toBeFalsy();
+    expect(shown[0].read).toBe("revive");
+  });
+
   it("a fix labels the ink as written and shows the meant word", async () => {
     const { check, store } = await setup();
     changed(check).onChip("receive");
