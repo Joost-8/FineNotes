@@ -180,6 +180,7 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- **Toolbar details** ([#336](https://github.com/Joost-8/FineNotes/pull/336), thanks @koltensaccount): no tooltip over the toolbar's empty space; the page shows the desk colour while thumbnails slide; the page selection bar and the strip under a bottom toolbar take the toolbar's look.
 - **Beautify on a slanted line.** Words Beautify left alone no longer end up
   below the line, on top of the next one, and a rewritten "I" no longer gets
   a second bar.
