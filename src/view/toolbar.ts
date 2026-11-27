@@ -2936,8 +2936,13 @@ export class Toolbar {
     iconOrText(button.createSpan({ cls: "goodobsidian-tool-caret" }), "chevron-down", "");
     button.addEventListener("click", (event) => {
       const box = button.getBoundingClientRect();
-      const onCaret = button.hasClass("is-on") && event.detail !== 0;
-      if (onCaret && event.clientX >= box.right - RULER_CARET_STRIP) {
+      const onCaret =
+        button.hasClass("is-on") &&
+        event.detail !== 0 &&
+        (isBarUpright(this.barDock)
+          ? event.clientY >= box.bottom - RULER_CARET_STRIP
+          : event.clientX >= box.right - RULER_CARET_STRIP);
+      if (onCaret) {
         this.toggleGuidesPopover(button);
         return;
       }
