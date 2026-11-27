@@ -1215,6 +1215,8 @@ interface PillBox {
   width: number;
 }
 
+let nextToolbarLabelId = 0;
+
 export class Toolbar {
   /** Tier 1: the tinted tool bar. */
   private readonly barEl: HTMLElement;
@@ -1436,8 +1438,15 @@ export class Toolbar {
     this.optionsTool = state.tool;
     this.onlyStylusOn = options.onlyStylusMode === true;
     this.barEl = host.createDiv({ cls: "goodobsidian-toolbar" });
+    const labelId = ++nextToolbarLabelId;
+    const barLabel = this.host.createSpan({
+      cls: "goodobsidian-sr-only",
+      text: t("toolbar.barLabel"),
+      attr: { id: `goodobsidian-bar-label-${labelId}` },
+    });
+    this.disposers.push(() => barLabel.remove());
     this.barEl.setAttribute("role", "toolbar");
-    this.barEl.setAttribute("aria-label", t("toolbar.barLabel"));
+    this.barEl.setAttribute("aria-labelledby", barLabel.id);
     // An upright bar taller than its room scrolls: say so at the ends it can go.
     this.barEl.addEventListener("scroll", () => this.syncScrollCues(), { passive: true });
     this.barDock = parseBarDock(options.barDock);
@@ -1449,8 +1458,14 @@ export class Toolbar {
     this.preset = options.preset ?? "own";
     // The pill always floats over the page (styles.css, `.is-floating`).
     this.optionsEl = host.createDiv({ cls: "goodobsidian-options is-floating" });
+    const optionsLabel = this.host.createSpan({
+      cls: "goodobsidian-sr-only",
+      text: t("toolbar.optionsLabel"),
+      attr: { id: `goodobsidian-options-label-${labelId}` },
+    });
+    this.disposers.push(() => optionsLabel.remove());
     this.optionsEl.setAttribute("role", "toolbar");
-    this.optionsEl.setAttribute("aria-label", t("toolbar.optionsLabel"));
+    this.optionsEl.setAttribute("aria-labelledby", optionsLabel.id);
     // A finger drag on a bar, the pill or a popover's slider is ours, not
     // one of Obsidian's swipes, which would open a sidebar (CLAUDE.md).
     this.barEl.dataset.ignoreSwipe = "true";
@@ -4048,8 +4063,9 @@ export class Toolbar {
     const sustain = this.options?.laserSustain?.() ?? true;
     const activeNote = t(sustain ? "toolbar.laser.noteHold" : "toolbar.laser.note");
     const otherNote = t(sustain ? "toolbar.laser.note" : "toolbar.laser.noteHold");
-    const noteSpans = this.toolNote("pointer", activeNote, otherNote);
-    if (!this.dockedAcross()) this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+    const showNote = !this.dockedAcross() && !isUpright(this.pillDock);
+    const noteSpans = showNote ? this.toolNote("pointer", activeNote, otherNote) : null;
+    if (showNote) this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
     const color = this.laserColor();
     if (this.dockedAcross()) {
       this.colorRow(
@@ -4385,7 +4401,7 @@ export class Toolbar {
     );
     // Page zoom keeps the note it always had; the Zoom box needs none: the
     // target it draws, and the window, show what a drag did.
-    if (!boxMode && !this.dockedAcross()) {
+    if (!boxMode && !this.dockedAcross() && !isUpright(this.pillDock)) {
       this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
       this.toolNote("zoom-in", t("toolbar.zoom.note"));
     }

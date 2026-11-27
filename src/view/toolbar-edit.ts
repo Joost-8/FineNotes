@@ -187,9 +187,12 @@ export function lookPreview(
 /** The New pen chip's `data-item`: a source of new pens, never a bar item. */
 const NEW_PEN = "new-pen";
 
+let nextEditLabelId = 0;
+
 export class ToolbarEditor {
   private readonly doc: Document;
   private readonly tray: HTMLElement;
+  private readonly trayLabel: HTMLElement;
   private readonly scrim: HTMLElement;
   private menuShelf: HTMLElement | null = null;
   private offShelf: HTMLElement | null = null;
@@ -230,9 +233,14 @@ export class ToolbarEditor {
       this.wasDisabled.push(button);
     }
     this.scrim = h.host.createDiv({ cls: "goodobsidian-edit-scrim" });
+    this.trayLabel = h.host.createSpan({
+      cls: "goodobsidian-sr-only",
+      text: t("toolbar.customize.title"),
+      attr: { id: `goodobsidian-edit-label-${++nextEditLabelId}` },
+    });
     this.tray = h.host.createDiv({ cls: "goodobsidian-edit-tray" });
     this.tray.setAttribute("role", "toolbar");
-    this.tray.setAttribute("aria-label", t("toolbar.customize.title"));
+    this.tray.setAttribute("aria-labelledby", this.trayLabel.id);
     // A drag here is a button being carried, not Obsidian's swipe: without
     // its opt-out the sidebars and the pull-down command palette opened
     // under the finger (Joost, 2026-11-13; ledger 2026-09-22).
@@ -348,6 +356,7 @@ export class ToolbarEditor {
     }
     this.scrim.remove();
     this.tray.remove();
+    this.trayLabel.remove();
     this.h.done();
   }
 

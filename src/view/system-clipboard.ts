@@ -47,6 +47,35 @@ export function writeSystemText(text: string): Promise<void> {
   });
 }
 
+/** Write both clipboard representations in the gesture. This text represents editable ink. */
+export async function writeSelectionText(
+  selection: { text: string; html: string },
+  stillCurrent: () => boolean,
+): Promise<boolean> {
+  const clip = typeof navigator !== "undefined" ? navigator.clipboard : undefined;
+  if (!clip || !cleanPastedText(selection.text)) return false;
+  if (typeof clip.write === "function" && typeof ClipboardItem !== "undefined") {
+    try {
+      await clip.write([
+        new ClipboardItem({
+          "text/plain": new Blob([selection.text], { type: "text/plain" }),
+          "text/html": new Blob([selection.html], { type: "text/html" }),
+        }),
+      ]);
+      return true;
+    } catch {
+      // Text-only clipboard implementations can still take the plain representation.
+    }
+  }
+  if (!stillCurrent()) return false;
+  try {
+    await clip.writeText(selection.text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Whether this engine can read the system clipboard at all. */
 export function canReadSystemClipboard(): boolean {
   const clip = typeof navigator !== "undefined" ? navigator.clipboard : undefined;

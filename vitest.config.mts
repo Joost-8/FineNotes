@@ -84,6 +84,7 @@ export default defineConfig({
         "src/canvas/scroll-thumb.ts",
         "src/canvas/tile-grid.ts",
         "src/canvas/selection-raster.ts",
+        "src/model/selection-text.ts",
         "src/view/after-painted.ts",
         "src/canvas/layer-rect.ts",
         "src/canvas/damage.ts",
