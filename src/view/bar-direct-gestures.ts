@@ -24,6 +24,8 @@ import { type BarDock, dockCandidate, isBarUpright } from "./bar-dock-model";
 import { isElement, onWindowMoved, winOf } from "./host-window";
 import { HOLD_MS, POINTER_SLOP_PX, TOUCH_SLOP_PX } from "./page-drag-model";
 import { toolbarLocked } from "./toolbar-lock";
+import { holdsBarEdge } from "./bar-hold-edge";
+import { keepInPage } from "./touch-keeper";
 import {
   BAR_ITEM_ICONS,
   type BarItemId,
@@ -586,8 +588,19 @@ export function bindDirectBarGestures(ctx: DirectBarGesturesHost): () => void {
     const target = isElement(e.target) ? e.target : null;
     const button = target?.closest<HTMLButtonElement>("button[data-item]") ?? null;
     const interactive = target?.closest("button, input, select, textarea, [role='button']");
+    // A finger at an upright bar's side holds the bar, whatever Android aimed it at.
+    const edge = holdsBarEdge(
+      e.clientX,
+      e.clientY,
+      barEl.getBoundingClientRect(),
+      isBarUpright(ctx.barDock()),
+      e.pointerType,
+    );
 
-    if (button && barEl.contains(button) && ctx.onCommitLayout && ctx.canReorder()) {
+    if (edge && ctx.onCommitDock) {
+      mode = "dock";
+      candidateDock = ctx.barDock();
+    } else if (button && barEl.contains(button) && ctx.onCommitLayout && ctx.canReorder()) {
       const id = button.getAttribute("data-item") as BarItemId | null;
       const layout = ctx.layout();
       if (!id) return;
@@ -702,8 +715,12 @@ export function bindMoreToolsDrag(ctx: MoreToolsDragHost): MoreToolsDragHandle {
   let currentLayout: ToolbarLayout | null = null;
   let ghostEl: HTMLElement | null = null;
   let swallowClickUntil = 0;
+  /** Takes the held row out of the page once the drag is over (touch-keeper.ts). */
+  let releaseRow: (() => void) | null = null;
 
   const cleanup = (): void => {
+    releaseRow?.();
+    releaseRow = null;
     if (holdTimer !== null) {
       (boundWin ?? winOf(barEl)).clearTimeout(holdTimer);
       holdTimer = null;
@@ -892,6 +909,8 @@ export function bindMoreToolsDrag(ctx: MoreToolsDragHost): MoreToolsDragHandle {
       ghostEl = createGhostChip(doc, id, draggedRow);
       moveGhost(ghostEl, startX, startY);
       barEl.addClass("is-reordering");
+      // Closing ⋯ drops the row the finger is on; Android would then scroll.
+      releaseRow = keepInPage(draggedRow);
       ctx.onDismissMenu();
     }, HOLD_MS);
 

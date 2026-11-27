@@ -14,6 +14,7 @@ import { gapAt } from "../model/pen-type-order";
 import { onWindowMoved, winOf } from "./host-window";
 import { moveGhost } from "./bar-direct-gestures";
 import { toolbarLocked } from "./toolbar-lock";
+import { keepIfDropped } from "./touch-keeper";
 
 export interface PenTypeDragOptions {
   /** The row the pens stand in. */
@@ -46,6 +47,10 @@ export function bindPenTypeDrag(pen: HTMLElement, options: PenTypeDragOptions): 
   let gap = 0;
   let overBar = false;
   let swallowUntil = 0;
+  /** The pen left its row while the bar previewed it pinned: kept in the page (touch-keeper.ts). */
+  let releasePen: (() => void) | null = null;
+  /** Ends a finger's drag from the window too, should the pen's own touch events stop. */
+  let stopFallback: (() => void) | null = null;
 
   const along = (x: number, y: number): number => (options.upright() ? y : x);
 
@@ -59,6 +64,7 @@ export function bindPenTypeDrag(pen: HTMLElement, options: PenTypeDragOptions): 
     moveGhost(ghost, x, y);
     if (options.barDrop) {
       const hit = options.barDrop.onHover(x, y);
+      releasePen ??= keepIfDropped(pen);
       if (hit) {
         if (!overBar) {
           overBar = true;
@@ -72,6 +78,8 @@ export function bindPenTypeDrag(pen: HTMLElement, options: PenTypeDragOptions): 
       }
     }
 
+    // A pen dropped from its row by a rebuild has no row to move in.
+    if (releasePen) return;
     const rowEl = options.row();
     const upright = options.upright();
     const others = Array.from(rowEl.querySelectorAll<HTMLElement>(".goodobsidian-pentype")).filter(
@@ -119,7 +127,29 @@ export function bindPenTypeDrag(pen: HTMLElement, options: PenTypeDragOptions): 
     const svg = pen.querySelector("svg");
     if (svg) ghost.appendChild(svg.cloneNode(true));
     pen.addClass("is-lifted");
+    if (touchId !== null) watchTouchEnd(winOf(pen));
     place(startX, startY);
+  };
+
+  /**
+   * The touch pointer's end, heard on the window: the pen's own touchend
+   * normally comes after it and ends the drag first; when it never comes (the
+   * pen left the page under the finger), this does, a tick later.
+   */
+  const watchTouchEnd = (win: Window): void => {
+    const done = (e: PointerEvent): void => {
+      if (e.pointerType !== "touch") return;
+      const cancelled = e.type === "pointercancel";
+      win.setTimeout(() => {
+        if (ghost) end(cancelled);
+      }, 0);
+    };
+    win.addEventListener("pointerup", done, true);
+    win.addEventListener("pointercancel", done, true);
+    stopFallback = () => {
+      win.removeEventListener("pointerup", done, true);
+      win.removeEventListener("pointercancel", done, true);
+    };
   };
 
   const end = (cancelled: boolean): void => {
@@ -128,6 +158,8 @@ export function bindPenTypeDrag(pen: HTMLElement, options: PenTypeDragOptions): 
     touchId = null;
     stopPointer?.();
     stopPointer = null;
+    stopFallback?.();
+    stopFallback = null;
     if (activeWin) {
       activeWin.removeEventListener("keydown", onKeyDown, true);
       activeWin.removeEventListener("blur", onBlur);
@@ -135,16 +167,21 @@ export function bindPenTypeDrag(pen: HTMLElement, options: PenTypeDragOptions): 
     }
     if (!ghost) return;
     const droppedOnBar = overBar;
+    const kept = releasePen !== null;
     overBar = false;
     ghost.remove();
     ghost = null;
     pen.removeClass("is-lifted");
+    releasePen?.();
+    releasePen = null;
     swallowUntil = Date.now() + SWALLOW_CLICK_MS;
     if (droppedOnBar) {
       if (cancelled) options.barDrop?.onCancel();
       else options.barDrop?.onDrop();
       return;
     }
+    // Its row was rebuilt without it: nothing of the old order to restore or move.
+    if (kept) return;
     if (cancelled) {
       restoreRowOrder();
       return;
