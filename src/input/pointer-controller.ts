@@ -44,14 +44,14 @@
 import { altitudeOf } from "../ink/tilt";
 import { endsFingerDrawing, fingerDrawRole, fingerWrites } from "./finger-draw";
 import { FingerGesture, type PinchInfo } from "./finger-gesture";
-import { HoverWitness, type HoverSummary } from "./air-button";
+import { HoverWitness, isHovering, type HoverSummary } from "./air-button";
 import { HoverErase, type HoverStep, PenLog, type PenLogEvent } from "./hover-erase";
 import { MultiFingerTap, type TapReport } from "./multi-finger-tap";
 import { type PointerRole, roleOf } from "./palm-rejection";
 import type { PressInput } from "./pen-modifiers";
 import { freshSamples, type RawSample } from "./repeat-samples";
 import { StylusClicks } from "./stylus-click";
-import { type BridgePoint, StylusSelectBridge } from "./stylus-select-bridge";
+import { type BridgePoint, type BridgeStats, StylusSelectBridge } from "./stylus-select-bridge";
 
 export type { PinchInfo };
 
@@ -397,6 +397,7 @@ export class PointerController {
    * click the hovering moves were watching for.
    */
   private down(event: PointerEvent): void {
+    if (event.pointerType === "mouse") this.witness.mouse(event.timeStamp);
     if (event.pointerType === "pen") {
       this.penLog.note("pointerdown", event);
       this.witness.down();
@@ -473,7 +474,7 @@ export class PointerController {
     // Always heard, so a pen touching down knows its side button is held
     // (`pressOf`); reported as a click only when a click is wanted.
     const click = this.clicks.hover(event);
-    this.witness.hover(event.timeStamp, this.clicks.barrelHeld);
+    this.witness.hover(event.timeStamp, this.clicks.barrelHeld, isHovering(event));
     this.selectBridge.setArmed(
       true,
       event.clientX,
@@ -580,28 +581,47 @@ export class PointerController {
    * (`air-button.ts`). Then the selection bridge is armed where it came, as
    * the hovering moves would have armed it, so touching down with the
    * button still held erases (FineNotes#149). Android only: the bridge is
-   * attached nowhere else.
+   * attached nowhere else. True when it was taken so: then it is no menu.
+   * Every one that is not a finger's goes in the pen log, with its
+   * `pointerType` when that is not "pen" (`contextmenu:mouse`).
    */
   airMenu(event: {
     pointerType?: string;
     clientX: number;
     clientY: number;
     timeStamp: number;
-  }): void {
-    if (this.options.stylusSelectBridge?.() === false) return;
+    buttons?: number;
+    button?: number;
+    pressure?: number;
+  }): boolean {
+    const type = event.pointerType;
+    if (type !== "touch") {
+      const name = type === "pen" ? "contextmenu" : `contextmenu:${type || "none"}`;
+      this.penLog.note(name, {
+        buttons: event.buttons ?? 0,
+        button: event.button ?? 0,
+        pressure: event.pressure ?? 0,
+        timeStamp: event.timeStamp,
+      });
+    }
+    if (this.options.stylusSelectBridge?.() === false) return false;
     const air = this.witness.menu({
       pointerType: event.pointerType ?? "",
       timeStamp: event.timeStamp,
       pressing: this.stroke !== null || this.held !== null || this.selectBridge.isActive,
     });
-    if (!air) return;
+    if (!air) return false;
     this.selectBridge.setArmed(true, event.clientX, event.clientY, event.timeStamp, true);
     this.listener.onAirMenu?.();
+    return true;
   }
 
-  /** What the pen has sent since the note opened (`air-button.ts`), for the diagnostics. */
-  hoverSummary(): HoverSummary {
-    return this.witness.summary();
+  /**
+   * What the pen has sent since the note opened (`air-button.ts`), and what
+   * the selection bridge made of it (`stylus-select-bridge.ts`), for the diagnostics.
+   */
+  hoverSummary(): HoverSummary & { bridge: BridgeStats } {
+    return { ...this.witness.summary(), bridge: this.selectBridge.stats() };
   }
 
   /** The pen's recent hover and button events, oldest first (`hover-erase.ts`). */

@@ -198,6 +198,12 @@ extracted from the matching section of this file by `release.yml`.
   FineNotes ready for the pen touching down with the button held, so that
   holding the button and writing erases. "Copy shape diagnostics" now says
   whether your tablet reports the hovering pen (`penSeen`).
+- **S Pen: no Paste / Text box / Select all menu from the side button**
+  ([discussion #209](https://github.com/Joost-8/FineNotes/discussions/209)).
+  On those tablets, pressing the side button in the air no longer opens the
+  page's menu, and erasing with the button held should no longer leave
+  Android's selection handles on the page. The diagnostics no longer count
+  the pen on the glass as hovering, and say what the eraser made of it.
 - **Home deletes a folder a notebook left behind.** A notebook deleted
   without its folder left its pages there, and Delete on that folder did
   nothing; now it goes to the trash. And a long press on a notebook or
