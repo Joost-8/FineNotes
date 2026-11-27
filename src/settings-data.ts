@@ -602,6 +602,9 @@ export interface GoodObsidianSettings {
   handwriteBlocksChosen: boolean;
   /** The notebook of "One notebook for everything"; "" for none. */
   handwriteNotebook: string;
+  /** Notebook-wide non-printing Writing Guides overlay state and style. */
+  writingGuidesEnabled?: boolean;
+  writingGuides?: Record<string, unknown>;
 }
 
 // The records are copies, so a host that edits its settings in place cannot

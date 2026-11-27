@@ -26141,3 +26141,26 @@ button.goodobsidian-ns-companion-folder.clickable-icon {
     4px -4px,
     -4px 0;
 }
+
+/* --- Writing Guides Popover --- */
+.goodobsidian-guide-popover {
+  position: fixed;
+  transform: none;
+  z-index: 60;
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+}
+.goodobsidian-guide-preview {
+  display: block;
+  width: 100%;
+  height: 56px;
+  margin-top: 8px;
+  border-radius: var(--gob-radius-m, var(--radius-m));
+  border: var(--gob-hairline, 1px solid var(--background-modifier-border));
+}
+.goodobsidian-guide-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}

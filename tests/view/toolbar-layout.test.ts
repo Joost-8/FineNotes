@@ -45,6 +45,7 @@ describe("the default layout", () => {
       "sticker",
       "sticky",
       "ruler",
+      "guides",
       "tape",
       "record",
       "fill",

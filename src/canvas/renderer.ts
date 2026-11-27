@@ -37,6 +37,8 @@
  * cross-device ink-drift fix the whole product rests on.
  */
 
+import { paintWritingGuides } from "./writing-guides";
+import type { WritingGuideStyle } from "../model/writing-guides";
 import { marginBackdrop, marginStrips } from "../model/page-margin";
 import { marginPaper } from "./margin-paper";
 import { DEFAULT_HIGHLIGHTER_ALPHA } from "../constants";
@@ -728,6 +730,8 @@ interface InkPass {
 export class Renderer {
   /** How opaque highlighter ink is drawn, 0..1. The surface sets it from the settings. */
   highlighterAlpha = DEFAULT_HIGHLIGHTER_ALPHA;
+  /** Optional non-printing writing guide overlay painted above the page paper. */
+  writingGuides: WritingGuideStyle | null = null;
   /**
    * Paper colours. Paper-white by default; dark pages are a view setting,
    * and whoever changes this must {@link invalidateAll}: tiles hold colour.
@@ -2614,6 +2618,20 @@ export class Renderer {
         ...(painterRegion && Number.isFinite(region.minX) ? { region } : {}),
         ...(phase ? { phase } : {}),
       });
+    }
+    if (this.writingGuides) {
+      const guideRegion = Number.isFinite(region.minX)
+        ? region
+        : { minX: 0, minY: 0, maxX: box.width, maxY: box.height };
+      paintWritingGuides(
+        ctx,
+        page,
+        guideRegion,
+        this.writingGuides,
+        paperColorOf(page, this.paper),
+        level / this.screen.dpr,
+        level,
+      );
     }
     if (this.doc) {
       const texts = furnitureText(this.doc, box.index, this.notebookTitle);

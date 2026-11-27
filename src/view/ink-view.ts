@@ -16,6 +16,8 @@
  * AI menu, pages, pictures, scans and export.
  */
 
+import { writingGuidesOf } from "../model/writing-guides";
+import { watchWritingGuides, writingGuideHost, WritingGuidePopover } from "./writing-guides";
 import { pageIdStep } from "./pending-page";
 import { closeInlineEditorsOf } from "./inline-editor-registry";
 import { SetFurniture, furnitureText } from "../model/furniture";
@@ -1755,6 +1757,7 @@ export class InkView extends TextFileView {
   }
 
   override async onUnloadFile(file: TFile): Promise<void> {
+    this.guidePopover?.close();
     // Leaving the scratch page any other way ends the try without going back.
     this.tryHint?.destroy();
     this.tryHint = null;
@@ -1991,9 +1994,16 @@ export class InkView extends TextFileView {
     this.surface?.onlyStylusChanged();
   }
 
+  private guidePopover: WritingGuidePopover | null = null;
+  private unwatchWritingGuides: (() => void) | null = null;
+
   override async onClose(): Promise<void> {
     // onUnloadFile is not reached when the tab closes: its companion is queued here.
     if (this.file) await this.companion.close(this.file);
+    this.guidePopover?.close();
+    this.guidePopover = null;
+    this.unwatchWritingGuides?.();
+    this.unwatchWritingGuides = null;
     this.presenter?.stop();
     window.clearTimeout(this.tabViewTimer);
     this.tabViewTimer = 0;
@@ -5053,6 +5063,8 @@ export class InkView extends TextFileView {
           this.toolbar?.setRulerOut(this.surface?.rulerOut ?? false);
           this.plugin.saveRuler(kind, snap);
         },
+        writingGuidesEnabled: () => this.settings.writingGuidesEnabled === true,
+        onWritingGuides: (anchor) => this.toggleWritingGuides(anchor),
         onEraserChange: (mode, size) => this.plugin.saveEraser(mode, size),
         sizePreviewScales: () => this.surface?.sizePreviewScales() ?? { pen: 1, eraser: 1 },
         paintSizePaper: (canvas, width, height) =>
@@ -5590,6 +5602,16 @@ export class InkView extends TextFileView {
     };
     this.backdrops.setDeviceScale(this.surface.deviceScale);
     this.surface.setImagePainter(this.images);
+    const syncGuides = (): void => {
+      this.surface?.setWritingGuides(
+        this.settings.writingGuidesEnabled === true,
+        writingGuidesOf(this.settings.writingGuides),
+      );
+      this.toolbar?.syncWritingGuides();
+    };
+    this.unwatchWritingGuides?.();
+    this.unwatchWritingGuides = watchWritingGuides(this.settings, syncGuides);
+    syncGuides();
     // A decoded picture repaints only the tiles and thumbnails that show it.
     this.images.onReady = (path) => {
       this.surface?.imageReady(path);
@@ -9990,6 +10012,23 @@ export class InkView extends TextFileView {
   /** Keep PDF pages rasterised at the resolution the surface now draws at. */
   private matchPdfResolution(): void {
     if (this.surface && this.backdrops) this.backdrops.setDeviceScale(this.surface.deviceScale);
+  }
+
+  private toggleWritingGuides(anchor: HTMLElement): void {
+    if (this.guidePopover?.isOpen) {
+      const sameAnchor = this.guidePopover.anchorEl === anchor;
+      this.guidePopover.close();
+      this.guidePopover = null;
+      if (sameAnchor) return;
+    }
+    const host = writingGuideHost(
+      this.settings,
+      () => void this.plugin.saveSettings(),
+      () => this.surface?.writingGuideContext(),
+    );
+    this.guidePopover = new WritingGuidePopover(anchor, host, () => {
+      this.guidePopover = null;
+    });
   }
 
   /**

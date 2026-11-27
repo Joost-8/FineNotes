@@ -1,3 +1,5 @@
+import { paintWritingGuides } from "../canvas/writing-guides";
+import type { WritingGuideStyle } from "../model/writing-guides";
 import { bindScrollThumb } from "./scroll-thumb-drag";
 import { InkLatency, paintsPenDown } from "./ink-latency";
 import { joinRunOnLines } from "../translate/languages";
@@ -4649,6 +4651,27 @@ export class InkSurface {
     this.requestFrame();
   }
 
+  private writingGuides: WritingGuideStyle | null = null;
+
+  setWritingGuides(enabled: boolean, style: WritingGuideStyle): void {
+    if (!enabled && !this.writingGuides) return;
+    this.writingGuides = enabled ? style : null;
+    if (!this.renderer) return;
+    this.renderer.writingGuides = this.writingGuides;
+    this.renderer.invalidateAll();
+    this.requestFrame();
+  }
+
+  writingGuideContext(): { paper: string; scale: number } {
+    const page = this.doc.pages[this.currentPage] ?? this.doc.pages[0];
+    return {
+      paper: page ? paperColorOf(page, this.paper) : this.paper.paper,
+      scale: this.renderer?.deviceScale
+        ? this.renderer.deviceScale / (this.win.devicePixelRatio || 1)
+        : 1,
+    };
+  }
+
   get paperTheme(): PaperTheme {
     return this.paper;
   }
@@ -8907,6 +8930,17 @@ export class InkSurface {
         region,
         paper: this.paper,
       });
+    }
+    if (this.writingGuides) {
+      paintWritingGuides(
+        ctx,
+        page,
+        region,
+        this.writingGuides,
+        paperColorOf(page, this.paper),
+        scale || 1,
+        s,
+      );
     }
     ctx.restore();
     return true;

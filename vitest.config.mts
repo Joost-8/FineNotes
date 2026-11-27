@@ -133,6 +133,8 @@ export default defineConfig({
         "src/canvas/selection-turn.ts",
         "src/canvas/turn-snap.ts",
         "src/canvas/writing-lines.ts",
+        "src/model/writing-guides.ts",
+        "src/canvas/writing-guides.ts",
         "src/canvas/ruled-ink.ts",
         "src/canvas/insert-space.ts",
         "src/canvas/laser-trail.ts",
