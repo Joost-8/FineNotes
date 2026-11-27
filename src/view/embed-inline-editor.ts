@@ -42,6 +42,7 @@ import { VaultImageCache } from "./image-cache";
 import { InkSurface } from "./ink-surface";
 import { toolStateFrom } from "./ink-view";
 import { SavedPenModal } from "./saved-pen-modal";
+import { type GuideBinding, bindWritingGuides } from "./writing-guides";
 import { penOfState, Toolbar, type ToolbarState } from "./toolbar";
 import { normalizeLayout, type BarItemId, type ToolbarLayout } from "./toolbar-layout";
 import { editClosedNotebook, notebookIsOpen, readClosedNotebook } from "./notebook-transaction";
@@ -80,6 +81,7 @@ const INLINE_BAR_ITEMS = new Set<BarItemId>([
   "image",
   "sticker",
   "sticky",
+  "guides",
 ]);
 
 const ISOLATED_EVENTS = [
@@ -108,6 +110,7 @@ function inlineLayoutFrom(raw: unknown, savedPenIds: ReadonlySet<string>): Toolb
 export class EmbedInlineEditor implements InlineEditorHandle {
   private surface: InkSurface | null = null;
   private toolbar: Toolbar | null = null;
+  private guides: GuideBinding | null = null;
   private images: VaultImageCache | null = null;
   private toolState: ToolbarState;
   private doc: InkDocument | null = null;
@@ -407,6 +410,9 @@ export class EmbedInlineEditor implements InlineEditorHandle {
             if (file) void this.pastePicture(file);
           });
         },
+        onWritingGuides: () => this.guides?.toggle(),
+        writingGuidesEnabled: () => this.guides?.on() === true,
+        renderWritingGuides: (body, resize) => this.guides?.render(body, resize) ?? (() => {}),
         onRuler: () => {
           const surface = this.surface;
           if (!surface) return;
@@ -599,6 +605,14 @@ export class EmbedInlineEditor implements InlineEditorHandle {
     slotEl.focus({ preventScroll: true });
 
     this.bindFinishKeys();
+    // The notebook's own writing guides, as its notebook view shows them.
+    this.guides = bindWritingGuides({
+      settings: plugin.settings,
+      save: () => void plugin.saveSettings(),
+      path: () => this.req.notebookFile.path,
+      apply: (style) => this.surface?.setWritingGuides(style),
+      changed: () => this.toolbar?.syncWritingGuides(),
+    });
     const onKey = (e: KeyboardEvent): void => {
       if (e.defaultPrevented) return;
       // Esc and Mod+Enter are the scope's (bindFinishKeys): a popover's Esc must reach it.
@@ -888,6 +902,8 @@ export class EmbedInlineEditor implements InlineEditorHandle {
     if (this.disposed) return;
     this.disposed = true;
     this.closed = true;
+    this.guides?.dispose();
+    this.guides = null;
     if (this.saveTimer !== null) {
       window.clearTimeout(this.saveTimer);
       this.saveTimer = null;

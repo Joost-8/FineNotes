@@ -16,6 +16,7 @@
  * AI menu, pages, pictures, scans and export.
  */
 
+import { type GuideBinding, bindWritingGuides } from "./writing-guides";
 import { pageIdStep } from "./pending-page";
 import { closeInlineEditorsOf } from "./inline-editor-registry";
 import { SetFurniture, furnitureText } from "../model/furniture";
@@ -1697,6 +1698,7 @@ export class InkView extends TextFileView {
     this.sidebar?.setDocument(this.doc);
     this.syncSingle();
     this.syncPdfTabs();
+    this.guides?.sync(); // this file's guides
     // Fonts fetched for this vault that the notebook's boxes need, from the vault.
     void vaultFonts(this.app)
       .use(familiesIn(this.doc.pages))
@@ -1991,7 +1993,12 @@ export class InkView extends TextFileView {
     this.surface?.onlyStylusChanged();
   }
 
+  /** This notebook's writing guides (writing-guides.ts). */
+  private guides: GuideBinding | null = null;
+
   override async onClose(): Promise<void> {
+    this.guides?.dispose();
+    this.guides = null;
     // onUnloadFile is not reached when the tab closes: its companion is queued here.
     if (this.file) await this.companion.close(this.file);
     this.presenter?.stop();
@@ -5041,6 +5048,9 @@ export class InkView extends TextFileView {
           this.plugin.saveSavedPens(addSavedPen(savedPensOf(this.settings.savedPens), pen)),
         onNewPen: (start, onMade) => this.openNewPen(start, onMade),
         onEditPens: () => this.plugin.openSettingsTab(),
+        onWritingGuides: () => this.guides?.toggle(),
+        writingGuidesEnabled: () => this.guides?.on() === true,
+        renderWritingGuides: (body, resize) => this.guides?.render(body, resize) ?? (() => {}),
         onRuler: () => {
           const surface = this.surface;
           if (!surface) return;
@@ -5590,6 +5600,14 @@ export class InkView extends TextFileView {
     };
     this.backdrops.setDeviceScale(this.surface.deviceScale);
     this.surface.setImagePainter(this.images);
+    this.guides?.dispose();
+    this.guides = bindWritingGuides({
+      settings: this.settings,
+      save: () => void this.plugin.saveSettings(),
+      path: () => this.file?.path ?? null,
+      apply: (style) => this.surface?.setWritingGuides(style),
+      changed: () => this.toolbar?.syncWritingGuides(),
+    });
     // A decoded picture repaints only the tiles and thumbnails that show it.
     this.images.onReady = (path) => {
       this.surface?.imageReady(path);

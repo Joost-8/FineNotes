@@ -37,6 +37,8 @@
  * cross-device ink-drift fix the whole product rests on.
  */
 
+import { paintWritingGuides } from "./writing-guides";
+import type { WritingGuideStyle } from "../model/writing-guides";
 import { marginBackdrop, marginStrips } from "../model/page-margin";
 import { marginPaper } from "./margin-paper";
 import { DEFAULT_HIGHLIGHTER_ALPHA } from "../constants";
@@ -529,6 +531,9 @@ const PAPER_EDGE = 2;
 const SHADOW_BLUR = 14;
 const SHADOW_OFFSET_Y = 3;
 
+/** Any page whole, as a stale area: finite, as `staleRect` needs, and clipped to the raster there. */
+const WHOLE_PAGE: Bounds = { minX: -1e7, minY: -1e7, maxX: 1e7, maxY: 1e7 };
+
 interface Tile {
   canvas: HTMLCanvasElement;
   pageId: string;
@@ -728,6 +733,8 @@ interface InkPass {
 export class Renderer {
   /** How opaque highlighter ink is drawn, 0..1. The surface sets it from the settings. */
   highlighterAlpha = DEFAULT_HIGHLIGHTER_ALPHA;
+  /** Optional non-printing writing guide overlay painted above the page paper. */
+  writingGuides: WritingGuideStyle | null = null;
   /**
    * Paper colours. Paper-white by default; dark pages are a view setting,
    * and whoever changes this must {@link invalidateAll}: tiles hold colour.
@@ -1203,6 +1210,21 @@ export class Renderer {
     this.fallbackLevel = last;
     this.level = level;
     this.tiles.deleteWhere((tile) => tile.level !== level && tile.level !== last);
+  }
+
+  /**
+   * Every page's look changed but not its content (writing guides). Each
+   * cached tile and preview is marked to be painted again in place before it
+   * is next drawn: what is on screen changes in one frame, with no canvas
+   * freed or made, and the rest only when it is shown. Walks the cache, not
+   * the tile grid of every page; the last zoom's stand-ins go.
+   */
+  refreshAll(): void {
+    const level = this.level;
+    this.tiles.deleteWhere((tile) => tile.level !== level);
+    for (const tile of this.tiles.values()) tile.stale = WHOLE_PAGE;
+    for (const preview of this.previews.values()) preview.stale = WHOLE_PAGE;
+    this.dryShown = null;
   }
 
   invalidateAll(): void {
@@ -2614,6 +2636,23 @@ export class Renderer {
         ...(painterRegion && Number.isFinite(region.minX) ? { region } : {}),
         ...(phase ? { phase } : {}),
       });
+    }
+    if (this.writingGuides) {
+      const guideRegion = Number.isFinite(region.minX)
+        ? region
+        : { minX: 0, minY: 0, maxX: box.width, maxY: box.height };
+      paintWritingGuides(
+        ctx,
+        page,
+        guideRegion,
+        this.writingGuides,
+        paperColorOf(page, this.paper),
+        // A preview is drawn small and shown at the view's scale: its lines
+        // are as thin as the tiles', not a few times thicker.
+        Math.max(level / this.screen.dpr, this.safeScale),
+        level,
+        gridPhase(this.layout, box.index),
+      );
     }
     if (this.doc) {
       const texts = furnitureText(this.doc, box.index, this.notebookTitle);

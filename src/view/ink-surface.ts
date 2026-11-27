@@ -1,3 +1,5 @@
+import { paintWritingGuides } from "../canvas/writing-guides";
+import type { WritingGuideStyle } from "../model/writing-guides";
 import { bindScrollThumb } from "./scroll-thumb-drag";
 import { InkLatency, paintsPenDown } from "./ink-latency";
 import { joinRunOnLines } from "../translate/languages";
@@ -4655,6 +4657,19 @@ export class InkSurface {
     this.requestFrame();
   }
 
+  private writingGuides: WritingGuideStyle | null = null;
+
+  /** Show `style`'s guides, or none: tiles are repaired within the frame budget. */
+  setWritingGuides(style: WritingGuideStyle | null): void {
+    const key = style ? JSON.stringify(style) : "";
+    if (key === (this.writingGuides ? JSON.stringify(this.writingGuides) : "")) return;
+    this.writingGuides = style;
+    if (!this.renderer) return;
+    this.renderer.writingGuides = style;
+    this.renderer.refreshAll();
+    this.requestFrame();
+  }
+
   get paperTheme(): PaperTheme {
     return this.paper;
   }
@@ -8914,6 +8929,17 @@ export class InkSurface {
         region,
         paper: this.paper,
       });
+    }
+    if (this.writingGuides) {
+      paintWritingGuides(
+        ctx,
+        page,
+        region,
+        this.writingGuides,
+        paperColorOf(page, this.paper),
+        scale || 1,
+        s,
+      );
     }
     ctx.restore();
     return true;
