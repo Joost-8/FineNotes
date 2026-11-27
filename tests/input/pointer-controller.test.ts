@@ -1758,6 +1758,7 @@ describe("the side button in the air on a WebView with no hovering moves (discus
     expect(controller.penReport().map((e) => e.e)).toEqual([
       "move",
       "contextmenu",
+      "down:mouse",
       "contextmenu:mouse",
     ]);
     controller.detach();

@@ -294,6 +294,8 @@ export class StylusSelectBridge {
     if (!bridge || !doc) return;
     const sel = doc.getSelection();
     if (!sel || sel.rangeCount === 0 || !sel.anchorNode || !sel.focusNode) return;
+    // Our own `collapse` coming back: nothing moved, and the pen has not stalled.
+    if (this.active && sel.isCollapsed && this.sameAsRecorded(sel)) return;
 
     const anchorInside = bridge.contains(sel.anchorNode);
     const focusInside = bridge.contains(sel.focusNode);
@@ -311,14 +313,24 @@ export class StylusSelectBridge {
     this.clearArmedTimer();
     this.scheduleIdleEnd();
 
+    let kept = true;
     if (!this.active) {
       this.startFromSelection(sel, anchor, focus);
     } else {
-      // A collapsed one is ours, from `collapse`, coming back.
       if (!sel.isCollapsed) this.counts.reads++;
-      this.moveFromSelection(sel, anchor, focus);
+      kept = this.moveFromSelection(sel, anchor, focus);
     }
-    if (this.active) this.collapse(sel);
+    // A dropped read is not collapsed onto: that would hand its far point back as the pen.
+    if (this.active && kept) this.collapse(sel);
+  }
+
+  private sameAsRecorded(sel: Selection): boolean {
+    return (
+      sel.anchorNode === this.prevAnchorNode &&
+      sel.anchorOffset === this.prevAnchorOffset &&
+      sel.focusNode === this.prevFocusNode &&
+      sel.focusOffset === this.prevFocusOffset
+    );
   }
 
   /**
@@ -335,6 +347,8 @@ export class StylusSelectBridge {
     try {
       sel.collapse(sel.focusNode, sel.focusOffset);
       this.counts.collapses++;
+      // Both ends are at the pen now: an extent move from here changes only the focus.
+      this.recordEndpoints(sel);
     } catch {
       // A selection the document no longer holds: nothing to collapse.
     }
@@ -391,7 +405,7 @@ export class StylusSelectBridge {
     sel: Selection,
     anchor: BridgePoint | null,
     focus: BridgePoint | null,
-  ): void {
+  ): boolean {
     if (sel.isCollapsed && anchor) {
       this.basePt = anchor;
     }
@@ -401,7 +415,7 @@ export class StylusSelectBridge {
       sel.focusNode !== this.prevFocusNode || sel.focusOffset !== this.prevFocusOffset;
     this.recordEndpoints(sel);
 
-    if (!anchorChanged && !focusChanged) return;
+    if (!anchorChanged && !focusChanged) return true;
 
     let candidate: BridgePoint | null = null;
     let other: BridgePoint | null = null;
@@ -426,7 +440,7 @@ export class StylusSelectBridge {
       other = candidate === focus ? anchor : focus;
     }
 
-    if (!candidate) return;
+    if (!candidate) return false;
     if (
       this.lastPt &&
       distanceBetween(this.lastPt, candidate) > SINGLE_FRAME_JUMP_PX &&
@@ -434,13 +448,14 @@ export class StylusSelectBridge {
       distanceBetween(this.lastPt, other) <= OTHER_END_NEAR_PX
     ) {
       this.counts.jumps++;
-      return;
+      return false;
     }
 
     if (!this.lastPt || this.movedEnough(this.lastPt, candidate)) {
       this.lastPt = candidate;
       this.callbacks.onMove(candidate);
     }
+    return true;
   }
 
   private recordEndpoints(sel: Selection): void {

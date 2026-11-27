@@ -397,7 +397,11 @@ export class PointerController {
    * click the hovering moves were watching for.
    */
   private down(event: PointerEvent): void {
-    if (event.pointerType === "mouse") this.witness.mouse(event.timeStamp);
+    if (event.pointerType === "mouse") {
+      // In the pen log too: on a tablet, the side button may come as a mouse's press.
+      this.penLog.note("pointerdown:mouse", event);
+      this.witness.mouse(event.timeStamp);
+    }
     if (event.pointerType === "pen") {
       this.penLog.note("pointerdown", event);
       this.witness.down();

@@ -26,6 +26,7 @@ describe("a WebView that sends no hovering moves (Tab S10 Ultra)", () => {
         airMenus: 1,
         bridgeStrokes: 0,
         contactMoves: 0,
+        mouseMenus: 0,
         hover: "none",
       });
     });
@@ -99,5 +100,7 @@ describe("the tester's second report: hover seen where none came (#209, PR #290)
     expect(w.menu({ pointerType: "mouse", timeStamp: 1010, pressing: false })).toBe(false);
     // The side button in the air comes alone, long after any mouse press.
     expect(w.menu({ pointerType: "mouse", timeStamp: 9000, pressing: false })).toBe(true);
+    // The diagnostics say how many were left to a mouse.
+    expect(w.summary()).toMatchObject({ menus: 2, mouseMenus: 1, airMenus: 1 });
   });
 });

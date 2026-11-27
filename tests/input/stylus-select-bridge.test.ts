@@ -623,6 +623,43 @@ describe("the bridge leaves no range for Android's selection handles (discussion
     controller.detach();
   });
 
+  it("does not collapse onto a jump it dropped, so the jump never comes back as the pen", () => {
+    const { doc, host, bridgeEl, events, controller } = setupController();
+    collapsing(doc);
+    const move = host.listeners.get("pointermove")!;
+    move(pointerEvent({ clientX: 120, clientY: 120, buttons: 1, pressure: 0, timeStamp: 100 }));
+    doc.setSelection(bridgeEl.textAt(20), 20, bridgeEl.textAt(20), 21);
+    // The far end jumps across the page from the collapsed point at the pen.
+    doc.setSelection(bridgeEl.textAt(20), 21, bridgeEl.textAt(20), 90);
+    doc.setSelection(bridgeEl.textAt(20), 21, bridgeEl.textAt(20), 23);
+    expect(events).toEqual(["start(120,123,buttons=3)", "move(126,123)", "move(138,123)"]);
+    expect(controller.hoverSummary().bridge).toMatchObject({ jumps: 1 });
+    controller.detach();
+  });
+
+  it("reads an extent move that comes merged with its own collapse as the pen's move", () => {
+    const { doc, host, bridgeEl, events, controller } = setupController();
+    // A WebView that reports the collapse and the next move as one change.
+    Object.assign(doc.selection, {
+      collapse: (node: FakeText, offset: number): void => {
+        Object.assign(doc.selection, {
+          anchorNode: node,
+          anchorOffset: offset,
+          focusNode: node,
+          focusOffset: offset,
+          isCollapsed: true,
+        });
+      },
+    });
+    const move = host.listeners.get("pointermove")!;
+    move(pointerEvent({ clientX: 120, clientY: 120, buttons: 1, pressure: 0, timeStamp: 100 }));
+    doc.setSelection(bridgeEl.textAt(20), 20, bridgeEl.textAt(20), 30);
+    // Heading back toward the start: only the focus moved from the collapsed point.
+    doc.setSelection(bridgeEl.textAt(20), 30, bridgeEl.textAt(20), 26);
+    expect(events).toEqual(["start(120,123,buttons=3)", "move(180,123)", "move(156,123)"]);
+    controller.detach();
+  });
+
   it("counts what it drops and the stalls, for the diagnostics", () => {
     vi.useFakeTimers();
     const { doc, host, bridgeEl, controller } = setupController();

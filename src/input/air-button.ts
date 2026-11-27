@@ -61,6 +61,11 @@ export interface HoverSummary {
   penDowns: number;
   /** `contextmenu`s that were not a finger's. */
   menus: number;
+  /**
+   * Of those, the ones left to a mouse's right-click: a mouse press came just
+   * before. On a tablet with no mouse, the side button arrives that way.
+   */
+  mouseMenus: number;
   /** Of those, the ones taken for the side button in the air, with no hover to say so. */
   airMenus: number;
   /** Strokes the selection bridge read (hold the button, then touch down). */
@@ -80,6 +85,7 @@ export class HoverWitness {
   private bridgeStrokes = 0;
   private lastHoverAt = Number.NEGATIVE_INFINITY;
   private lastMouseAt = Number.NEGATIVE_INFINITY;
+  private mouseMenus = 0;
 
   /**
    * A pen move off the stroke at `t` (ms), the side button held or not. Only
@@ -123,7 +129,10 @@ export class HoverWitness {
     // A mouse's right-click comes with its own press just before; the side
     // button in the air comes alone. That one keeps its menu.
     const sinceMouse = r.timeStamp - this.lastMouseAt;
-    if (r.pointerType === "mouse" && sinceMouse >= 0 && sinceMouse < HOVER_RECENT_MS) return false;
+    if (r.pointerType === "mouse" && sinceMouse >= 0 && sinceMouse < HOVER_RECENT_MS) {
+      this.mouseMenus++;
+      return false;
+    }
     const sinceHover = r.timeStamp - this.lastHoverAt;
     if (sinceHover >= 0 && sinceHover < HOVER_RECENT_MS) return false;
     this.airMenus++;
@@ -134,6 +143,7 @@ export class HoverWitness {
     return {
       hoverMoves: this.hoverMoves,
       contactMoves: this.contactMoves,
+      mouseMenus: this.mouseMenus,
       barrelHoverMoves: this.barrelHoverMoves,
       penDowns: this.penDowns,
       menus: this.menus,

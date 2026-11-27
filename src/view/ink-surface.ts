@@ -3603,8 +3603,8 @@ export class InkSurface {
       }
       const type = (event as Partial<PointerEvent>).pointerType;
       // Logged for the pen; on a WebView that sends no hovering moves, the side
-      // button in the air (#209) gets the eraser ready, and opens no menu.
-      if (this.pointerInput?.airMenu(event)) return;
+      // button in the air (#209) gets the eraser ready. As a mouse's, it opens no menu.
+      if (this.pointerInput?.airMenu(event) && type !== "pen") return;
       // Android's WebView: the pen touching down with its side button held is
       // this alone, as a mouse's. It is no click of the button, and no menu.
       if (type !== "touch" && this.pointerInput?.stylusTouched()) return;
