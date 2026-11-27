@@ -4,7 +4,7 @@
  * outside, Escape, or an answer. Styled like the Add Page and AI popovers.
  *
  * - First which question it asks, as a small mark and two words above the
- *   word: "Grape read" (a doubtful reading) or "You wrote" (a spelling,
+ *   word: "Correct Grape's reading" (a doubtful reading) or "You wrote" (a spelling,
  *   in the spelling mark's red, with the spell-check icon).
  * - Then the word, large.
  * - Chips under it, the first tinted: for a reading, other words the ink
@@ -28,7 +28,7 @@ export interface WordPopoverRow {
 export interface WordPopoverContent {
   /** What Grape read; for a spelling question, what the ink spells. */
   read: string;
-  /** A spelling question ("You wrote"), not a reading one ("Grape read"). */
+  /** A spelling question ("You wrote"), not a reading one ("Correct Grape's reading"). */
   spelling?: boolean;
   /** Other words the ink may say, as chips, best first; none for no chips. */
   chips: readonly string[];

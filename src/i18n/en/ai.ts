@@ -264,7 +264,7 @@ export const ai = {
   "ai.word.noList": "FineNotes: checking words needs a word list at {path}.",
   "ai.word.type": "Type what it says…",
   "ai.word.itSays": "It says “{word}”",
-  "ai.word.grapeRead": "Grape read",
+  "ai.word.grapeRead": "Correct Grape's reading",
   "ai.word.youWrote": "You wrote",
   "ai.word.meantAs": "Did you mean",
   "ai.word.grapeMisread": "Grape misread it…",
