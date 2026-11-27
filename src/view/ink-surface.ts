@@ -4659,6 +4659,7 @@ export class InkSurface {
    */
   private syncDeskVar(): void {
     this.surfaceEl.setCssProps({ "--gob-desk": this.paper.desk });
+    this.surfaceEl.parentElement?.setCssProps({ "--gob-desk": this.paper.desk });
   }
 
   /** Reset zoom to the whole page and scroll back to the top ("fit / reset"). */
