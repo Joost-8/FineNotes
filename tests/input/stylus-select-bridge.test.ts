@@ -586,3 +586,98 @@ describe("StylusSelectBridge", () => {
     disabled.controller.detach();
   });
 });
+
+describe("the bridge leaves no range for Android's selection handles (discussion #209)", () => {
+  /** A selection that collapses as a WebView's does: one selectionchange, both ends at the point. */
+  function collapsing(doc: FakeDocument): void {
+    Object.assign(doc.selection, {
+      collapse: (node: FakeText, offset: number): void =>
+        doc.setSelection(node, offset, node, offset),
+    });
+  }
+
+  it("collapses each selection onto the pen once read, and extends from there", () => {
+    const { doc, host, bridgeEl, events, controller } = setupController();
+    collapsing(doc);
+    const move = host.listeners.get("pointermove")!;
+    move(pointerEvent({ clientX: 120, clientY: 120, buttons: 1, pressure: 0, timeStamp: 100 }));
+
+    doc.setSelection(bridgeEl.textAt(20), 20, bridgeEl.textAt(22), 24);
+    expect(events).toEqual(["start(120,123,buttons=3)", "move(144,135)"]);
+    // Collapsed where the pen is: no range is left standing.
+    expect(doc.selection.isCollapsed).toBe(true);
+    expect(doc.selection.focusNode).toBe(bridgeEl.textAt(22));
+    expect(doc.selection.focusOffset).toBe(24);
+
+    // The WebView extends the next drag from the collapsed point.
+    doc.setSelection(bridgeEl.textAt(22), 24, bridgeEl.textAt(22), 30);
+    doc.setSelection(bridgeEl.textAt(22), 30, bridgeEl.textAt(23), 33);
+    expect(events).toEqual([
+      "start(120,123,buttons=3)",
+      "move(144,135)",
+      "move(180,135)",
+      "move(198,141)",
+    ]);
+    expect(doc.selection.isCollapsed).toBe(true);
+    expect(controller.hoverSummary().bridge).toMatchObject({ reads: 2, collapses: 3 });
+    controller.detach();
+  });
+
+  it("does not collapse onto a jump it dropped, so the jump never comes back as the pen", () => {
+    const { doc, host, bridgeEl, events, controller } = setupController();
+    collapsing(doc);
+    const move = host.listeners.get("pointermove")!;
+    move(pointerEvent({ clientX: 120, clientY: 120, buttons: 1, pressure: 0, timeStamp: 100 }));
+    doc.setSelection(bridgeEl.textAt(20), 20, bridgeEl.textAt(20), 21);
+    // The far end jumps across the page from the collapsed point at the pen.
+    doc.setSelection(bridgeEl.textAt(20), 21, bridgeEl.textAt(20), 90);
+    doc.setSelection(bridgeEl.textAt(20), 21, bridgeEl.textAt(20), 23);
+    expect(events).toEqual(["start(120,123,buttons=3)", "move(126,123)", "move(138,123)"]);
+    expect(controller.hoverSummary().bridge).toMatchObject({ jumps: 1 });
+    controller.detach();
+  });
+
+  it("reads an extent move that comes merged with its own collapse as the pen's move", () => {
+    const { doc, host, bridgeEl, events, controller } = setupController();
+    // A WebView that reports the collapse and the next move as one change.
+    Object.assign(doc.selection, {
+      collapse: (node: FakeText, offset: number): void => {
+        Object.assign(doc.selection, {
+          anchorNode: node,
+          anchorOffset: offset,
+          focusNode: node,
+          focusOffset: offset,
+          isCollapsed: true,
+        });
+      },
+    });
+    const move = host.listeners.get("pointermove")!;
+    move(pointerEvent({ clientX: 120, clientY: 120, buttons: 1, pressure: 0, timeStamp: 100 }));
+    doc.setSelection(bridgeEl.textAt(20), 20, bridgeEl.textAt(20), 30);
+    // Heading back toward the start: only the focus moved from the collapsed point.
+    doc.setSelection(bridgeEl.textAt(20), 30, bridgeEl.textAt(20), 26);
+    expect(events).toEqual(["start(120,123,buttons=3)", "move(180,123)", "move(156,123)"]);
+    controller.detach();
+  });
+
+  it("counts what it drops and the stalls, for the diagnostics", () => {
+    vi.useFakeTimers();
+    const { doc, host, bridgeEl, controller } = setupController();
+    const move = host.listeners.get("pointermove")!;
+    move(pointerEvent({ clientX: 300, clientY: 120, buttons: 1, pressure: 0, timeStamp: 100 }));
+    doc.setSelection(bridgeEl.textAt(20), 50, bridgeEl.textAt(20), 52);
+    // A wrap to the row's start, then a jump of the far end.
+    doc.setSelection(bridgeEl.textAt(20), 50, bridgeEl.textAt(21), 0);
+    doc.setSelection(bridgeEl.textAt(20), 50, bridgeEl.textAt(20), 120);
+    vi.advanceTimersByTime(1600);
+    expect(controller.hoverSummary().bridge).toEqual({
+      reads: 2,
+      wraps: 1,
+      jumps: 1,
+      idleEnds: 1,
+      collapses: 0,
+    });
+    controller.detach();
+    vi.useRealTimers();
+  });
+});

@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { HOVER_RECENT_MS, HoverWitness } from "../../src/input/air-button";
+import { HOVER_RECENT_MS, HoverWitness, isHovering } from "../../src/input/air-button";
 
 describe("a WebView that sends no hovering moves (Tab S10 Ultra)", () => {
   for (const pointerType of ["pen", "mouse", ""]) {
@@ -25,6 +25,8 @@ describe("a WebView that sends no hovering moves (Tab S10 Ultra)", () => {
         menus: 1,
         airMenus: 1,
         bridgeStrokes: 0,
+        contactMoves: 0,
+        mouseMenus: 0,
         hover: "none",
       });
     });
@@ -72,5 +74,33 @@ describe("a WebView that does send hovering moves (Tab S9 FE, FineNotes#149)", (
     expect(w.menu({ pointerType: "pen", timeStamp: HOVER_RECENT_MS + 1, pressing: false })).toBe(
       true,
     );
+  });
+});
+
+describe("the tester's second report: hover seen where none came (#209, PR #290)", () => {
+  it("takes only a pen move without pressure for hovering", () => {
+    expect(isHovering({ pressure: 0 })).toBe(true);
+    // A pen on the glass, off the stroke (the tool bar, a press taken elsewhere).
+    expect(isHovering({ pressure: 0.4 })).toBe(false);
+    // An unreported pressure is no contact.
+    expect(isHovering({ pressure: Number.NaN })).toBe(true);
+  });
+
+  it("counts moves on the glass apart, and they hold no air press back", () => {
+    const w = new HoverWitness();
+    w.hover(0, false, false);
+    w.hover(16, false, false);
+    expect(w.menu({ pointerType: "pen", timeStamp: 40, pressing: false })).toBe(true);
+    expect(w.summary()).toMatchObject({ hoverMoves: 0, contactMoves: 2, hover: "none" });
+  });
+
+  it("leaves a mouse's right-click its menu: it comes just after the mouse's own press", () => {
+    const w = new HoverWitness();
+    w.mouse(1000);
+    expect(w.menu({ pointerType: "mouse", timeStamp: 1010, pressing: false })).toBe(false);
+    // The side button in the air comes alone, long after any mouse press.
+    expect(w.menu({ pointerType: "mouse", timeStamp: 9000, pressing: false })).toBe(true);
+    // The diagnostics say how many were left to a mouse.
+    expect(w.summary()).toMatchObject({ menus: 2, mouseMenus: 1, airMenus: 1 });
   });
 });

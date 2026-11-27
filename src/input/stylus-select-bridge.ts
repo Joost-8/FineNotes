@@ -16,6 +16,20 @@ export interface BridgePoint {
   timeStamp: number;
 }
 
+/** What the bridge did with the selection it read, for the diagnostics (#209). */
+export interface BridgeStats {
+  /** Selections (ranges) the WebView moved while a stroke was under way. */
+  reads: number;
+  /** Ends read at a row's edge far from the pen, dropped as a wrap. */
+  wraps: number;
+  /** Moves dropped as a jump of the far end. */
+  jumps: number;
+  /** Strokes ended because the selection stopped changing (a stall). */
+  idleEnds: number;
+  /** Selections collapsed after reading, so no range is left for handles. */
+  collapses: number;
+}
+
 export interface StylusSelectBridgeCallbacks {
   onStart(point: BridgePoint): void;
   onMove(point: BridgePoint): void;
@@ -57,6 +71,13 @@ export class StylusSelectBridge {
   private gridHeight = 0;
   private charsPerRow = 0;
   private rowCount = 0;
+  private readonly counts: BridgeStats = {
+    reads: 0,
+    wraps: 0,
+    jumps: 0,
+    idleEnds: 0,
+    collapses: 0,
+  };
 
   private readonly onSelectionChange = (): void => this.handleSelectionChange();
   private readonly onTouchStart = (event: TouchEvent): void => {
@@ -85,6 +106,11 @@ export class StylusSelectBridge {
 
   get isArmed(): boolean {
     return this.armed;
+  }
+
+  /** What the bridge did with the selections it read since the note opened. */
+  stats(): BridgeStats {
+    return { ...this.counts };
   }
 
   get wasRecentlyActive(): boolean {
@@ -268,6 +294,8 @@ export class StylusSelectBridge {
     if (!bridge || !doc) return;
     const sel = doc.getSelection();
     if (!sel || sel.rangeCount === 0 || !sel.anchorNode || !sel.focusNode) return;
+    // Our own `collapse` coming back: nothing moved, and the pen has not stalled.
+    if (this.active && sel.isCollapsed && this.sameAsRecorded(sel)) return;
 
     const anchorInside = bridge.contains(sel.anchorNode);
     const focusInside = bridge.contains(sel.focusNode);
@@ -285,12 +313,45 @@ export class StylusSelectBridge {
     this.clearArmedTimer();
     this.scheduleIdleEnd();
 
+    let kept = true;
     if (!this.active) {
       this.startFromSelection(sel, anchor, focus);
-      return;
+    } else {
+      if (!sel.isCollapsed) this.counts.reads++;
+      kept = this.moveFromSelection(sel, anchor, focus);
     }
+    // A dropped read is not collapsed onto: that would hand its far point back as the pen.
+    if (this.active && kept) this.collapse(sel);
+  }
 
-    this.moveFromSelection(sel, anchor, focus);
+  private sameAsRecorded(sel: Selection): boolean {
+    return (
+      sel.anchorNode === this.prevAnchorNode &&
+      sel.anchorOffset === this.prevAnchorOffset &&
+      sel.focusNode === this.prevFocusNode &&
+      sel.focusOffset === this.prevFocusOffset
+    );
+  }
+
+  /**
+   * The point is read: the range has done its work. Left standing, Android
+   * draws its selection handles on it while the pen erases (#209), and a pen
+   * that lands on a handle drags the handle, not the selection the bridge
+   * reads. Collapsed onto its moving end (a caret in text nobody can edit,
+   * which has no handles), the next drag extends from where the pen is.
+   * Unproven on a device: that the WebView's stylus selection carries on
+   * from a collapsed selection, and that the handles go with the range.
+   */
+  private collapse(sel: Selection): void {
+    if (sel.isCollapsed || !sel.focusNode) return;
+    try {
+      sel.collapse(sel.focusNode, sel.focusOffset);
+      this.counts.collapses++;
+      // Both ends are at the pen now: an extent move from here changes only the focus.
+      this.recordEndpoints(sel);
+    } catch {
+      // A selection the document no longer holds: nothing to collapse.
+    }
   }
 
   private startFromSelection(
@@ -344,7 +405,7 @@ export class StylusSelectBridge {
     sel: Selection,
     anchor: BridgePoint | null,
     focus: BridgePoint | null,
-  ): void {
+  ): boolean {
     if (sel.isCollapsed && anchor) {
       this.basePt = anchor;
     }
@@ -354,7 +415,7 @@ export class StylusSelectBridge {
       sel.focusNode !== this.prevFocusNode || sel.focusOffset !== this.prevFocusOffset;
     this.recordEndpoints(sel);
 
-    if (!anchorChanged && !focusChanged) return;
+    if (!anchorChanged && !focusChanged) return true;
 
     let candidate: BridgePoint | null = null;
     let other: BridgePoint | null = null;
@@ -379,20 +440,22 @@ export class StylusSelectBridge {
       other = candidate === focus ? anchor : focus;
     }
 
-    if (!candidate) return;
+    if (!candidate) return false;
     if (
       this.lastPt &&
       distanceBetween(this.lastPt, candidate) > SINGLE_FRAME_JUMP_PX &&
       other &&
       distanceBetween(this.lastPt, other) <= OTHER_END_NEAR_PX
     ) {
-      return;
+      this.counts.jumps++;
+      return false;
     }
 
     if (!this.lastPt || this.movedEnough(this.lastPt, candidate)) {
       this.lastPt = candidate;
       this.callbacks.onMove(candidate);
     }
+    return true;
   }
 
   private recordEndpoints(sel: Selection): void {
@@ -429,7 +492,9 @@ export class StylusSelectBridge {
     if (!timers) return;
     this.idleTimer = timers.setTimeout(() => {
       this.idleTimer = null;
-      if (this.active) this.endStroke(performance.now());
+      if (!this.active) return;
+      this.counts.idleEnds++;
+      this.endStroke(performance.now());
     }, IDLE_END_MS);
   }
 
@@ -497,6 +562,7 @@ export class StylusSelectBridge {
       (clamped === 0 || clamped >= len) &&
       Math.abs(pt.clientX - prev.clientX) > EDGE_WRAP_MAX_DX_PX
     ) {
+      this.counts.wraps++;
       return null;
     }
     return pt;

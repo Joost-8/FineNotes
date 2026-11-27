@@ -27,6 +27,19 @@
  */
 export const HOVER_RECENT_MS = 1000;
 
+/**
+ * Whether a pen move off the stroke is the pen in the air. A move with
+ * pressure is the pen on the glass: over the tool bar, or in a press
+ * something else took. Those used to count as hover, so a tablet that sends
+ * no hovering moves (#209: 202 "hover moves", none with the button held) read
+ * as `hover: "seen"`, and each one held the side button's press in the air
+ * back for a second. The contact bit alone says nothing: some WebViews send
+ * the side button held in the air as that bit at pressure 0 (`stylus-click.ts`).
+ */
+export function isHovering(move: { pressure: number }): boolean {
+  return !(move.pressure > 0);
+}
+
 /** A `contextmenu` as {@link HoverWitness.menu} reads it. */
 export interface MenuReading {
   /** The event's `pointerType`, or "" where the browser leaves it out. */
@@ -40,12 +53,19 @@ export interface MenuReading {
 export interface HoverSummary {
   /** Hovering pen moves seen (any buttons). */
   hoverMoves: number;
-  /** Of those, the ones with the side button held. */
+  /** Pen moves off the stroke with the tip on the glass, not hover ({@link isHovering}). */
+  contactMoves: number;
+  /** Of the hovering moves, the ones with the side button held. */
   barrelHoverMoves: number;
   /** Pen presses on the page. */
   penDowns: number;
   /** `contextmenu`s that were not a finger's. */
   menus: number;
+  /**
+   * Of those, the ones left to a mouse's right-click: a mouse press came just
+   * before. On a tablet with no mouse, the side button arrives that way.
+   */
+  mouseMenus: number;
   /** Of those, the ones taken for the side button in the air, with no hover to say so. */
   airMenus: number;
   /** Strokes the selection bridge read (hold the button, then touch down). */
@@ -57,18 +77,33 @@ export interface HoverSummary {
 /** One page's record of the pen's hovering, and its side button's `contextmenu`s. */
 export class HoverWitness {
   private hoverMoves = 0;
+  private contactMoves = 0;
   private barrelHoverMoves = 0;
   private penDowns = 0;
   private menus = 0;
   private airMenus = 0;
   private bridgeStrokes = 0;
   private lastHoverAt = Number.NEGATIVE_INFINITY;
+  private lastMouseAt = Number.NEGATIVE_INFINITY;
+  private mouseMenus = 0;
 
-  /** A hovering pen move at `t` (ms), the side button held or not. */
-  hover(t: number, barrel: boolean): void {
+  /**
+   * A pen move off the stroke at `t` (ms), the side button held or not. Only
+   * one that {@link isHovering} counts as hover; the rest are counted apart.
+   */
+  hover(t: number, barrel: boolean, hovering = true): void {
+    if (!hovering) {
+      this.contactMoves++;
+      return;
+    }
     this.hoverMoves++;
     if (barrel) this.barrelHoverMoves++;
     this.lastHoverAt = t;
+  }
+
+  /** A mouse pressed on the page at `t` (ms): a `contextmenu` just after is its right-click. */
+  mouse(t: number): void {
+    this.lastMouseAt = t;
   }
 
   /** A pen pressed on the page. */
@@ -91,6 +126,13 @@ export class HoverWitness {
     if (r.pointerType === "touch") return false;
     this.menus++;
     if (r.pressing) return false;
+    // A mouse's right-click comes with its own press just before; the side
+    // button in the air comes alone. That one keeps its menu.
+    const sinceMouse = r.timeStamp - this.lastMouseAt;
+    if (r.pointerType === "mouse" && sinceMouse >= 0 && sinceMouse < HOVER_RECENT_MS) {
+      this.mouseMenus++;
+      return false;
+    }
     const sinceHover = r.timeStamp - this.lastHoverAt;
     if (sinceHover >= 0 && sinceHover < HOVER_RECENT_MS) return false;
     this.airMenus++;
@@ -100,6 +142,8 @@ export class HoverWitness {
   summary(): HoverSummary {
     return {
       hoverMoves: this.hoverMoves,
+      contactMoves: this.contactMoves,
+      mouseMenus: this.mouseMenus,
       barrelHoverMoves: this.barrelHoverMoves,
       penDowns: this.penDowns,
       menus: this.menus,

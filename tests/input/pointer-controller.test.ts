@@ -1698,7 +1698,7 @@ describe("the side button in the air on a WebView with no hovering moves (discus
     const fire = (phase: Phase, c: Contact): void => {
       el.listeners.get(phase)?.(eventFor(1, "pen", c));
     };
-    const menu = (t: number, pointerType = "pen"): void =>
+    const menu = (t: number, pointerType = "pen"): boolean =>
       controller.airMenu({ pointerType, clientX: 10, clientY: 10, timeStamp: t });
     return { controller, log, fire, menu };
   }
@@ -1726,6 +1726,42 @@ describe("the side button in the air on a WebView with no hovering moves (discus
     fire("pointerdown", { x: 10, y: 10, t: 5000, button: 0, buttons: 1, pressure: 0.4 });
     menu(5600);
     expect(log).toEqual(["start"]);
+  });
+
+  it("says when it took the press, so the page opens no menu for it (the tester's popup)", () => {
+    const el = new StandInElement();
+    const controller = new PointerController(
+      el as unknown as HTMLElement,
+      toSurface,
+      {
+        onStart: () => undefined,
+        onMove: () => undefined,
+        onEnd: () => undefined,
+        onCancel: () => undefined,
+      },
+      { route: () => "draw", stylusSelectBridge: () => true },
+    );
+    controller.attach();
+    const fire = (phase: Phase, type: string, c: Contact): void => {
+      el.listeners.get(phase)?.(eventFor(type === "mouse" ? 2 : 1, type, c));
+    };
+    const at = (t: number, pointerType: string): boolean =>
+      controller.airMenu({ pointerType, clientX: 10, clientY: 10, timeStamp: t });
+    // The pen pressed over the tool bar or elsewhere moves with pressure: no hover.
+    fire("pointermove", "pen", { x: 10, y: 10, t: 0, buttons: 1, pressure: 0.5 });
+    expect(at(100, "pen")).toBe(true);
+    expect(controller.hoverSummary()).toMatchObject({ hover: "none", contactMoves: 1 });
+    // A mouse's right-click keeps its menu.
+    fire("pointerdown", "mouse", { x: 10, y: 10, t: 5000, button: 2, buttons: 2, pressure: 0.5 });
+    expect(at(5010, "mouse")).toBe(false);
+    // The pen log says which kind of pointer each contextmenu came as.
+    expect(controller.penReport().map((e) => e.e)).toEqual([
+      "move",
+      "contextmenu",
+      "down:mouse",
+      "contextmenu:mouse",
+    ]);
+    controller.detach();
   });
 
   it("does nothing where there is no bridge (the iPad, desktop), nor for a finger", () => {
