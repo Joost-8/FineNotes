@@ -1,8 +1,7 @@
 /**
  * A copied picture on the **system** clipboard (0.5) — the bonus beside the
  * plugin's own clipboard (`src/model/clipboard.ts`), which is what Cut, Copy
- * and Paste inside notebooks use. Only a lone picture can travel this way:
- * other apps have no idea what a stroke is.
+ * and Paste inside notebooks use. Other apps receive pictures; FineNotes keeps the editable selection in memory.
  *
  * Best effort by design. Where the platform has no asynchronous clipboard, or
  * refuses the write (iPadOS WebKit allows it only inside a user gesture, and
@@ -11,6 +10,7 @@
  */
 
 import type { App } from "obsidian";
+import type { InkClipboard } from "../model/clipboard";
 import type { ImageElement } from "../model/document";
 import { cropSourceRect } from "../canvas/image-crop";
 import { MAX_IMAGE_LONG_SIDE, fitLongSide, mimeForExtension } from "../canvas/image-raster";
@@ -55,6 +55,60 @@ export async function writePngToClipboard(png: Promise<Blob>): Promise<boolean> 
   } catch {
     return false;
   }
+}
+
+/** Fingerprint decoded RGBA pixels, since clipboard implementations can re-encode PNGs. */
+export async function pngPixelFingerprint(blob: Blob): Promise<string | null> {
+  if (blob.type !== "image/png" || typeof crypto === "undefined" || !crypto.subtle) return null;
+  let canvas: HTMLCanvasElement | undefined;
+  try {
+    const decoded = await decodeToCanvas(await blob.arrayBuffer(), blob.type, (width, height) => {
+      if (Math.max(width, height) > MAX_IMAGE_LONG_SIDE)
+        throw new Error("Image exceeds selection size");
+      return { width, height };
+    });
+    canvas = decoded.canvas;
+    const { width, height } = canvas;
+    const pixels = canvas.getContext("2d")?.getImageData(0, 0, width, height).data;
+    if (!pixels) return null;
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", pixels));
+    return `${width}x${height}:${Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("")}`;
+  } catch {
+    return null;
+  } finally {
+    if (canvas) releaseCanvas(canvas);
+  }
+}
+
+/** Start the system write in the gesture, then record the fingerprint if it succeeds. */
+export function copySelectionPngToSystemClipboard(
+  clipboard: InkClipboard,
+  version: number,
+  render: () => Promise<Blob | null>,
+): void {
+  let fingerprint: string | null = null;
+  const png = render().then(async (blob) => {
+    if (!blob) throw new Error("Selection could not be rendered");
+    fingerprint = await pngPixelFingerprint(blob);
+    if (clipboard.version !== version) throw new Error("Selection copy was superseded");
+    return blob;
+  });
+  void writePngToClipboard(png).then((written) => {
+    if (written && fingerprint) clipboard.noteOwnPng(fingerprint, version);
+  });
+}
+
+/** True when the pasted PNG still represents the editable selection held at paste time. */
+export async function isOwnClipboardPng(
+  clipboard: InkClipboard,
+  blob: Blob,
+  withImages: boolean,
+): Promise<boolean> {
+  const expected = clipboard.ownPngFingerprint;
+  if (!expected || !clipboard.canPaste(withImages)) return false;
+  const version = clipboard.version;
+  const actual = await pngPixelFingerprint(blob);
+  return clipboard.version === version && actual === expected;
 }
 
 /** The picture's pixels (at most 2048 px long), its crop and flips applied, as PNG. */

@@ -95,6 +95,7 @@ import { fullScreenGroups, parseFullScreen, storedFullScreen } from "./view/full
 import { EINK_STORAGE_KEY, EinkScreen } from "./view/eink-screen";
 import { type PillDock, parsePillDock } from "./view/pill-dock-model";
 import { type BarDock, parseBarDock, pillAfterBarMove } from "./view/bar-dock-model";
+import { initToolbarLock } from "./view/toolbar-lock";
 import { parsePillRowOn } from "./view/pill-row-model";
 import { ShortcutStore } from "./view/shortcut-store";
 import { buildInkFile, parseInkFile } from "./model/serialize";
@@ -651,6 +652,10 @@ export default class GoodObsidianPlugin extends Plugin {
     this.providers.set(cloud.id, cloud);
 
     await this.loadSettings();
+    // Lock toolbar (toolbar-lock.ts), kept per device as the bar's edge is.
+    initToolbarLock(this.app.loadLocalStorage("goodobsidian:toolbar-locked"), (on) =>
+      this.app.saveLocalStorage("goodobsidian:toolbar-locked", on ? "true" : null),
+    );
     // Before anything with words in it is made.
     await this.language.start();
     // A notebook's typed export name (#318) names its companion PDF too, and

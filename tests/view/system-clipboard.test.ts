@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   onSystemTextWritten,
   readSystemClipboard,
+  writeSelectionText,
   writeSystemText,
 } from "../../src/view/system-clipboard";
 
@@ -68,5 +69,39 @@ describe("readSystemClipboard", () => {
   it("still takes text when another item came without types", async () => {
     holding(item([]), item(["text/plain"], { "text/plain": "hello" }));
     expect(await readSystemClipboard()).toEqual({ kind: "text", text: "hello" });
+  });
+});
+
+describe("writeSelectionText", () => {
+  const selection = { text: "Formatted", html: "<strong>Formatted</strong>" };
+
+  it("offers HTML and plain text together without invalidating the editable selection", async () => {
+    const write = vi.fn(async () => undefined);
+    const heard = vi.fn();
+    const stop = onSystemTextWritten(heard);
+    vi.stubGlobal("navigator", { clipboard: { write } });
+    vi.stubGlobal(
+      "ClipboardItem",
+      class {
+        constructor(readonly formats: Record<string, Blob>) {}
+      },
+    );
+    try {
+      expect(await writeSelectionText(selection, () => true)).toBe(true);
+      const [items] = write.mock.calls[0] as unknown as [{ formats: Record<string, Blob> }[]];
+      expect(await items[0].formats["text/plain"].text()).toBe(selection.text);
+      expect(await items[0].formats["text/html"].text()).toBe(selection.html);
+      expect(heard).not.toHaveBeenCalled();
+    } finally {
+      stop();
+    }
+  });
+
+  it("falls back to plain text only while the selection is still current", async () => {
+    const writeText = vi.fn(async () => undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    expect(await writeSelectionText(selection, () => true)).toBe(true);
+    expect(await writeSelectionText(selection, () => false)).toBe(false);
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(selection.text);
   });
 });
