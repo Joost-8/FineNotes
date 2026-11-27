@@ -43,7 +43,7 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
-- **Writing guides** ([#335](https://github.com/Joost-8/FineNotes/pull/335), thanks @koltensaccount): lines, a grid or dots over a notebook's pages to write along, never printed or exported. Each notebook has its own; tap the guides button (in More tools) to turn them on, its arrow for their look. Inline Handwrite here blocks show their notebook's guides.
+- **Writing guides** ([#335](https://github.com/Joost-8/FineNotes/pull/335), thanks @koltensaccount): lines, a grid or dots over a notebook's pages to write along, never printed or exported. Each notebook has its own; turn them on from More tools; on the bar, the button's arrow sets their look, as the ruler's does. Inline Handwrite here blocks show their notebook's guides.
 - **Move tools and the toolbar by holding them** ([#337](https://github.com/Joost-8/FineNotes/pull/337), thanks @koltensaccount): hold a tool to drag it along the bar, into ⋯ or back; hold a pen in its options to pin it to the bar; hold the bar's empty space and drag it to another edge. **Lock toolbar** (the lock in Customize toolbar) turns these off, so the bar changes only in Customize.
 - **Copy and Cut reach other apps** ([#333](https://github.com/Joost-8/FineNotes/pull/333), thanks @koltensaccount): a lasso of text boxes pastes elsewhere as formatted text, anything with ink or shapes as a transparent picture; pasted back into FineNotes, it stays editable.
 - **Help improve Grape: share new items automatically.** The consent has a
