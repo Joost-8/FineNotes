@@ -1698,6 +1698,7 @@ export class InkView extends TextFileView {
     this.sidebar?.setDocument(this.doc);
     this.syncSingle();
     this.syncPdfTabs();
+    this.guides?.sync(); // this file's guides
     // Fonts fetched for this vault that the notebook's boxes need, from the vault.
     void vaultFonts(this.app)
       .use(familiesIn(this.doc.pages))

@@ -2860,7 +2860,7 @@ export class Toolbar {
       this.closePopover();
       this.callbacks.onWritingGuides?.();
     });
-    this.fold(FOLD_RANK.guides, button, "guides", label, () => this.callbacks.onWritingGuides?.());
+    this.fold(FOLD_RANK.guides, button, WRITING_GUIDES_ICON, label, () => this.callbacks.onWritingGuides?.());
     this.guidesButton = button;
     return button;
   }

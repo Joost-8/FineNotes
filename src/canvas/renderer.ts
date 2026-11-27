@@ -531,6 +531,9 @@ const PAPER_EDGE = 2;
 const SHADOW_BLUR = 14;
 const SHADOW_OFFSET_Y = 3;
 
+/** Any page whole, as a stale area: finite, as `staleRect` needs, and clipped to the raster there. */
+const WHOLE_PAGE: Bounds = { minX: -1e7, minY: -1e7, maxX: 1e7, maxY: 1e7 };
+
 interface Tile {
   canvas: HTMLCanvasElement;
   pageId: string;
@@ -1210,12 +1213,18 @@ export class Renderer {
   }
 
   /**
-   * Every page's look changed but not its content (writing guides): tiles and
-   * previews are repaired in place within the frame budget, as a PDF page
-   * landing is (`refreshPage`), not dropped and made again in one frame.
+   * Every page's look changed but not its content (writing guides). Each
+   * cached tile and preview is marked to be painted again in place before it
+   * is next drawn: what is on screen changes in one frame, with no canvas
+   * freed or made, and the rest only when it is shown. Walks the cache, not
+   * the tile grid of every page; the last zoom's stand-ins go.
    */
   refreshAll(): void {
-    for (let i = 0; i < this.layout.boxes.length; i++) this.refreshPage(i);
+    const level = this.level;
+    this.tiles.deleteWhere((tile) => tile.level !== level);
+    for (const tile of this.tiles.values()) tile.stale = WHOLE_PAGE;
+    for (const preview of this.previews.values()) preview.stale = WHOLE_PAGE;
+    this.dryShown = null;
   }
 
   invalidateAll(): void {
@@ -2638,7 +2647,9 @@ export class Renderer {
         guideRegion,
         this.writingGuides,
         paperColorOf(page, this.paper),
-        level / this.screen.dpr,
+        // A preview is drawn small and shown at the view's scale: its lines
+        // are as thin as the tiles', not a few times thicker.
+        Math.max(level / this.screen.dpr, this.safeScale),
         level,
         gridPhase(this.layout, box.index),
       );

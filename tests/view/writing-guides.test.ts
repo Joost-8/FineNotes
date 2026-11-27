@@ -59,3 +59,25 @@ it("a new notebook starts in the look chosen last", () => {
   b.binding.toggle();
   expect(b.shown.at(-1)?.spacing).toBe(64);
 });
+
+it("shows a notebook's guides once its file loads, after binding with none (the view opens first)", () => {
+  const settings = { ...DEFAULT_SETTINGS, writingGuideNotebooks: { "A.md": { on: true } } };
+  let path: string | null = null;
+  const shown: Array<WritingGuideStyle | null> = [];
+  const binding = bindWritingGuides({
+    settings,
+    save: vi.fn(),
+    path: () => path,
+    apply: (style) => shown.push(style),
+    changed: vi.fn(),
+  });
+  expect(shown).toEqual([null]);
+  path = "A.md";
+  binding.sync();
+  expect(binding.on()).toBe(true);
+  expect(shown.at(-1)).not.toBeNull();
+  // Another file in the same tab: its own guides, not A's.
+  path = "B.md";
+  binding.sync();
+  expect(shown.at(-1)).toBeNull();
+});
