@@ -16954,7 +16954,7 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
 
   /** Copy the selection, then take it off the page — one undo step, which puts it back. */
   private cutSelection(): void {
-    if (this.callbacks.isLocked?.() || !this.copySelection(false)) return;
+    if (this.callbacks.isLocked?.() || !this.copySelection(true)) return; // system clipboard too
     if (this.liveSelection()) {
       if (this.removeSelection(t("common.cut"))) this.selectionTakenAway();
       return;

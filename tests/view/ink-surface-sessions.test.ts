@@ -350,3 +350,12 @@ describe("a keyboard paste waiting for an image fingerprint", () => {
     },
   );
 });
+
+describe("Cut", () => {
+  it("puts the selection on the system clipboard, as Copy does", () => {
+    // Else an older Copy's picture stays there and wins a paste after an app switch.
+    const copySelection = vi.fn(() => false);
+    run({ callbacks: {}, copySelection }, "cutSelection");
+    expect(copySelection).toHaveBeenCalledExactlyOnceWith(true);
+  });
+});
