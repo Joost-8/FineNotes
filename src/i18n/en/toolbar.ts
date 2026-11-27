@@ -16,6 +16,9 @@ export const toolbar = {
   "toolbar.tool.stickers": "Stickers",
   "toolbar.tool.stickyNotes": "Sticky notes",
   "toolbar.tool.ruler": "Ruler",
+  "toolbar.tool.guides": "Writing guides",
+  "toolbar.guides.thickness": "Thickness",
+  "toolbar.guides.autoColor": "Auto colour",
   "toolbar.tool.coverTape": "Cover tape",
   "toolbar.tool.recordAudio": "Record audio",
   "toolbar.tool.fill": "Fill",
@@ -99,6 +102,7 @@ export const toolbar = {
   "toolbar.zone.end": "End",
   "toolbar.zone.bottom": "Bottom",
   "toolbar.edit.dockOptions": "Dock tool options",
+  "toolbar.edit.lock": "Lock toolbar",
   "toolbar.edit.essentials": "Essentials",
   "toolbar.edit.essentialsNote":
     "Essentials: the buttons on the right sit in ⋯, so the tool options fit in one bar. Drop a tool on a button to swap them.",

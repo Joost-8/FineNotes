@@ -190,6 +190,19 @@ describe("a sharper backdrop is painted when a frame has the time", () => {
   });
 });
 
+describe("every page's look changes (writing guides)", () => {
+  it("what is on screen is painted again in place in the next frame, whatever the budget", () => {
+    const { renderer, doc } = setUp();
+    renderer.refreshAll();
+    log.lines.length = 0;
+    // No time at all, and still the four tiles change now: none made, none freed.
+    renderer.renderDocument(doc, false, undefined, null, undefined, -1);
+    expect(made).toBe(0);
+    expect(log.lines.filter((l) => l.includes(" clearRect "))).toHaveLength(4);
+    expect(log.lines.some((l) => /^el\d+\.width = 0$/.test(l))).toBe(false);
+  });
+});
+
 describe("after a zoom settles", () => {
   it("the last level's tiles stand in, scaled, until the new ones are made", () => {
     const { renderer, doc } = setUp();

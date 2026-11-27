@@ -102,14 +102,17 @@ import {
   penRowOffers,
   penSlotInHand,
   penSlotsOf,
+  penTypeSlot,
   rememberPenType,
   penTypesOnBar,
   placeOf,
+  sameLayout,
   savedPenSlot,
   setPenSlot,
   slotPenType,
   slotSavedId,
 } from "./toolbar-layout";
+import { WRITING_GUIDES_ICON, ensureWritingGuidesIcon } from "./writing-guides";
 import { ToolbarEditor } from "./toolbar-edit";
 import { DEFAULT_STICKY_COLOR, STICKY_COLORS } from "../model/sticky-notes";
 import {
@@ -205,6 +208,13 @@ import { nightHighlighter } from "../canvas/night";
 import { bindPenTypeDrag } from "./pen-type-drag";
 import { movePenType, penTypeOrderOf, shownPenTypes } from "../model/pen-type-order";
 import { bindPillDrag } from "./pill-drag";
+import {
+  type MoreToolsDragHandle,
+  bindDirectBarGestures,
+  bindMoreToolsDrag,
+  computeBarPlacement,
+  pointInBox,
+} from "./bar-direct-gestures";
 import {
   DEFAULT_PILL_DOCK,
   type PillArea,
@@ -993,6 +1003,12 @@ export interface ToolbarCallbacks {
   onEditPens?: () => void;
   /** Bring the ruler out or put it away. Without it the bar has no ruler. */
   onRuler?: () => void;
+  /** Turn this notebook's writing guides on or off. Without it the bar has no guides. */
+  onWritingGuides?: () => void;
+  /** Whether this notebook's writing guides show. */
+  writingGuidesEnabled?: () => boolean;
+  /** Draw the guides' look into their popover; returns what takes it down. */
+  renderWritingGuides?: (body: HTMLElement, resize: () => void) => () => void;
   /** Open the sticker picker; `anchor` is the button. Without it the bar has no stickers. */
   onStickers?: (anchor: HTMLElement) => void;
   /**
@@ -1146,6 +1162,7 @@ const FOLD_RANK = {
   tape: 8.4,
   settings: 8,
   ruler: 8.5,
+  guides: 8.55,
   shape: 9,
   text: 10,
   select: 11,
@@ -1205,6 +1222,8 @@ interface PillBox {
   left: number;
   width: number;
 }
+
+let nextToolbarLabelId = 0;
 
 export class Toolbar {
   /** Tier 1: the tinted tool bar. */
@@ -1330,6 +1349,8 @@ export class Toolbar {
   private addPageButton: HTMLButtonElement | null = null;
   /** The ruler's button, shown on while the ruler is out (`setRulerOut`). */
   private rulerButton: HTMLButtonElement | null = null;
+  /** The Writing Guides popover trigger button. */
+  private guidesButton: HTMLButtonElement | null = null;
   /** Insert PDF: its pages become pages, which an endless board has not. */
   private insertPdfButton: HTMLButtonElement | null = null;
   /** Bar buttons a practice file hides: everything but the pen, the eraser and the page's own. */
@@ -1362,6 +1383,8 @@ export class Toolbar {
 
   private popover: HTMLElement | null = null;
   private popoverKind: string | null = null;
+  private moreToolsDrag: MoreToolsDragHandle | null = null;
+  private penTypeDragDisposers: Array<() => void> = [];
   /** The open popover growing in, and the timer that ends it (and gives back its blur). */
   private popoverGrow: Animation | null = null;
   private popoverGrowTimer = 0;
@@ -1369,6 +1392,8 @@ export class Toolbar {
   private readonly leavingPopovers = new Map<HTMLElement, number>();
   /** Redraws the open text popover's body in place after a change it made. */
   private popoverRender: (() => void) | null = null;
+  /** What the open popover set up outside itself (a subscription), taken down on close. */
+  private popoverCleanup: (() => void) | null = null;
   /** Places the open popover again after its rows changed on their own (`fitTextPopover`). */
   private popoverRefit: (() => void) | null = null;
   /** The device's fonts for the font menu (`deviceFamilies`), once read. */
@@ -1423,8 +1448,15 @@ export class Toolbar {
     this.optionsTool = state.tool;
     this.onlyStylusOn = options.onlyStylusMode === true;
     this.barEl = host.createDiv({ cls: "goodobsidian-toolbar" });
+    const labelId = ++nextToolbarLabelId;
+    const barLabel = this.host.createSpan({
+      cls: "goodobsidian-sr-only",
+      text: t("toolbar.barLabel"),
+      attr: { id: `goodobsidian-bar-label-${labelId}` },
+    });
+    this.disposers.push(() => barLabel.remove());
     this.barEl.setAttribute("role", "toolbar");
-    this.barEl.setAttribute("aria-label", t("toolbar.barLabel"));
+    this.barEl.setAttribute("aria-labelledby", barLabel.id);
     // An upright bar taller than its room scrolls: say so at the ends it can go.
     this.barEl.addEventListener("scroll", () => this.syncScrollCues(), { passive: true });
     this.barDock = parseBarDock(options.barDock);
@@ -1436,8 +1468,14 @@ export class Toolbar {
     this.preset = options.preset ?? "own";
     // The pill always floats over the page (styles.css, `.is-floating`).
     this.optionsEl = host.createDiv({ cls: "goodobsidian-options is-floating" });
+    const optionsLabel = this.host.createSpan({
+      cls: "goodobsidian-sr-only",
+      text: t("toolbar.optionsLabel"),
+      attr: { id: `goodobsidian-options-label-${labelId}` },
+    });
+    this.disposers.push(() => optionsLabel.remove());
     this.optionsEl.setAttribute("role", "toolbar");
-    this.optionsEl.setAttribute("aria-label", t("toolbar.optionsLabel"));
+    this.optionsEl.setAttribute("aria-labelledby", optionsLabel.id);
     // A finger drag on a bar, the pill or a popover's slider is ours, not
     // one of Obsidian's swipes, which would open a sidebar (CLAUDE.md).
     this.barEl.dataset.ignoreSwipe = "true";
@@ -1656,6 +1694,10 @@ export class Toolbar {
         this.callbacks.onRuler?.();
       });
     }
+    if (cb.onWritingGuides) {
+      item("guides", this.addGuidesButton(tools), () => this.callbacks.onWritingGuides?.());
+      this.syncWritingGuides();
+    }
     const action = (
       id: BarItemId,
       rank: number,
@@ -1762,6 +1804,34 @@ export class Toolbar {
     );
     this.setLayout(this.options.layout ?? defaultLayout(), false);
     this.watchCrowding();
+    if (!this.practice && this.disposers) {
+      this.disposers.push(
+        bindDirectBarGestures({
+          host: this.host,
+          barEl: this.barEl,
+          zones: () => this.zoneEls,
+          accessoriesButton: () => this.accessoriesButton,
+          penRowTarget: () =>
+            this.optionsVisible && (this.state.tool === "pen" || this.state.tool === "highlighter")
+              ? (this.optionsEl.querySelector<HTMLElement>(".goodobsidian-pen-types") ??
+                this.optionsEl)
+              : null,
+          barDock: () => this.barDock,
+          layout: () => this.laid(),
+          preset: () => this.preset,
+          canReorder: () => !this.pdfTab,
+          isEditing: () => this.editor !== null,
+          onPreviewLayout: this.callbacks.onLayout ? (next) => this.setLayout(next) : undefined,
+          onCommitLayout: this.callbacks.onLayout
+            ? (next) => {
+                this.setLayout(next);
+                this.callbacks.onLayout?.(next);
+              }
+            : undefined,
+          onCommitDock: this.callbacks.onSetBarDock,
+        }),
+      );
+    }
   }
 
   /**
@@ -2300,7 +2370,7 @@ export class Toolbar {
   /** Light the accessories button while one of the items its menu lists is on. */
   private syncAccessoriesMark(): void {
     const listed = menuItems(this.layout);
-    const hiddenOn = (["ruler", "sticky", "stylus"] as const).some((id) => {
+    const hiddenOn = (["ruler", "guides", "sticky", "stylus"] as const).some((id) => {
       const button = this.barItems.get(id);
       return button !== undefined && button.hasClass("is-on") && listed.includes(id);
     });
@@ -2314,7 +2384,12 @@ export class Toolbar {
    * for them here) are skipped. `relayout` refits the bar and moves the
    * indicator, as a live change needs.
    */
-  setLayout(raw: ToolbarLayout, relayout = true): void {
+  setLayout(raw: ToolbarLayout, relayout = true, rebuildOptions = true): void {
+    // Cancel any live pen-row preview before installing an incoming layout so
+    // preview rollback cannot overwrite the new layout when the pill rebuilds.
+    if (rebuildOptions && this.penTypeDragDisposers?.length) {
+      for (const dispose of this.penTypeDragDisposers.splice(0)) dispose();
+    }
     // A saved pen deleted meanwhile has no button.
     const pens = this.callbacks.savedPens?.() ?? [];
     const ids = new Set(pens.flatMap((pen) => (pen.id === undefined ? [] : [pen.id])));
@@ -2341,8 +2416,8 @@ export class Toolbar {
     this.editor?.refresh();
     if (!relayout) return;
     const tool = this.state.tool === "highlighter" ? "pen" : this.state.tool;
-    // The pen's row loses or gains the types now on the bar.
-    if (tool === "pen") this.buildOptions();
+    // The pen's row loses or gains the types now on the bar (skipped during live pen-row drag preview).
+    if (rebuildOptions && tool === "pen") this.buildOptions();
     this.syncActive();
     this.fitBar(tool);
     this.placeIndicator(tool, null);
@@ -2658,6 +2733,7 @@ export class Toolbar {
           }
         : undefined,
       layout: () => this.layoutNow,
+      preview: (layout) => this.setLayout(layout),
       apply: (layout) => {
         this.setLayout(layout);
         save(layout);
@@ -2728,7 +2804,7 @@ export class Toolbar {
         if (this.pdfTab && hiddenOnPdfTab(id)) continue;
         const row = body.createEl("button", {
           cls: "goodobsidian-wide goodobsidian-pen-row goodobsidian-accessory-row",
-          attr: { role: "menuitem" },
+          attr: { role: "menuitem", "data-more-item": id },
         });
         iconOrText(row.createSpan({ cls: "goodobsidian-accessory-icon" }), BAR_ITEM_ICONS[id], "");
         row.createSpan({ text: BAR_ITEM_LABELS[id] });
@@ -2757,6 +2833,27 @@ export class Toolbar {
       this.keepPopoverInside(anchor);
     };
     this.popoverRender();
+    if (!this.practice && this.callbacks.onLayout) {
+      this.moreToolsDrag?.destroy();
+      this.moreToolsDrag = bindMoreToolsDrag({
+        menuEl: body,
+        host: this.host,
+        barEl: this.barEl,
+        zones: () => this.zoneEls,
+        accessoriesButton: () => this.accessoriesButton,
+        barDock: () => this.barDock,
+        layout: () => this.laid(),
+        preset: () => this.preset,
+        canReorder: () => !this.pdfTab,
+        isEditing: () => this.editor !== null,
+        onPreviewLayout: (next) => this.setLayout(next),
+        onCommitLayout: (next) => {
+          this.setLayout(next);
+          this.callbacks.onLayout?.(next);
+        },
+        onDismissMenu: () => this.closePopover(),
+      });
+    }
   }
 
   /**
@@ -2821,6 +2918,62 @@ export class Toolbar {
    * chevron shows, and a tap there opens its kinds and its snapping, as the
    * lasso's chevron does.
    */
+  /**
+   * Writing guides, as the ruler: a tap turns them on or off; while they
+   * are on a chevron shows, and a tap there opens their look.
+   */
+  private addGuidesButton(parent: HTMLElement): HTMLButtonElement {
+    ensureWritingGuidesIcon();
+    const label = t("toolbar.tool.guides");
+    const button = parent.createEl("button", { cls: "goodobsidian-tool has-caret" });
+    iconOrText(button, WRITING_GUIDES_ICON, label);
+    button.setAttr("aria-label", label);
+    button.setAttribute("aria-pressed", "false");
+    iconOrText(button.createSpan({ cls: "goodobsidian-tool-caret" }), "chevron-down", "");
+    button.addEventListener("click", (event) => {
+      const box = button.getBoundingClientRect();
+      const onCaret = button.hasClass("is-on") && event.detail !== 0;
+      if (onCaret && event.clientX >= box.right - RULER_CARET_STRIP) {
+        this.toggleGuidesPopover(button);
+        return;
+      }
+      this.closePopover();
+      this.callbacks.onWritingGuides?.();
+    });
+    this.fold(FOLD_RANK.guides, button, WRITING_GUIDES_ICON, label, () =>
+      this.callbacks.onWritingGuides?.(),
+    );
+    this.guidesButton = button;
+    return button;
+  }
+
+  /** The guides were turned on or off: the button's mark and chevron follow. */
+  syncWritingGuides(): void {
+    const button = this.guidesButton;
+    const on = this.callbacks.writingGuidesEnabled?.() === true;
+    if (!button || button.hasClass("is-on") === on) return;
+    button.toggleClass("is-on", on);
+    button.setAttribute("aria-pressed", String(on));
+    this.syncAccessoriesMark();
+    if (!on && this.popoverKind === "guides") this.closePopover();
+    const tool = this.state.tool === "highlighter" ? "pen" : this.state.tool;
+    this.fitBar(tool);
+    this.placeIndicator(tool, null);
+  }
+
+  private toggleGuidesPopover(anchor: HTMLElement): void {
+    const render = this.callbacks.renderWritingGuides;
+    if (this.popoverKind === "guides" || !render) {
+      this.closePopover();
+      return;
+    }
+    const body = this.openPopover("guides", anchor);
+    this.popover?.addClass("has-arrow");
+    body.addClass("goodobsidian-shape-panel");
+    this.popoverCleanup = render(body, () => this.keepPopoverInside(anchor));
+    this.keepPopoverInside(anchor);
+  }
+
   private addRulerButton(parent: HTMLElement): HTMLButtonElement {
     const button = parent.createEl("button", {
       cls: "goodobsidian-tool goodobsidian-ruler-button has-caret",
@@ -3138,6 +3291,7 @@ export class Toolbar {
     // Where the pill is now, mid-glide or not, so it can glide from there.
     const before = this.pillBox();
     this.stopPillMorph();
+    for (const dispose of this.penTypeDragDisposers.splice(0)) dispose();
     // The colour row is rebuilt too: keep it scrolled where it was.
     const colorRow = this.optionsEl.querySelector<HTMLElement>(".goodobsidian-pen-colors");
     if (colorRow) this.colorRowScroll = colorRow.scrollLeft;
@@ -3387,22 +3541,93 @@ export class Toolbar {
           this.choosePenType(spec);
         } else if (!this.practice) this.openPenMenu(pen);
       });
-      bindPenTypeDrag(pen, {
-        row: () => row,
-        upright: () => isUpright(this.pillDock),
-        onMove: (gap) => {
-          // Gaps count the pens shown; a practice sheet hides the highlighter.
-          const before = shown[gap];
-          const at = before === undefined ? order.length : order.indexOf(before);
-          const next = movePenType(order, spec.id, at);
-          if (next.join() === order.join()) return;
-          this.state.penTypeOrder = next;
-          this.callbacks.onPenTypeOrder?.(next);
-          this.penRowScroll = upright ? row.scrollTop : row.scrollLeft;
-          this.buildOptions();
-          this.syncActive();
-        },
-      });
+      const slotId = penTypeSlot(spec.id);
+      let penStartLayout: ToolbarLayout | null = null;
+      let penPreviewLayout: ToolbarLayout | null = null;
+      const barCtx = {
+        host: this.host,
+        barEl: this.barEl,
+        zones: () => this.zoneEls,
+        barDock: () => this.barDock,
+        layout: () => this.laid(),
+        preset: () => this.preset,
+        canReorder: () => !this.pdfTab,
+        isEditing: () => this.editor !== null,
+      };
+      this.penTypeDragDisposers.push(
+        bindPenTypeDrag(pen, {
+          row: () => row,
+          upright: () => isUpright(this.pillDock),
+          onMove: (gap) => {
+            // Gaps count the pens shown; a practice sheet hides the highlighter.
+            const before = shown[gap];
+            const at = before === undefined ? order.length : order.indexOf(before);
+            const next = movePenType(order, spec.id, at);
+            if (next.join() === order.join()) return;
+            this.state.penTypeOrder = next;
+            this.callbacks.onPenTypeOrder?.(next);
+            this.penRowScroll = upright ? row.scrollTop : row.scrollLeft;
+            this.buildOptions();
+            this.syncActive();
+          },
+          barDrop:
+            !this.practice &&
+            this.callbacks.onLayout &&
+            !this.pdfTab &&
+            this.preset !== "essentials"
+              ? {
+                  onHover: (x, y) => {
+                    // Require deliberate entry onto the main bar itself (never overlapping the pen row).
+                    const hit =
+                      pointInBox(x, y, this.barEl.getBoundingClientRect(), 0) &&
+                      !pointInBox(x, y, row.getBoundingClientRect(), 4);
+                    if (!hit) return false;
+                    if (!penStartLayout) {
+                      penStartLayout = this.laid();
+                      penPreviewLayout = penStartLayout;
+                      this.barEl.addClass("is-reordering");
+                    }
+                    const next = computeBarPlacement(
+                      barCtx,
+                      penPreviewLayout ?? penStartLayout,
+                      slotId,
+                      x,
+                      y,
+                    );
+                    if (penPreviewLayout && !sameLayout(penPreviewLayout, next)) {
+                      penPreviewLayout = next;
+                      // Keep the pen row + its touch listeners alive during preview; rebuild only on drop.
+                      this.setLayout(next, true, false);
+                    }
+                    return true;
+                  },
+                  onDrop: () => {
+                    this.barEl.removeClass("is-reordering");
+                    const before = penStartLayout;
+                    const after = penPreviewLayout;
+                    penStartLayout = null;
+                    penPreviewLayout = null;
+                    if (before && after && !sameLayout(before, after)) {
+                      this.setLayout(after);
+                      this.callbacks.onLayout?.(after);
+                    }
+                  },
+                  onCancel: () => {
+                    this.barEl.removeClass("is-reordering");
+                    if (
+                      penStartLayout &&
+                      penPreviewLayout &&
+                      !sameLayout(penStartLayout, penPreviewLayout)
+                    ) {
+                      this.setLayout(penStartLayout, true, false);
+                    }
+                    penStartLayout = null;
+                    penPreviewLayout = null;
+                  },
+                }
+              : undefined,
+        }),
+      );
       this.penTypeButtons.set(spec.id, pen);
     }
     this.fitPenRow(row, upright);
@@ -3901,8 +4126,9 @@ export class Toolbar {
     const sustain = this.options?.laserSustain?.() ?? true;
     const activeNote = t(sustain ? "toolbar.laser.noteHold" : "toolbar.laser.note");
     const otherNote = t(sustain ? "toolbar.laser.note" : "toolbar.laser.noteHold");
-    const noteSpans = this.toolNote("pointer", activeNote, otherNote);
-    if (!this.dockedAcross()) this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
+    const showNote = !this.dockedAcross() && !isUpright(this.pillDock);
+    const noteSpans = showNote ? this.toolNote("pointer", activeNote, otherNote) : null;
+    if (showNote) this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
     const color = this.laserColor();
     if (this.dockedAcross()) {
       this.colorRow(
@@ -4238,7 +4464,7 @@ export class Toolbar {
     );
     // Page zoom keeps the note it always had; the Zoom box needs none: the
     // target it draws, and the window, show what a drag did.
-    if (!boxMode && !this.dockedAcross()) {
+    if (!boxMode && !this.dockedAcross() && !isUpright(this.pillDock)) {
       this.optionsEl.createDiv({ cls: "goodobsidian-sep" });
       this.toolNote("zoom-in", t("toolbar.zoom.note"));
     }
@@ -7013,6 +7239,7 @@ export class Toolbar {
 
   private closePopover(): void {
     const kind = this.popoverKind;
+    if (kind === "accessories") this.moreToolsDrag?.cancelPending();
     // The font search goes with it: the box it took the focus from takes it back.
     this.textFieldDone(null);
     this.popoverKeyboard?.end();
@@ -7021,6 +7248,8 @@ export class Toolbar {
     this.popover = null;
     this.popoverKind = null;
     this.popoverRender = null;
+    this.popoverCleanup?.();
+    this.popoverCleanup = null;
     this.popoverRefit = null;
     this.sizeMarksRender = null;
     // The sticky colours closed with a note still waiting (Escape, another
@@ -8325,6 +8554,9 @@ export class Toolbar {
 
   /** Close what is open, drop every listener outside the toolbar, and take both tiers away. */
   destroy(): void {
+    this.moreToolsDrag?.destroy();
+    this.moreToolsDrag = null;
+    for (const dispose of this.penTypeDragDisposers.splice(0)) dispose();
     this.hideUpdateTip();
     this.closePopover();
     for (const [popover, timer] of this.leavingPopovers) {

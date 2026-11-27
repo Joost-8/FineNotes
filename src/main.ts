@@ -95,6 +95,7 @@ import { fullScreenGroups, parseFullScreen, storedFullScreen } from "./view/full
 import { EINK_STORAGE_KEY, EinkScreen } from "./view/eink-screen";
 import { type PillDock, parsePillDock } from "./view/pill-dock-model";
 import { type BarDock, parseBarDock, pillAfterBarMove } from "./view/bar-dock-model";
+import { initToolbarLock } from "./view/toolbar-lock";
 import { parsePillRowOn } from "./view/pill-row-model";
 import { ShortcutStore } from "./view/shortcut-store";
 import { buildInkFile, parseInkFile } from "./model/serialize";
@@ -241,6 +242,7 @@ import {
   moveStyles,
 } from "./model/library-style";
 import { exportNamesOf, movePdfNames } from "./export/export-name";
+import { moveGuidePaths } from "./model/writing-guides";
 import { prepareImageBytes } from "./view/image-import";
 import { LibraryView, unstackTabsOf } from "./view/library-view";
 import { MARKDOWN_VIEW_TYPE, ViewRouter, isInkNote, showAs } from "./view/view-routing";
@@ -650,6 +652,10 @@ export default class GoodObsidianPlugin extends Plugin {
     this.providers.set(cloud.id, cloud);
 
     await this.loadSettings();
+    // Lock toolbar (toolbar-lock.ts), kept per device as the bar's edge is.
+    initToolbarLock(this.app.loadLocalStorage("goodobsidian:toolbar-locked"), (on) =>
+      this.app.saveLocalStorage("goodobsidian:toolbar-locked", on ? "true" : null),
+    );
     // Before anything with words in it is made.
     await this.language.start();
     // A notebook's typed export name (#318) names its companion PDF too, and
@@ -3841,12 +3847,23 @@ export default class GoodObsidianPlugin extends Plugin {
     const nextStyles = to === undefined ? dropStyles(styles, from) : moveStyles(styles, from, to);
     const names = exportNamesOf(this.settings.exportNames);
     const nextNames = movePdfNames(names, from, to);
+    // A notebook's writing guides go where it goes.
+    const guides = JSON.stringify(this.settings.writingGuideNotebooks ?? {});
+    const nextGuides = moveGuidePaths(this.settings.writingGuideNotebooks, from, to);
+    const guidesChanged = JSON.stringify(nextGuides) !== guides;
     const same = (a: string[], b: string[]): boolean =>
       a.length === b.length && a.every((p, i) => p === b[i]);
     const stylesChanged = JSON.stringify(nextStyles) !== JSON.stringify(styles);
     const namesChanged = JSON.stringify(nextNames) !== JSON.stringify(names);
-    if (same(nextStars, stars) && same(nextHidden, hidden) && !stylesChanged && !namesChanged)
+    if (
+      same(nextStars, stars) &&
+      same(nextHidden, hidden) &&
+      !stylesChanged &&
+      !namesChanged &&
+      !guidesChanged
+    )
       return;
+    this.settings.writingGuideNotebooks = nextGuides;
     this.settings.libraryStars = nextStars;
     this.settings.libraryHidden = nextHidden;
     this.settings.libraryFolders = nextStyles;

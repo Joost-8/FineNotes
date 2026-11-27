@@ -602,6 +602,10 @@ export interface GoodObsidianSettings {
   handwriteBlocksChosen: boolean;
   /** The notebook of "One notebook for everything"; "" for none. */
   handwriteNotebook: string;
+  /** Writing guides: the look chosen last, a notebook's first look (`model/writing-guides.ts`). */
+  writingGuides?: Record<string, unknown>;
+  /** Each notebook's writing guides by its path: `{ on, ...look }`. */
+  writingGuideNotebooks?: Record<string, unknown>;
 }
 
 // The records are copies, so a host that edits its settings in place cannot

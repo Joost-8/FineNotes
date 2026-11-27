@@ -19,6 +19,7 @@
  */
 
 import { ICON_STYLUS_ONLY } from "../constants";
+import { WRITING_GUIDES_ICON } from "../model/writing-guides";
 import { t } from "../i18n/translate";
 import {
   SAVED_PEN_TYPES,
@@ -43,6 +44,7 @@ export type CoreItemId =
   | "sticker"
   | "sticky"
   | "ruler"
+  | "guides"
   | "tape"
   | "record"
   | "fill"
@@ -121,6 +123,7 @@ export const BAR_ITEMS: readonly CoreItemId[] = [
   "sticker",
   "sticky",
   "ruler",
+  "guides",
   "tape",
   "record",
   "fill",
@@ -359,6 +362,9 @@ export const BAR_ITEM_LABELS: Record<CoreItemId, string> = {
   get ruler() {
     return t("toolbar.tool.ruler");
   },
+  get guides() {
+    return t("toolbar.tool.guides");
+  },
   get tape() {
     return t("toolbar.tool.coverTape");
   },
@@ -427,6 +433,7 @@ export const BAR_ITEM_ICONS: Record<CoreItemId, string> = {
   sticker: "sticker",
   sticky: "sticky-note",
   ruler: "ruler",
+  guides: WRITING_GUIDES_ICON,
   tape: "bandage",
   record: "mic",
   fill: "paint-bucket",

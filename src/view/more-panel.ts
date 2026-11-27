@@ -139,8 +139,11 @@ const CUSTOM_DESK = LIGHT_PAPER.desk;
 const PANEL_WIDTH = 330;
 const THUMB_WIDTH = 34;
 
+let nextMoreTitleId = 0;
+
 export class MorePanel {
   private readonly el: HTMLElement;
+  private readonly titleId = `goodobsidian-more-title-${++nextMoreTitleId}`;
   private readonly dispose: Array<() => void> = [];
   /**
    * Keeps the go-to-page field above the iPad keyboard and lifts Obsidian's
@@ -157,7 +160,7 @@ export class MorePanel {
   ) {
     this.el = shownDoc().body.createDiv({ cls: "goodobsidian-more" });
     this.el.setAttribute("role", "dialog");
-    this.el.setAttribute("aria-label", t("common.more"));
+    this.el.setAttribute("aria-labelledby", this.titleId);
     this.keyboard = new DialogKeyboard(this.el);
     this.render();
     this.place();
@@ -182,7 +185,11 @@ export class MorePanel {
 
   private render(): void {
     const { page, actions } = this;
-    this.el.createDiv({ cls: "goodobsidian-more-title", text: t("common.more") });
+    this.el.createDiv({
+      cls: "goodobsidian-more-title",
+      text: t("common.more"),
+      attr: { id: this.titleId },
+    });
 
     // The tool bar never scrolls: what did not fit on it is first here.
     const folded = page.folded ?? [];
