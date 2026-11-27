@@ -1175,6 +1175,15 @@ export class GoodObsidianSettingTab extends PluginSettingTab {
             ),
             "lightbulb",
           ),
+          this.tile(
+            toggle(
+              "keepOptionsAcrossTools",
+              t("settings.keepOptionsAcrossTools.name"),
+              t("settings.keepOptionsAcrossTools.line"),
+              ["options", "pill", "tool switch", "open", "closed", "remember"],
+            ),
+            "panel-top-open",
+          ),
           this.art(
             dropdown(
               "checkForUpdates",

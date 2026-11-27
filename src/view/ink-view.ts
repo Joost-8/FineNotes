@@ -4993,6 +4993,7 @@ export class InkView extends TextFileView {
       this.toolState,
       {
         returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,
+        keepOptionsAcrossTools: () => this.settings.keepOptionsAcrossTools === true,
         onToolChange: (tool) => {
           this.surface?.setTool(tool);
           if (tool === "text" && this.surface) this.plugin.offerTextHint(this.surface);
@@ -5396,6 +5397,7 @@ export class InkView extends TextFileView {
         },
         isLocked: () => this.isProtected(),
         returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,
+        keepOptionsAcrossTools: () => this.settings.keepOptionsAcrossTools === true,
         returnToPenAfterUse: () => this.settings.returnToPenAfterUse === true,
         straightenHighlighter: () => this.settings.straightHighlighter !== false,
         highlighterSnapsToText: () => this.settings.highlighterSnapText !== false,

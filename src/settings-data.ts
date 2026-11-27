@@ -373,6 +373,8 @@ export interface GoodObsidianSettings {
   returnToPenOnReselect: boolean;
   /** Finish one secondary-tool use, then return to the pen or highlighter used before. */
   returnToPenAfterUse: boolean;
+  /** A tool switch keeps the options pill open or closed as it was, for every tool, the pen included (#338). Off: each tool remembers its own, and the pen's start tucked. */
+  keepOptionsAcrossTools: boolean;
   /** Double-tap with two fingers to undo, with three to redo. */
   fingerTapUndo: boolean;
   /** Read handwriting on this device: search, titles and links from ink. */
@@ -692,6 +694,7 @@ export const DEFAULT_SETTINGS: GoodObsidianSettings = {
   pencilTilt: false,
   returnToPenOnReselect: false,
   returnToPenAfterUse: false,
+  keepOptionsAcrossTools: false,
   fingerTapUndo: true,
   handwritingOnDevice: true,
   replayInk: true,
