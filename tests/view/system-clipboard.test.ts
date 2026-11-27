@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  clearSystemClipboard,
   onSystemTextWritten,
   readSystemClipboard,
   writeSelectionText,
@@ -48,10 +49,20 @@ describe("readSystemClipboard", () => {
     vi.stubGlobal("navigator", { clipboard: { read: () => Promise.resolve(items) } });
 
   it("reads a HEIC photo as a picture (discussion #112)", async () => {
-    holding(item(["image/heic"]));
+    holding(item(["image/heic"], { "image/heic": "heic bytes" }));
     const found = await readSystemClipboard();
     expect(found.kind).toBe("image");
     if (found.kind === "image") expect(found.file.type).toBe("image/heic");
+  });
+
+  it("takes an empty picture as none, and pastes the text beside it (Android)", async () => {
+    holding(item(["image/png"]), item(["text/plain"], { "text/plain": "Fourier" }));
+    expect(await readSystemClipboard()).toEqual({ kind: "text", text: "Fourier" });
+  });
+
+  it("pastes the text of an item whose picture is empty (Chromium keeps both in one item)", async () => {
+    holding(item(["image/png", "text/plain"], { "text/plain": "Fourier" }));
+    expect(await readSystemClipboard()).toEqual({ kind: "text", text: "Fourier" });
   });
 
   it("says something was kept from the page when an item has no types (iPad Photos)", async () => {
@@ -97,11 +108,44 @@ describe("writeSelectionText", () => {
     }
   });
 
+  it("writes plain text only where a rich write pastes as nothing (Android)", async () => {
+    const write = vi.fn(async () => undefined);
+    const writeText = vi.fn(async () => undefined);
+    vi.stubGlobal("navigator", { clipboard: { write, writeText } });
+    vi.stubGlobal("ClipboardItem", class {});
+    expect(await writeSelectionText(selection, () => true, true)).toBe(true);
+    expect(write).not.toHaveBeenCalled();
+    expect(writeText).toHaveBeenCalledWith(selection.text);
+  });
+
   it("falls back to plain text only while the selection is still current", async () => {
     const writeText = vi.fn(async () => undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     expect(await writeSelectionText(selection, () => true)).toBe(true);
     expect(await writeSelectionText(selection, () => false)).toBe(false);
     expect(writeText).toHaveBeenCalledExactlyOnceWith(selection.text);
+  });
+});
+
+describe("clearSystemClipboard", () => {
+  it("empties the clipboard without telling the text listeners (the ink stays the fresher copy)", async () => {
+    const writeText = vi.fn(async () => undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const heard = vi.fn();
+    const stop = onSystemTextWritten(heard);
+    try {
+      expect(await clearSystemClipboard()).toBe(true);
+      expect(writeText).toHaveBeenCalledWith("");
+      expect(heard).not.toHaveBeenCalled();
+    } finally {
+      stop();
+    }
+  });
+
+  it("never rejects", async () => {
+    vi.stubGlobal("navigator", { clipboard: { writeText: () => Promise.reject(new Error("no")) } });
+    expect(await clearSystemClipboard()).toBe(false);
+    vi.stubGlobal("navigator", {});
+    expect(await clearSystemClipboard()).toBe(false);
   });
 });

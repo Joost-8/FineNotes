@@ -184,6 +184,7 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- On Android, copied text boxes paste as text again, a FineNotes copy pastes back after leaving the app, and copying a whole page no longer takes seconds (Android cannot paste copied ink as a picture into other apps).
 - Picking another pinned pen while "Until the pen lifts" was waiting no longer reopens the options ([#338](https://github.com/Joost-8/FineNotes/pull/338)).
 - **Toolbar details** ([#336](https://github.com/Joost-8/FineNotes/pull/336), thanks @koltensaccount): no tooltip over the toolbar's empty space; the page shows the desk colour while thumbnails slide; the page selection bar and the strip under a bottom toolbar take the toolbar's look.
 - **Beautify on a slanted line.** Words Beautify left alone no longer end up
