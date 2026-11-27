@@ -2905,8 +2905,9 @@ export class InkSurface {
   private fadedStrokes: ReadonlySet<string> = new Set();
   /** `[[links]]` written by hand, found on the device, by page id: offered, not made. */
   private linkSuggestions = new Map<string, readonly HandwrittenLink[]>();
-  /** Words Grape may have misread, by page id: a wavy underline each. */
+  /** Words to check, by page id: a dotted underline each, red and wavy for the ones in `spelt`. */
   private wordFlags = new Map<string, ReadonlyArray<readonly string[]>>();
+  private readonly spelt = new Map<string, ReadonlySet<string>>();
   private readonly wordMarks: HTMLElement[] = [];
   /** The flagged word whose menu is open (page id, stroke key): drawn red. */
   private activeWordFlag: { pageId: string; key: string; strokes: readonly string[] } | null = null;
@@ -17766,12 +17767,9 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
     this.syncSectionRibbons();
   }
 
-  /**
-   * Underline words on a page that Grape may have misread; a finger tap on
-   * one (a right-click with a mouse) calls `onFlaggedWord`. Replaces the
-   * page's earlier flags.
-   */
-  setWordFlags(pageId: string, flags: ReadonlyArray<readonly string[]>): void {
+  /** Underline words to check, as spelling those keyed in `spelling`; a tap calls `onFlaggedWord`. */
+  setWordFlags(pageId: string, flags: readonly string[][], spelling?: Set<string>): void {
+    if (spelling) this.spelt.set(pageId, spelling); // else the last ones stand till the next
     if (flags.length > 0) this.wordFlags.set(pageId, flags);
     else this.wordFlags.delete(pageId);
     this.syncSectionRibbons();
@@ -17800,8 +17798,8 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
   }
 
   /**
-   * A dotted underline under each flagged word whose ink is still there, red
-   * and wavy for the one whose menu is open. Returns how many.
+   * An underline under each flagged word whose ink is still there (its
+   * kind's), wavy and full for the one whose card is open. Returns how many.
    */
   private syncWordMarks(): number {
     let used = 0;
@@ -17824,6 +17822,7 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
           this.wordMarks.push(mark);
         }
         mark.removeClass("is-hidden");
+        mark.toggleClass("is-spelling", this.spelt.get(page.id)?.has(strokeKey(strokes)) === true);
         const active = this.activeWordFlag;
         mark.toggleClass(
           "is-active",
