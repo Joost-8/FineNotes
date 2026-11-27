@@ -82,17 +82,15 @@ describe("the side button's click set to the eraser", () => {
 });
 
 describe("first tap selects, second tap opens options", () => {
-  it("never opens a pill on a tool switch", () => {
-    expect(optionsAfterSwitch(false, true, false)).toBe(false);
-    expect(optionsAfterSwitch(false, false, false)).toBe(false);
+  it("keeps the options pill closed when switching from a closed state", () => {
+    expect(optionsAfterSwitch(false, false)).toBe(false);
   });
-  it("keeps a showing pill showing, unless the next tool was left tucked", () => {
-    expect(optionsAfterSwitch(true, true, false)).toBe(true);
-    expect(optionsAfterSwitch(true, false, false)).toBe(false);
+  it("keeps the options pill open when switching from an open state", () => {
+    expect(optionsAfterSwitch(true, false)).toBe(true);
   });
-  it("shows the remembered pill when the second tap returns to the pen", () => {
-    expect(optionsAfterSwitch(false, true, true)).toBe(true);
-    expect(optionsAfterSwitch(false, false, true)).toBe(false);
+  it("shows the options pill when the second tap returns to the pen", () => {
+    expect(optionsAfterSwitch(false, true)).toBe(true);
+    expect(optionsAfterSwitch(true, true)).toBe(true);
   });
 });
 

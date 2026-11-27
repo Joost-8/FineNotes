@@ -1388,8 +1388,6 @@ export class Toolbar {
   private optionsVisible: boolean;
   /** The tool's pill was showing when Customize toolbar opened: it comes back when that closes. */
   private optionsBeforeCustomize = false;
-  /** Tools whose options were tucked away when they were left: they come back tucked. */
-  private readonly tuckedTools = new Set<ActiveTool>();
   /** A stroke tucked the options away ({@link tuckOptions}), not a tap: they may come back. */
   private tuckedByStroke = false;
   /**
@@ -2547,6 +2545,7 @@ export class Toolbar {
     const spec = PEN_TYPES.find((p) => p.id === (type ?? pen?.type));
     if (!spec || (this.practice && spec.tool === "highlighter")) return;
     this.closePopover();
+    this.tuckedByStroke = false;
     if (pen) {
       this.applySavedPen(pen);
       return;
@@ -3053,7 +3052,6 @@ export class Toolbar {
         this.handButton = "main";
         this.closePopover();
         this.tuckedByStroke = false;
-        this.optionsVisible = true;
         this.applySavedPen(own);
         return;
       }
@@ -3106,17 +3104,9 @@ export class Toolbar {
   }
 
   /**
-   * Remember whether the tool being left had its options showing. A switch
-   * never opens the next tool's options (`optionsAfterSwitch`): a pill that
-   * was showing stays, with the next tool's controls, unless that tool was
-   * last left tucked away. The pen's start tucked away every time it is
-   * picked ({@link STARTS_TUCKED}). Highlighter is a pen type, so the two
-   * share one memory.
-   */
-  /**
-   * Whether `tool`'s pill starts tucked away when picked ({@link STARTS_TUCKED}):
-   * not while it docks as a row, where it covers no writing and tucking it
-   * would only move the page at every switch to the pen.
+   * Whether `tool`'s pill starts tucked away when a notebook opens
+   * ({@link STARTS_TUCKED}): not while it docks as a row, where it covers no
+   * writing and tucking it would only move the page.
    */
   private startsTucked(tool: ActiveTool): boolean {
     return (
@@ -3125,16 +3115,17 @@ export class Toolbar {
     );
   }
 
+  /**
+   * Carry the current options pill open/closed state onto the next tool
+   * (`optionsAfterSwitch`): an open pill stays open with the new tool's
+   * controls, and a closed pill stays closed until tapped again.
+   */
   private leaveToolFor(next: ActiveTool): void {
     if (next !== "laser") this.state.laserFromTool = null;
     if (optionsKey(next) === optionsKey(this.optionsTool)) return;
     this.tuckedByStroke = false;
-    if (this.optionsVisible) this.tuckedTools.delete(optionsKey(this.optionsTool));
-    else this.tuckedTools.add(optionsKey(this.optionsTool));
-    const remembered = !this.tuckedTools.has(optionsKey(next)) && !this.startsTucked(next);
     this.optionsVisible = optionsAfterSwitch(
       this.optionsVisible,
-      remembered,
       this.callbacks.returnToPenOnReselect?.() === true,
     );
     this.optionsTool = next;
