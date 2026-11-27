@@ -7,7 +7,8 @@
  * them: the document's listener cannot hold off the scroll, Android takes the
  * touch as one and cancels the drag (`pointercancel`), and a drag listening
  * only on the element never hears its end. Moved into a hidden holder on the
- * body, the element stays on the event path to the document and window.
+ * body, the element stays on the event path to the document and window; a
+ * copy takes its place, so what is still on screen does not shift under it.
  */
 
 /**
@@ -17,6 +18,7 @@
 export function keepInPage(el: HTMLElement): () => void {
   const holder = el.ownerDocument.body.createDiv({ cls: "goodobsidian-touch-keeper" });
   holder.hidden = true;
+  if (el.isConnected) el.replaceWith(el.cloneNode(true));
   holder.appendChild(el);
   let released = false;
   return () => {
@@ -24,9 +26,4 @@ export function keepInPage(el: HTMLElement): () => void {
     released = true;
     holder.remove();
   };
-}
-
-/** As {@link keepInPage}, only once `el` has already left the page; else nothing to release. */
-export function keepIfDropped(el: HTMLElement): (() => void) | null {
-  return el.isConnected ? null : keepInPage(el);
 }

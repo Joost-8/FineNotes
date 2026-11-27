@@ -1,7 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { keepIfDropped, keepInPage } from "../../src/view/touch-keeper";
+import { keepInPage } from "../../src/view/touch-keeper";
 
-/** A stand-in element: in the page while its parent is, the body always. */
+type Node = { parent: FakeHolder | null };
+
+class FakeHolder {
+  hidden = false;
+  kids: Node[] = [];
+  constructor(
+    readonly cls: string,
+    private readonly body: { children: unknown[] },
+  ) {}
+  appendChild(node: Node): void {
+    node.parent?.kids.splice(node.parent.kids.indexOf(node), 1);
+    node.parent = this;
+    this.kids.push(node);
+  }
+  remove(): void {
+    this.body.children = this.body.children.filter((c) => c !== this);
+  }
+}
+
+/** A stand-in element: in the page while its parent is on the body. */
 function fakeDom() {
   const body: { children: unknown[]; createDiv: (o: { cls: string }) => FakeHolder } = {
     children: [],
@@ -17,24 +36,16 @@ function fakeDom() {
       return this.parent !== null && body.children.includes(this.parent);
     },
     ownerDocument: { body },
+    cloneNode: () => ({ parent: null, copy: true }),
+    replaceWith(other: Node): void {
+      const parent = this.parent;
+      if (!parent) return;
+      parent.kids[parent.kids.indexOf(this)] = other;
+      other.parent = parent;
+      this.parent = null;
+    },
   };
   return { body, el };
-}
-
-class FakeHolder {
-  hidden = false;
-  kids: unknown[] = [];
-  constructor(
-    readonly cls: string,
-    private readonly body: { children: unknown[] },
-  ) {}
-  appendChild(node: { parent: FakeHolder | null }): void {
-    node.parent = this;
-    this.kids.push(node);
-  }
-  remove(): void {
-    this.body.children = this.body.children.filter((c) => c !== this);
-  }
 }
 
 describe("keeping a dragged element in the page (Android sends its touch moves there)", () => {
@@ -51,14 +62,13 @@ describe("keeping a dragged element in the page (Android sends its touch moves t
     expect(el.isConnected).toBe(false);
   });
 
-  it("keeps an element only once it has left the page", () => {
+  it("leaves a copy where it was, so the menu under the finger does not shift", () => {
     const { body, el } = fakeDom();
-    const holder = body.createDiv({ cls: "row" });
-    holder.appendChild(el);
-    expect(keepIfDropped(el as unknown as HTMLElement)).toBeNull();
-    holder.remove();
-    const release = keepIfDropped(el as unknown as HTMLElement);
-    expect(release).not.toBeNull();
-    expect(el.isConnected).toBe(true);
+    const menu = body.createDiv({ cls: "menu" });
+    menu.appendChild(el);
+    keepInPage(el as unknown as HTMLElement);
+    expect(menu.kids).toHaveLength(1);
+    expect(menu.kids[0]).toMatchObject({ copy: true });
+    expect((body.children[1] as FakeHolder).kids).toEqual([el]);
   });
 });

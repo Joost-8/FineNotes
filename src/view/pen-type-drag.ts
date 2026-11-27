@@ -14,7 +14,6 @@ import { gapAt } from "../model/pen-type-order";
 import { onWindowMoved, winOf } from "./host-window";
 import { moveGhost } from "./bar-direct-gestures";
 import { toolbarLocked } from "./toolbar-lock";
-import { keepIfDropped } from "./touch-keeper";
 
 export interface PenTypeDragOptions {
   /** The row the pens stand in. */
@@ -47,8 +46,8 @@ export function bindPenTypeDrag(pen: HTMLElement, options: PenTypeDragOptions): 
   let gap = 0;
   let overBar = false;
   let swallowUntil = 0;
-  /** The pen left its row while the bar previewed it pinned: kept in the page (touch-keeper.ts). */
-  let releasePen: (() => void) | null = null;
+  /** The pointer id of the finger on the pen, so the window fallback hears only that finger. */
+  let touchPointer: number | null = null;
   /** Ends a finger's drag from the window too, should the pen's own touch events stop. */
   let stopFallback: (() => void) | null = null;
 
@@ -64,7 +63,6 @@ export function bindPenTypeDrag(pen: HTMLElement, options: PenTypeDragOptions): 
     moveGhost(ghost, x, y);
     if (options.barDrop) {
       const hit = options.barDrop.onHover(x, y);
-      releasePen ??= keepIfDropped(pen);
       if (hit) {
         if (!overBar) {
           overBar = true;
@@ -78,8 +76,6 @@ export function bindPenTypeDrag(pen: HTMLElement, options: PenTypeDragOptions): 
       }
     }
 
-    // A pen dropped from its row by a rebuild has no row to move in.
-    if (releasePen) return;
     const rowEl = options.row();
     const upright = options.upright();
     const others = Array.from(rowEl.querySelectorAll<HTMLElement>(".goodobsidian-pentype")).filter(
@@ -133,12 +129,14 @@ export function bindPenTypeDrag(pen: HTMLElement, options: PenTypeDragOptions): 
 
   /**
    * The touch pointer's end, heard on the window: the pen's own touchend
-   * normally comes after it and ends the drag first; when it never comes (the
-   * pen left the page under the finger), this does, a tick later.
+   * normally comes after it and ends the drag first; when it never comes, this
+   * does, a tick later. On Android a pen dragged onto the bar stayed lifted
+   * until Escape (Oskar, 2026-11-27); why its touchend never came is not proven.
    */
   const watchTouchEnd = (win: Window): void => {
     const done = (e: PointerEvent): void => {
       if (e.pointerType !== "touch") return;
+      if (touchPointer !== null && e.pointerId !== touchPointer) return;
       const cancelled = e.type === "pointercancel";
       win.setTimeout(() => {
         if (ghost) end(cancelled);
@@ -167,21 +165,16 @@ export function bindPenTypeDrag(pen: HTMLElement, options: PenTypeDragOptions): 
     }
     if (!ghost) return;
     const droppedOnBar = overBar;
-    const kept = releasePen !== null;
     overBar = false;
     ghost.remove();
     ghost = null;
     pen.removeClass("is-lifted");
-    releasePen?.();
-    releasePen = null;
     swallowUntil = Date.now() + SWALLOW_CLICK_MS;
     if (droppedOnBar) {
       if (cancelled) options.barDrop?.onCancel();
       else options.barDrop?.onDrop();
       return;
     }
-    // Its row was rebuilt without it: nothing of the old order to restore or move.
-    if (kept) return;
     if (cancelled) {
       restoreRowOrder();
       return;
@@ -263,6 +256,7 @@ export function bindPenTypeDrag(pen: HTMLElement, options: PenTypeDragOptions): 
   });
 
   pen.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "touch") touchPointer = event.pointerId;
     if (event.pointerType !== "mouse" || event.button !== 0) return;
     press(event.clientX, event.clientY);
     const win = winOf(pen);
