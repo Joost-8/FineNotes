@@ -28,6 +28,7 @@ import { practiceLines, practiceSetOfDoc } from "../recognition/practice";
 import {
   type PracticeSource,
   CONSENT_VERSION,
+  REMIND_EVERY,
   type ConsentChange,
   SHARE_KINDS,
   SHARE_LICENCE,
@@ -37,6 +38,7 @@ import {
   type ShareKind,
   type SharingLedger,
   agree,
+  autoSends,
   consentChanges,
   inviteDismissed,
   buildBatches,
@@ -49,8 +51,11 @@ import {
   parseLedger,
   pendingItems,
   practiceDrafts,
+  remindDue,
+  reminded,
   requestDelete,
   serializeLedger,
+  setAuto,
   sharingOn,
   stopSharing,
   upgradeDone,
@@ -69,6 +74,9 @@ const PRIVACY_URL = "https://github.com/Joost-8/FineNotes/blob/main/PRIVACY.md";
 /** Rows drawn per kind before "Show all": a long practice history stays quick to open. */
 const FIRST_ROWS = 60;
 
+/** After a word is answered, how long to wait for more before sending or reminding. */
+const ADDED_PAUSE_MS = 60_000;
+
 export function ledgerPath(): string {
   return normalizePath(`${HANDWRITING_FOLDER}/shared.json`);
 }
@@ -81,14 +89,81 @@ export class GrapeSharing implements SharingFeature {
   private items: ShareItem[] | null = null;
   private loading: Promise<void> | null = null;
   private busy = false;
+  private addedTimer = 0;
+  /** The reminder on screen, if any: a new one replaces it. */
+  private remindNotice: Notice | null = null;
+  private destroyed = false;
 
   constructor(private readonly host: SharingHost) {}
+
+  destroy(): void {
+    this.destroyed = true;
+    window.clearTimeout(this.addedTimer);
+    this.remindNotice?.hide();
+  }
 
   start(): void {
     void this.load().then(async () => {
       await this.retryDelete(true);
       await this.retryUpgrade();
+      // What a send by itself left behind (offline, another device's items).
+      await this.newItems(false);
     });
+  }
+
+  itemsAdded(): void {
+    // A burst of answered words is one send, or one reminder.
+    window.clearTimeout(this.addedTimer);
+    this.addedTimer = window.setTimeout(() => void this.newItems(true), ADDED_PAUSE_MS);
+  }
+
+  /**
+   * For someone sharing: send what is new by itself if they chose that,
+   * else, when `remind` and enough has come since the last one, a reminder.
+   */
+  private async newItems(remind: boolean): Promise<void> {
+    if (this.destroyed || this.busy) return;
+    // The ledger alone first: reading every practice sheet is only worth it
+    // for someone who shares (this runs after every answered word).
+    if (!sharingOn(await this.readLedger())) return;
+    await this.load();
+    const ledger = this.ledger;
+    const items = this.items;
+    if (!ledger || !items || !sharingOn(ledger) || this.destroyed) return;
+    const pending = pendingItems(items, ledger);
+    if (pending.length === 0) return;
+    if (autoSends(ledger)) {
+      await this.send(ledger, pending, [], true);
+    } else if (remind && remindDue(ledger, pending.length)) {
+      await this.saveLedger(reminded(ledger, pending.length, Date.now()));
+      this.remindCard(pending);
+    }
+  }
+
+  /** "N new items to share": Later, Always (send by itself from now on), Share N. */
+  private remindCard(pending: ShareItem[]): void {
+    this.remindNotice?.hide();
+    const notice = new Notice(
+      createFragment((fragment) => {
+        drawRemindCard(fragment.createDiv(), pending, (choice) => {
+          notice.hide();
+          if (this.remindNotice === notice) this.remindNotice = null;
+          void this.reminderAnswered(choice, pending);
+        });
+      }),
+      0,
+    );
+    this.remindNotice = notice;
+  }
+
+  /** Always is saved before anything is sent, and only while sharing is still on. */
+  private async reminderAnswered(
+    choice: "later" | "always" | "share",
+    pending: ShareItem[],
+  ): Promise<void> {
+    if (choice === "later" || !this.ledger || !sharingOn(this.ledger)) return;
+    if (choice === "always") await this.saveLedger(setAuto(this.ledger, true, Date.now()));
+    if (this.ledger) await this.send(this.ledger, pending, []);
   }
 
   /**
@@ -111,7 +186,10 @@ export class GrapeSharing implements SharingFeature {
    */
   inviteAfterSheet(): void {
     void this.inviteFor().then((pending) => {
-      if (!pending) return;
+      if (!pending) {
+        void this.newItems(true);
+        return;
+      }
       const notice = new Notice(
         createFragment((fragment) => {
           this.inviteCard(fragment.createDiv(), "sheet", pending, () => notice.hide());
@@ -179,7 +257,10 @@ export class GrapeSharing implements SharingFeature {
     });
     help.addEventListener("click", (event) => {
       close(event);
-      if (this.ledger) void this.send(agree(this.ledger, Date.now(), randomBytes), pending, []);
+      // Help is the consent's default: later items go automatically too (its terms say so).
+      if (this.ledger) {
+        void this.send(agree(this.ledger, Date.now(), randomBytes, true), pending, []);
+      }
     });
   }
 
@@ -231,6 +312,14 @@ export class GrapeSharing implements SharingFeature {
             );
           }
           if (on) {
+            // Send new items by themselves: a check mark, on or off.
+            menu.addItem((i) =>
+              i
+                .setTitle(st("auto"))
+                .setIcon("refresh-cw")
+                .setChecked(ledger.auto.on)
+                .onClick(() => void this.toggleAuto(redraw)),
+            );
             menu.addItem((i) =>
               i
                 .setTitle(st("stop"))
@@ -315,7 +404,8 @@ export class GrapeSharing implements SharingFeature {
       if (!ledger || !items) return;
       const pending = pendingItems(items, ledger);
       // Agreeing is recorded with the send, not before: "Not now" leaves nothing behind.
-      const agreed = (): SharingLedger => agree(ledger, Date.now(), randomBytes);
+      // `auto` is the consent's box: new items go by themselves from now on.
+      const agreed = (auto: boolean): SharingLedger => agree(ledger, Date.now(), randomBytes, auto);
       let acted = false;
       // Someone who agreed to older terms sees what changed, and agrees or stops.
       const before = ledger.consent?.version;
@@ -325,23 +415,27 @@ export class GrapeSharing implements SharingFeature {
         this.host,
         pending,
         changes,
-        () => {
+        // Ticked by default (Joost, 2026-11-27); unticked only for someone
+        // still sharing who turned it off.
+        !(ledger.consent !== null && ledger.auto.at > 0 && !ledger.auto.on),
+        (auto) => {
           acted = true;
-          void this.saveLedger(agreed())
+          void this.saveLedger(agreed(auto))
             .then(() => this.retryUpgrade())
+            .then(() => this.newItems(false))
             .then(redraw);
         },
         () => {
           acted = true;
           void this.stop(redraw);
         },
-        () => {
+        (auto) => {
           acted = true;
-          void this.send(agreed(), pending, []).then(redraw);
+          void this.send(agreed(auto), pending, []).then(redraw);
         },
-        () => {
+        (auto) => {
           acted = true;
-          this.openReview(agreed(), pending, redraw);
+          this.openReview(agreed(auto), pending, redraw);
         },
       );
       if (onClosed) {
@@ -376,8 +470,26 @@ export class GrapeSharing implements SharingFeature {
     }).open();
   }
 
-  /** Record the consent and the review, then send what was kept, batch by batch. */
-  private async send(agreed: SharingLedger, kept: ShareItem[], declined: string[]): Promise<void> {
+  /** Send new items by themselves, or only on Share; turning it on sends what waits. */
+  private async toggleAuto(redraw: () => void): Promise<void> {
+    if (!this.ledger) return;
+    const on = !this.ledger.auto.on;
+    await this.saveLedger(setAuto(this.ledger, on, Date.now()));
+    if (on) await this.newItems(false);
+    redraw();
+  }
+
+  /**
+   * Record the consent and the review, then send what was kept, batch by
+   * batch. `quiet` (a send by itself) says nothing: what failed waits for
+   * the next new item or the next start, and the settings row counts it.
+   */
+  private async send(
+    agreed: SharingLedger,
+    kept: ShareItem[],
+    declined: string[],
+    quiet = false,
+  ): Promise<void> {
     if (this.busy) return;
     this.busy = true;
     try {
@@ -386,12 +498,40 @@ export class GrapeSharing implements SharingFeature {
       if (!ledger) return;
       const built = buildBatches(kept, ledger, this.client());
       if (!built) return;
+      // Stop, Delete, unticking Share automatically or a plugin unload while
+      // batches go ends the send before the next one: nothing more is sent,
+      // and nothing is marked sent under a contributor a delete ended.
+      const stillOn = (): boolean => {
+        const now = this.ledger;
+        return (
+          !this.destroyed &&
+          now !== null &&
+          now.epoch === ledger.epoch &&
+          now.contributor === ledger.contributor &&
+          (quiet ? autoSends(now) : sharingOn(now))
+        );
+      };
+      if (quiet) {
+        for (const batch of built.batches) {
+          if (!stillOn()) return;
+          if ((await postBatch(batch, ledger.key ?? "")) !== "sent" || !stillOn()) return;
+          await this.saveLedger(
+            markSent(
+              this.ledger ?? ledger,
+              batch.items.map((i) => i.id),
+            ),
+          );
+        }
+        return;
+      }
       if (built.tooBig.length > 0) {
         new Notice(stn("review.tooBig", built.tooBig.length), 8000);
       }
       let count = 0;
       for (const batch of built.batches) {
+        if (!stillOn()) return;
         const outcome = await postBatch(batch, ledger.key ?? "");
+        if (!stillOn()) return;
         if (outcome === "sent") {
           await this.saveLedger(
             markSent(
@@ -410,7 +550,8 @@ export class GrapeSharing implements SharingFeature {
       }
       if (count > 0) new Notice(stn("sent", count), 6000);
     } catch (error) {
-      new Notice(st("failed", { message: errorMessage(error) }), 10000);
+      if (quiet) console.warn("FineNotes: sharing new items failed", error);
+      else new Notice(st("failed", { message: errorMessage(error) }), 10000);
     } finally {
       this.busy = false;
     }
@@ -418,7 +559,7 @@ export class GrapeSharing implements SharingFeature {
 
   private async stop(redraw: () => void): Promise<void> {
     if (!this.ledger) return;
-    await this.saveLedger(stopSharing(this.ledger));
+    await this.saveLedger(stopSharing(this.ledger, Date.now()));
     new Notice(st("stopped"), 6000);
     redraw();
   }
@@ -526,25 +667,77 @@ function deviceKind(): string {
 }
 
 // ---------------------------------------------------------------------------
+// Reminder
+
+/**
+ * The reminder, drawn like the invite: how many new items wait and what
+ * they are; Not now, Always share (from now on by themselves), Share N.
+ */
+export function drawRemindCard(
+  parent: HTMLElement,
+  pending: readonly ShareItem[],
+  chose: (choice: "later" | "always" | "share") => void,
+): void {
+  const card = parent.createDiv({ cls: "goodobsidian-share-invite" });
+  setIcon(card.createDiv({ cls: "goodobsidian-share-invite-icon" }), "heart-handshake");
+  const text = card.createDiv({ cls: "goodobsidian-share-invite-text" });
+  text.createDiv({
+    cls: "goodobsidian-share-invite-title",
+    text: stn("remind.title", pending.length),
+  });
+  text.createDiv({ cls: "goodobsidian-share-desc", text: whatThereIs(countByKind(pending)) });
+  const buttons = card.createDiv({ cls: "goodobsidian-share-invite-buttons" });
+  const button = (label: string, choice: "later" | "always" | "share", cta = false): void => {
+    const b = buttons.createEl("button", { text: label });
+    if (cta) b.addClass("mod-cta");
+    b.addEventListener("click", (event) => {
+      // A notice hides on any click; the buttons decide for themselves.
+      event.stopPropagation();
+      chose(choice);
+    });
+  };
+  button(st("invite.later"), "later");
+  button(st("remind.always"), "always");
+  button(stn("shareNew", pending.length), "share", true);
+}
+
+// ---------------------------------------------------------------------------
 // Consent
 
 /**
- * Asking once: what sharing is, in plain words, and one choice. No boxes to
- * tick: Share is the agreement, and Review first shows every item before
- * anything goes (Joost, 2026-11-16).
+ * Asking once: what sharing is, in plain words, and one choice. Share is the
+ * agreement, and Review first shows every item before anything goes (Joost,
+ * 2026-11-16). One box, ticked by default: whether later items go by
+ * themselves or wait for Share (Joost, 2026-11-26 and 11-27).
  */
 export class SharingConsentModal extends Modal {
+  private auto: boolean;
+
   constructor(
     host: SharingHost,
     private readonly pending: readonly ShareItem[],
     /** What changed since the terms this person agreed to; empty for someone new. */
     private readonly changes: readonly ConsentChange[],
-    private readonly onAgree: () => void,
+    /** The box's state when the dialog opens: the choice already made, else off. */
+    auto: boolean,
+    private readonly onAgree: (auto: boolean) => void,
     private readonly onStop: () => void,
-    private readonly onShare: () => void,
-    private readonly onReview: () => void,
+    private readonly onShare: (auto: boolean) => void,
+    private readonly onReview: (auto: boolean) => void,
   ) {
     super(host.app);
+    this.auto = auto;
+  }
+
+  /** The box: send later items by themselves. */
+  private drawAuto(body: HTMLElement): void {
+    const row = body.createEl("label", { cls: "goodobsidian-share-auto" });
+    const box = row.createEl("input", { type: "checkbox" });
+    box.checked = this.auto;
+    box.addEventListener("change", () => {
+      this.auto = box.checked;
+    });
+    row.createSpan({ text: st("consent.auto", { count: REMIND_EVERY }) });
   }
 
   override onOpen(): void {
@@ -563,6 +756,7 @@ export class SharingConsentModal extends Modal {
     });
 
     drawTerms(body);
+    if (this.pending.length > 0) this.drawAuto(body);
 
     const footer = body.createDiv({ cls: "modal-button-container" });
     footer
@@ -571,20 +765,20 @@ export class SharingConsentModal extends Modal {
     if (this.pending.length === 0) return;
     footer.createEl("button", { text: st("consent.review") }).addEventListener("click", () => {
       this.close();
-      this.onReview();
+      this.onReview(this.auto);
     });
     footer
       .createEl("button", { cls: "mod-cta", text: stn("consent.share", this.pending.length) })
       .addEventListener("click", () => {
         this.close();
-        this.onShare();
+        this.onShare(this.auto);
       });
   }
 
   /**
    * For someone who agreed to older terms: what changed since, then the
-   * terms in full, and one choice. Agreeing does not send anything by
-   * itself; new items wait for Share in settings, as before.
+   * terms in full, the box, and one choice. Agreeing sends nothing unless
+   * the box is ticked; else new items wait for Share in settings, as before.
    */
   private drawChanged(body: HTMLElement): void {
     this.titleEl.setText(st("changed.title"));
@@ -592,6 +786,7 @@ export class SharingConsentModal extends Modal {
     for (const change of this.changes) list.createEl("li", { text: st(`changed.${change}`) });
     body.createEl("p", { cls: "goodobsidian-share-desc", text: st("changed.covers") });
     drawTerms(body);
+    this.drawAuto(body);
     const footer = body.createDiv({ cls: "modal-button-container" });
     footer
       .createEl("button", { cls: "mod-warning", text: st("changed.stop") })
@@ -603,7 +798,7 @@ export class SharingConsentModal extends Modal {
       .createEl("button", { cls: "mod-cta", text: st("changed.agree") })
       .addEventListener("click", () => {
         this.close();
-        this.onAgree();
+        this.onAgree(this.auto);
       });
   }
 

@@ -57,6 +57,13 @@ export interface LineReading {
    * (`wordInk`), and absent when the text could not be laid over the frames.
    */
   wordStrokes?: number[][];
+  /**
+   * `text` before words outside the word list were read again against it
+   * (`rereadOutOfList`), only when that changed a word: the letters as the
+   * ink shows them, misspellings and all ("recive" where `text` has
+   * "revive"). The word check's spelling marks come from it (spelling-flags.ts).
+   */
+  asWritten?: string;
 }
 
 export interface PageLineReading extends LineReading {
@@ -286,8 +293,10 @@ function decodeLine(
         )
       : beamDecode(logp, frames, alphabet, lm, decoder, biasOf(options));
   }
+  let asWritten: string | undefined;
   if (lm && !math && options.reread !== false && options.rereadList) {
     const margin = options.rereadMargin ?? REREAD_MARGIN;
+    const before = text;
     text = rereadOutOfList(
       { logp, frames },
       alphabet,
@@ -297,6 +306,7 @@ function decodeLine(
       options.rereadList,
       margin,
     );
+    if (text !== before) asWritten = before;
   }
   const t4 = now();
   let wordStrokes: number[][] | null = null;
@@ -324,6 +334,7 @@ function decodeLine(
         }
       : {}),
     ...(wordStrokes ? { wordStrokes } : {}),
+    ...(asWritten !== undefined ? { asWritten } : {}),
   };
 }
 

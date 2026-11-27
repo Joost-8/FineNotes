@@ -74,6 +74,7 @@ import {
   applyAnswers,
   joinPunctuation,
   pickQuestions,
+  sureOfAnswered,
   questionBudget,
   sureWords,
   unsureCandidates,
@@ -102,7 +103,12 @@ export interface NeatenHost {
   models: ModelRegistry;
   handwriting: HandwritingReader;
   /** The word list, as the reader gets it; null without one. */
-  lexicon(): { version: number; words: () => string[] } | null;
+  lexicon(): {
+    version: number;
+    words: () => string[];
+    /** The writer's own answered words (personal-words.ts), lower case. */
+    answered?: () => ReadonlySet<string>;
+  } | null;
   /** The writer's answers about words on a page (corrections.json). */
   answers(note: string, pageId: string): Promise<WordAnswer[]>;
   learningHost(): LearningHost;
@@ -204,6 +210,41 @@ export class NeatenService {
     const formatOf = (data: ArrayBuffer): number | null =>
       manifestFormat(new TextDecoder().decode(data));
     void host.models.register(WRITER_MODEL, { formatOf }).check();
+  }
+
+  /**
+   * What writing in the hand needs, begun for a corrected word
+   * (write-in-hand.ts `setUp`): the model's download card when it is not on
+   * this device, and once it is (now, or when its download ends) the
+   * practice sheet's dialog when too few of its lines are copied.
+   */
+  setUp(): void {
+    const store = this.host.models.register(WRITER_MODEL);
+    const sheet = async (): Promise<void> => {
+      const model = await this.loadModel();
+      if ("problem" in model) return;
+      const pool = await this.poolOf((ch) => model.manifest.chars.indexOf(ch) > 0);
+      this.practiceLines = pool.length;
+      if (pool.length >= MIN_PRACTICE_LINES) return;
+      const write = () => void writePracticePage(this.host.learningHost());
+      new NeedsSheetModal(this.host.app, write, true).open();
+    };
+    const begin = async (): Promise<void> => {
+      await store.check(true);
+      if (store.state.kind === "ready") return sheet();
+      const stop = store.subscribe(() => {
+        if (store.state.kind !== "ready") return;
+        stop();
+        void sheet().catch((error) => console.warn("FineNotes: practice sheet check", error));
+      });
+      this.host.models.offer(WRITER_MODEL.id, "ask");
+      // "Not now", or no answer: a download started later elsewhere does not open the sheet.
+      window.setTimeout(() => {
+        const kind = store.state.kind;
+        if (kind !== "downloading" && kind !== "verifying") stop();
+      }, 120_000);
+    };
+    void begin().catch((error) => console.warn("FineNotes: could not set up writing", error));
   }
 
   /** Whether the menu offers Neaten: the model can be downloaded, or is already here. */
@@ -350,14 +391,17 @@ export class NeatenService {
     const profile = measureHand(request.strokes.filter((s) => s.tool === "pen" && !s.shape));
     if (lines.length === 0 || !profile) return { kind: "tidy" };
     const lexicon = this.host.lexicon();
+    // The list holds the writer's answered words too (personal-words.ts), from every page.
     const listed = lexicon ? new Set(lexicon.words().map((w) => w.toLowerCase())) : null;
     const readings = await this.host.handwriting.readForNeaten(lines, lexicon);
     const jobsWith = async () => {
       const answers = request.note ? await this.host.answers(request.note, request.pageId) : [];
+      // Read again after the questions: the answers just given are in it.
+      const everAnswered = this.host.lexicon()?.answered?.() ?? new Set<string>();
       return lines.flatMap((strokes, li) => {
         // For a held word only its own letters must be ones the model has (`workWord`).
         const lineWritable = request.word === undefined ? writable : () => true;
-        const job = this.jobOf(strokes, readings[li], lineWritable, listed, answers);
+        const job = this.jobOf(strokes, readings[li], lineWritable, listed, answers, everAnswered);
         return job ? [job] : [];
       });
     };
@@ -483,6 +527,7 @@ export class NeatenService {
     writable: (ch: string) => boolean,
     listed: ReadonlySet<string> | null,
     answers: readonly WordAnswer[],
+    everAnswered: ReadonlySet<string> = new Set(),
   ): NeatenJob | null {
     if (!reading || !reading.wordStrokes || !reading.chars) return null;
     const read = wordsOf(reading.text);
@@ -507,8 +552,12 @@ export class NeatenService {
       answered.known,
       inList,
     );
-    const sure = wordSureness(text, reading.greedy, reading.chars, inList).map((s, i) =>
-      answered.known.has(i) ? 1 : s,
+    const sure = sureOfAnswered(
+      answered.words,
+      wordSureness(text, reading.greedy, reading.chars, inList).map((s, i) =>
+        answered.known.has(i) ? 1 : s,
+      ),
+      everAnswered,
     );
     const joined = joinPunctuation({
       words: answered.words,
@@ -883,13 +932,16 @@ export class NeedsSheetModal extends Modal {
   constructor(
     app: App,
     private readonly write: () => void,
+    /** Asked for a corrected word, not by Beautify: says so. */
+    private readonly forWord = false,
   ) {
     super(app);
   }
 
   override onOpen(): void {
-    this.setTitle(t("ai.neaten.needsSheetTitle"));
-    this.contentEl.createEl("p", { text: t("ai.neaten.needsSheet", { min: MIN_PRACTICE_LINES }) });
+    this.setTitle(t(this.forWord ? "ai.hand.needsSheetTitle" : "ai.neaten.needsSheetTitle"));
+    const body = this.forWord ? "ai.hand.needsSheet" : "ai.neaten.needsSheet";
+    this.contentEl.createEl("p", { text: t(body, { min: MIN_PRACTICE_LINES }) });
     const buttons = this.contentEl.createDiv({ cls: "modal-button-container" });
     buttons
       .createEl("button", { text: t("common.cancel") })

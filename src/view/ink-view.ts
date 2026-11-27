@@ -1903,12 +1903,13 @@ export class InkView extends TextFileView {
   }
 
   /**
-   * The pen has been up a moment: rasterise what waited, and make the save
-   * that did once the pen has rested a little longer (write-hold.ts).
+   * The pen has been up a moment: check the words just written, rasterise what waited,
+   * and make the save that did once the pen has rested a little longer (write-hold.ts).
    */
   private penQuiet(): void {
     this.quietTimer = 0;
     this.quietWork.flush();
+    if (!this.onPdfTab) void this.checkPageInView();
     this.pdfCache?.setHeld(false);
     this.pdfText?.setHeld(false);
     if (!this.writeHold.savePending) return;
@@ -4348,9 +4349,9 @@ export class InkView extends TextFileView {
     this.deviceTimer = 0;
     const guard = this.plugin.readingGuard;
     const path = this.file?.path;
-    if (this.deviceBusy || !this.surface || !path || guard.paused) return;
-    if (this.penIsDown) {
-      this.scheduleDeviceReading();
+    if (!this.surface || !path || guard.paused) return;
+    if (this.deviceBusy || this.penIsDown) {
+      this.scheduleDeviceReading(); // busy (the word check at a pen rest): come back
       return;
     }
     const doc = this.doc;
@@ -4434,8 +4435,7 @@ export class InkView extends TextFileView {
   }
 
   /**
-   * Corrections were switched on or off (the AI menu, the settings): check
-   * the page in view now, or take every underline away at once.
+   * Corrections were switched on or off (the AI menu, the settings): check the page in view now, or take every underline away.
    */
   wordCheckingChanged(): void {
     if (this.wordsChecked) {
@@ -4506,18 +4506,20 @@ export class InkView extends TextFileView {
     // A page in another language is checked against its own pack, if any (word-check.ts flags).
     const language = reading.language ?? "en";
     const flagged = await this.plugin.wordCheck.flags(file.path, page.id, words, language);
-    if (this.surface === surface)
-      surface.setWordFlags(
-        page.id,
-        flagged.map((w) => w.strokeIds),
-      );
+    this.showFlags(page.id, flagged, language);
     checked.suggestions = await this.suggestFor(reading, flagged);
+    this.showFlags(page.id, flagged, language, checked);
+  }
+
+  /** Underline `words` on page `id`, a spelling as such (word-check.ts `spellingOf`). */
+  private showFlags(id: string, words: ReadWord[], lang: PageLanguage, at?: CheckedPage): void {
+    const marks = this.plugin.wordCheck.marks(words, at?.suggestions, lang);
+    if (this.wordsChecked) this.surface?.setWordFlags(id, marks.flags, at && marks.spelling);
   }
 
   /**
-   * The list words each flagged word's ink fits best (lexicon.ts), worked
-   * out now so a tap opens its menu at once. Empty when there is no list or
-   * the page was not kept.
+   * The list words each flagged word's ink fits best (lexicon.ts), now so a tap opens
+   * its card at once. Empty when there is no list or the page was not kept.
    */
   private async suggestFor(
     reading: PageReading,
@@ -4628,12 +4630,10 @@ export class InkView extends TextFileView {
         this.searchAnswered(page.id);
         const checked = this.checkedWords.get(page.id);
         if (!checked || this.surface !== surface) return;
-        void this.plugin.wordCheck.flags(file.path, page.id, checked.words).then((flagged) =>
-          surface.setWordFlags(
-            page.id,
-            flagged.map((w) => w.strokeIds),
-          ),
-        );
+        const lang = this.pageReadings.get(page.id)?.language ?? "en";
+        void this.plugin.wordCheck
+          .flags(file.path, page.id, checked.words, lang)
+          .then((flagged) => this.showFlags(page.id, flagged, lang, checked));
       },
       closed,
       asked,

@@ -10,6 +10,20 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Changed
 
+- **Grape remembers the words you correct.** Every word you answer about
+  (a correction, "It says", Add to dictionary, or Beautify's question)
+  joins your word list: it is not underlined again, Beautify does not ask
+  about it again, and the next time a page is read Grape no longer changes
+  it into a dictionary word. Your earlier answers count too.
+- **Spelling apart from reading.** A word whose letters Grape is sure of but
+  which is not a word is underlined red and wavy, and its card asks "You
+  wrote …" with the spelling fixes; picking one rewrites only that word in
+  your hand, or, without the writer model, offers its download and then the
+  practice lines. Other underlines ask what Grape misread, and teach it.
+  Correct on a word Grape changed to a dictionary word ("recive" read as
+  "revive") now shows what you wrote. Underlines also come a second after
+  the pen rests, not only when the page changes.
+
 - **Beautify this word.** A long press on a word now rewrites only that word,
   a word alone on its line included; the lasso's Beautify still does whole
   lines.
@@ -30,6 +44,10 @@ extracted from the matching section of this file by `release.yml`.
 ### Added
 
 - **Copy and Cut reach other apps** ([#333](https://github.com/Joost-8/FineNotes/pull/333), thanks @koltensaccount): a lasso of text boxes pastes elsewhere as formatted text, anything with ink or shapes as a transparent picture; pasted back into FineNotes, it stays editable.
+- **Help improve Grape: share new items automatically.** The consent has a
+  box (ticked unless you untick it) to send later practice lines and corrections as they are
+  made; it is also under ⋯ in settings. Without it, FineNotes reminds you
+  every 20 new items instead of waiting for you to open settings.
 - **Companion PDF** ([#310](https://github.com/Joost-8/FineNotes/pull/310), thanks @bendi087): a notebook can keep a PDF of itself up to date, made when it closes, when it has been left for another tab for a while, or with Update now (FineNotes rewrites this PDF: marks made in it elsewhere are not kept); turn it on in the notebook's settings, or after exporting the whole notebook as a PDF.
 - **Export: a PDF name of your own (#318).** The Export dialog has a name
   field for the PDF. Type a name and the export replaces the file of that
@@ -163,6 +181,7 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- **Toolbar details** ([#336](https://github.com/Joost-8/FineNotes/pull/336), thanks @koltensaccount): no tooltip over the toolbar's empty space; the page shows the desk colour while thumbnails slide; the page selection bar and the strip under a bottom toolbar take the toolbar's look.
 - **Beautify on a slanted line.** Words Beautify left alone no longer end up
   below the line, on top of the next one, and a rewritten "I" no longer gets
   a second bar.

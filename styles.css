@@ -331,10 +331,10 @@ body:not(.is-mobile) .goodobsidian-view {
   flex: 0 0 auto;
 }
 
-/* Undo after a hairline, wherever it follows a button that is not redo
-   (by default: pages, search, AI and the calculator, then undo and redo). */
+/* Undo after a hairline in the start group, wherever it follows a button
+   that is not redo (by default: pages, search, AI and the calculator, then undo and redo). */
 .goodobsidian-toolbar
-  .goodobsidian-bar-group
+  .goodobsidian-bar-group.is-start
   > button[data-item]:not([data-item="undo"]):not([data-item="redo"])
   + button[data-item="undo"] {
   position: relative;
@@ -342,7 +342,7 @@ body:not(.is-mobile) .goodobsidian-view {
 }
 
 .goodobsidian-toolbar
-  .goodobsidian-bar-group
+  .goodobsidian-bar-group.is-start
   > button[data-item]:not([data-item="undo"]):not([data-item="redo"])
   + button[data-item="undo"]::before {
   content: "";
@@ -1246,12 +1246,15 @@ select.goodobsidian-choice-select {
   background: var(--gob-desk);
 }
 
-/* The row under the tool bar: page sidebar (when open) beside the surface. */
+/* The row under the tool bar: page sidebar (when open) beside the surface.
+   Matches the desk background so gliding the surface when a side panel opens
+   or closes never flashes dark bars on either edge. */
 .goodobsidian-body {
   position: relative;
   display: flex;
   flex: 1 1 auto;
   min-height: 0;
+  background: var(--gob-desk);
 }
 
 /* ------------------------------------------------------------ page embeds */
@@ -2211,8 +2214,9 @@ select.goodobsidian-choice-select {
   outline-color: var(--interactive-accent);
 }
 
-/* What to do with the pages chosen: the lasso's dark pill, floating at the
-   bottom of the overview while the grid scrolls under it. */
+/* What to do with the pages chosen: floating pill at the bottom of the
+   sidebar/overview following the active Look style tokens so icons stay
+   legible over light page thumbnails. */
 .goodobsidian-pagesidebar-selectbar {
   position: sticky;
   z-index: 3;
@@ -2224,9 +2228,9 @@ select.goodobsidian-choice-select {
   max-width: calc(100% - 32px);
   margin: 0 auto 20px;
   padding: 3px 6px;
-  border: 1px solid var(--gob-sel-line);
-  border-radius: var(--gob-card-radius);
-  background: var(--gob-sel-bg);
+  border: 1px solid var(--gob-line);
+  border-radius: var(--gob-pill-radius, var(--gob-card-radius));
+  background: var(--gob-pill-bg, var(--background-primary));
   box-shadow: var(--gob-shadow-float);
   animation: goodobsidian-fade-in var(--gob-t-fade) ease-out;
 }
@@ -2241,15 +2245,15 @@ select.goodobsidian-choice-select {
   /* Obsidian fills a .mod-warning button red; here it is only red text. */
   background: transparent;
   box-shadow: none;
-  color: var(--gob-sel-icon);
+  color: var(--text-normal);
   font-size: var(--font-ui-small);
   opacity: 1;
 }
 
 .goodobsidian-pagesidebar-selectbar
   .goodobsidian-pagesidebar-selectbar-button.clickable-icon:hover:not(:disabled) {
-  background: var(--gob-sel-well);
-  color: var(--color-base-100);
+  background: var(--gob-well);
+  color: var(--text-normal);
 }
 
 .goodobsidian-pagesidebar-selectbar
@@ -10919,6 +10923,24 @@ input[type="range"].goodobsidian-player-scrubber {
   -webkit-user-select: none;
 }
 
+.goodobsidian-more::-webkit-scrollbar-track,
+.goodobsidian-popover-body::-webkit-scrollbar-track {
+  margin: 10px 0;
+}
+
+.goodobsidian-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  white-space: nowrap;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .goodobsidian-more-title {
   padding: 2px 0 8px;
   font-size: var(--font-ui-medium);
@@ -14587,9 +14609,9 @@ button.goodobsidian-gallery-back.clickable-icon {
   margin-bottom: 0;
 }
 
-/* A word Grape may have misread: a wavy underline, as a spelling checker
-   draws, in the theme's red; a finger tap asks what it says (word-check.ts). */
-/* A word Grape may have misread: a quiet dotted line, red and wavy while its menu is open. */
+/* A word to check (word-check.ts): Grape may have misread it, a quiet dotted line;
+   a likely misspelling (.is-spelling), red and wavy as a spell checker draws it.
+   While its card is open the mark is wavy and full: red, or the accent for a reading. */
 .goodobsidian-word-flag {
   position: absolute;
   height: 0;
@@ -14597,7 +14619,8 @@ button.goodobsidian-gallery-back.clickable-icon {
   opacity: 0.8;
 }
 
-.goodobsidian-word-flag.is-active {
+.goodobsidian-word-flag.is-active,
+.goodobsidian-word-flag.is-spelling {
   height: 4px;
   margin-top: -1px;
   border-bottom: none;
@@ -14609,8 +14632,31 @@ button.goodobsidian-gallery-back.clickable-icon {
     repeat-x left center / 6px 4px;
 }
 
+.goodobsidian-word-flag.is-active:not(.is-spelling) {
+  background-color: var(--interactive-accent);
+}
+
 .goodobsidian-word-flag.is-hidden {
   display: none;
+}
+
+/* Which question the card asks, above the word: "Grape read" or, in red, "You wrote". */
+.goodobsidian-wordcheck-question {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.goodobsidian-wordcheck-question svg {
+  width: 14px;
+  height: 14px;
+}
+
+.goodobsidian-wordcheck.is-spelling .goodobsidian-wordcheck-question {
+  color: var(--color-red);
 }
 
 /* The card a tapped underlined word opens (word-popover.ts). */
@@ -16787,7 +16833,13 @@ button.clickable-icon.goodobsidian-zoombox-window-button.is-active {
   padding-top: 0;
 }
 
-/* Along the bottom: after the page and the text layer, its hairline above. */
+/* Along the bottom: after the page and the text layer, its hairline above.
+   Paint the view's foot safe-area padding with the bar's own background so
+   no mismatched strip shows beneath the bottom-docked toolbar. */
+.workspace-leaf-content > .view-content.goodobsidian-view.goodobsidian-bar-at-bottom {
+  background: var(--gob-bar-bg);
+}
+
 .goodobsidian-view.goodobsidian-bar-at-bottom > .goodobsidian-toolbar {
   order: 2;
   border-bottom: none;
@@ -17051,14 +17103,14 @@ button.clickable-icon.goodobsidian-zoombox-window-button.is-active {
 }
 
 .goodobsidian-toolbar.is-upright
-  .goodobsidian-bar-group
+  .goodobsidian-bar-group.is-start
   > button[data-item]:not([data-item="undo"]):not([data-item="redo"])
   + button[data-item="undo"] {
   margin: 9px 0 0;
 }
 
 .goodobsidian-toolbar.is-upright
-  .goodobsidian-bar-group
+  .goodobsidian-bar-group.is-start
   > button[data-item]:not([data-item="undo"]):not([data-item="redo"])
   + button[data-item="undo"]::before {
   left: 20%;
@@ -22933,6 +22985,18 @@ button.goodobsidian-edit-switch.is-nudged {
 }
 .goodobsidian-share-desc.is-hidden {
   display: none;
+}
+/* The consent's one box: share later items automatically. Below the terms, always in view. */
+.goodobsidian-share-auto {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 12px;
+  font-size: var(--font-ui-small);
+}
+.goodobsidian-share-auto input {
+  flex: none;
+  margin: 2px 0 0;
 }
 .goodobsidian-share-facts {
   border-top: 1px solid var(--background-modifier-border);

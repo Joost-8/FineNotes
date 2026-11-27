@@ -37,7 +37,11 @@ first**, which shows every item, its ink drawn as it will be sent and the
 text under it, and lets you keep any of them; a kept item is never offered
 again. Later items (new practice lines, corrections and equations) are sent
 when you press **Share N new** in settings, or after reviewing them from its
-⋯ menu.
+⋯ menu. **Share new items automatically** is ticked when you agree, unless
+you untick it (in the consent, or later under ⋯): while it is on, later
+items are sent as they are made, without being shown first. The **Help**
+button on the invite agrees with it on. With it off, FineNotes reminds you
+every 20 new items, and sends nothing until you press Share.
 
 **Each item holds:** the pen strokes (their shape, pressure and timing),
 moved so they start at the top left, so where on a page you wrote is not
@@ -122,7 +126,9 @@ deleted when the run ends; what is kept is the trained model.
 
 ## Your control
 
-- **See it first:** Review first shows every item before it goes.
+- **See it first:** Review first shows every item before it goes, unless
+  you chose to share new items automatically (⋯ › Share new items
+  automatically turns that off).
 - **Stop:** Settings › Reading and voice ›
   Help improve Grape › ⋯ › Stop sharing. Nothing more is
   sent; what was sent stays until you delete it.

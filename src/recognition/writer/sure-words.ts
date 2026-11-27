@@ -251,6 +251,27 @@ export function unsureCandidates(
 }
 
 /**
+ * Words the writer has answered about before, on any page (personal-words.ts),
+ * are sure enough not to be asked about again: `sure` with 1 for each word of
+ * `read` whose core is one of `answered` (lower case). Whether it is written
+ * still goes by the usual bars and the read-back.
+ *
+ * Only where Grape's letters agree (`sure` above 0): a word the reread turned
+ * into an answered word ("lemna" read, "lemma" answered once, "lemon"
+ * written) is still the line's question, since the list now pulls toward it.
+ */
+export function sureOfAnswered(
+  read: readonly string[],
+  sure: readonly number[],
+  answered: ReadonlySet<string>,
+): number[] {
+  return sure.map((s, i) => {
+    const word = plainWord(wordCore(read[i] ?? ""));
+    return s > 0 && word !== null && answered.has(word) ? 1 : s;
+  });
+}
+
+/**
  * After the questions: which words of a line are written. A word asked about
  * and not answered stays the writer's ink; an answered one is sure by now;
  * every other word with ink is marked for writing, and `own-ink.ts` then keeps

@@ -79,6 +79,8 @@ export interface ReadWord {
   strokeIds: string[];
   /** Where it is in the reading: its line, and the token's `[start, end)` in the line's text. */
   at?: { line: number; start: number; end: number };
+  /** The word as the ink shows it, when Grape's second look changed it (for the card, spelling-flags.ts). */
+  wrote?: string;
 }
 
 /** A word to underline, from `flagWords`. */
@@ -179,9 +181,10 @@ export function mergeCorrections(file: CorrectionsFile, older: CorrectionsFile):
 
 /**
  * What each answered word on page `page` of `note` should show, by its
- * stroke-id key (`strokeKey`): the writer's text for a misread, the meant
- * word for one written wrong. Answers that leave the reading as it is are
- * left out.
+ * stroke-id key (`strokeKey`): the meant word for one written wrong, else
+ * the answer's text where it is not what Grape read (a misread; or a word
+ * Grape's second look changed, answered as written). Answers that leave
+ * the reading as it is are left out.
  */
 export function shownAnswers(
   file: CorrectionsFile,
@@ -191,7 +194,7 @@ export function shownAnswers(
   const out = new Map<string, string>();
   for (const c of file.corrections) {
     if (c.note !== note || c.page !== page) continue;
-    const shown = c.meant ?? (c.kind === "misread" ? c.text : null);
+    const shown = c.meant ?? (c.kind === "misread" || c.text !== c.read ? c.text : null);
     if (shown !== null) out.set(strokeKey(c.strokes.map((s) => s.id)), shown);
   }
   return out;
@@ -226,16 +229,32 @@ export function readWords(lines: readonly PageLineReading[]): ReadWord[] {
   lines.forEach((line, index) => {
     const tokens = [...line.text.matchAll(/\S+/g)];
     if (tokens.length === 0 || tokens.length !== line.words.length) return;
+    const wrote = writtenTokens(line.text, line.asWritten);
     tokens.forEach((m, i) => {
       if (line.words[i].length === 0) return;
+      const asWritten = wrote[i];
       out.push({
         text: m[0],
         strokeIds: [...line.words[i]],
         at: { line: index, start: m.index, end: m.index + m[0].length },
+        ...(asWritten !== null ? { wrote: asWritten } : {}),
       });
     });
   });
   return out;
+}
+
+/**
+ * Each token of `text` as `asWritten` had it, where the two differ; null
+ * where they agree. All null when the two have a different number of
+ * tokens (the reread changed the spacing), so nothing is paired wrongly.
+ */
+export function writtenTokens(text: string, asWritten: string | undefined): (string | null)[] {
+  const read = text.match(/\S+/g) ?? [];
+  if (asWritten === undefined) return read.map(() => null);
+  const wrote = asWritten.match(/\S+/g) ?? [];
+  if (wrote.length !== read.length) return read.map(() => null);
+  return read.map((token, i) => (wrote[i] !== token ? wrote[i] : null));
 }
 
 /**

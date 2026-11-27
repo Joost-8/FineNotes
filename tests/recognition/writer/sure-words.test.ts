@@ -7,6 +7,7 @@ import {
   applyAnswers,
   joinPunctuation,
   pickQuestions,
+  sureOfAnswered,
   questionBudget,
   sureWords,
   unsureCandidates,
@@ -320,6 +321,28 @@ describe("sureWords", () => {
 
   it("is empty for no text", () => {
     expect(sureWords("", "", [], writable)).toEqual([]);
+  });
+});
+
+describe("sureOfAnswered", () => {
+  it("does not ask again about a word answered on another page", () => {
+    const read = ["the", "coprime,", "Resit", "71"];
+    const sure = [0.95, 0.4, 0.3, 0.2];
+    const answered = new Set(["coprime", "resit"]);
+    const after = sureOfAnswered(read, sure, answered);
+    expect(after).toEqual([0.95, 1, 1, 0.2]);
+    // Before: both answered words were the line's questions.
+    const lines = [
+      { read, words: read.map((_, i) => [`s${i}`]), rewrite: read.map(() => false), sure },
+    ];
+    expect(pickQuestions(unsureCandidates(lines), 4).map((q) => q.word)).toEqual([3, 2, 1]);
+    const now = [{ ...lines[0], sure: after }];
+    expect(pickQuestions(unsureCandidates(now), 4).map((q) => q.word)).toEqual([3]);
+  });
+
+  it("still asks about a word the reread turned into an answered word", () => {
+    // Letters "lemna", text "lemma" after the reread: wordSureness gives it 0.
+    expect(sureOfAnswered(["lemma"], [0], new Set(["lemma"]))).toEqual([0]);
   });
 });
 
