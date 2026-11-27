@@ -13,6 +13,7 @@ import { HOLD_MS, POINTER_SLOP_PX, TOUCH_SLOP_PX } from "./page-drag-model";
 import { gapAt } from "../model/pen-type-order";
 import { onWindowMoved, winOf } from "./host-window";
 import { moveGhost } from "./bar-direct-gestures";
+import { toolbarLocked } from "./toolbar-lock";
 
 export interface PenTypeDragOptions {
   /** The row the pens stand in. */
@@ -153,6 +154,8 @@ export function bindPenTypeDrag(pen: HTMLElement, options: PenTypeDragOptions): 
 
   const press = (x: number, y: number): void => {
     window.clearTimeout(timer);
+    // Lock toolbar: a held pen is a pen, not a drag (toolbar-lock.ts).
+    if (toolbarLocked()) return;
     startX = x;
     startY = y;
     const win = winOf(pen);

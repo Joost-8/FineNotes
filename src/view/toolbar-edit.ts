@@ -28,6 +28,7 @@
 import { setIcon } from "obsidian";
 import { type TextKey, t } from "../i18n/translate";
 import { type BarDock, isBarUpright } from "./bar-dock-model";
+import { setToolbarLocked, toolbarLocked } from "./toolbar-lock";
 import {
   LOOK_PALETTES,
   LOOK_STYLES,
@@ -372,6 +373,17 @@ export class ToolbarEditor {
         button.addEventListener("click", () => setDock(d));
       }
     }
+    // Lock toolbar (toolbar-lock.ts): locked, holding the bar drags nothing.
+    const locked = toolbarLocked();
+    const lock = head.createEl("button", { cls: "goodobsidian-edit-dock clickable-icon" });
+    setIcon(lock, locked ? "lock" : "lock-open");
+    lock.toggleClass("is-active", locked);
+    lock.setAttribute("aria-pressed", String(locked));
+    lock.setAttribute("aria-label", t("toolbar.edit.lock"));
+    lock.addEventListener("click", () => {
+      setToolbarLocked(!locked);
+      this.buildTray();
+    });
     const setRow = this.h.setPillRow;
     if (setRow) {
       const on = this.h.pillRow();

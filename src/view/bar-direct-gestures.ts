@@ -23,6 +23,7 @@ import { setIcon } from "obsidian";
 import { type BarDock, dockCandidate, isBarUpright } from "./bar-dock-model";
 import { isElement, onWindowMoved, winOf } from "./host-window";
 import { HOLD_MS, POINTER_SLOP_PX, TOUCH_SLOP_PX } from "./page-drag-model";
+import { toolbarLocked } from "./toolbar-lock";
 import {
   BAR_ITEM_ICONS,
   type BarItemId,
@@ -566,7 +567,8 @@ export function bindDirectBarGestures(ctx: DirectBarGesturesHost): () => void {
 
   const onPointerDown = (e: PointerEvent): void => {
     if (e.button !== 0 || e.isPrimary === false) return;
-    if (activePointerId !== null || ctx.isEditing()) return;
+    // Lock toolbar: the bar changes only in Customize (toolbar-lock.ts).
+    if (activePointerId !== null || ctx.isEditing() || toolbarLocked()) return;
 
     const target = isElement(e.target) ? e.target : null;
     const button = target?.closest<HTMLButtonElement>("button[data-item]") ?? null;
@@ -829,7 +831,13 @@ export function bindMoreToolsDrag(ctx: MoreToolsDragHost): MoreToolsDragHandle {
 
   const onPointerDown = (e: PointerEvent): void => {
     if (e.button !== 0 || e.isPrimary === false) return;
-    if (activePointerId !== null || ctx.isEditing() || !ctx.canReorder() || !ctx.onCommitLayout) {
+    if (
+      activePointerId !== null ||
+      ctx.isEditing() ||
+      toolbarLocked() ||
+      !ctx.canReorder() ||
+      !ctx.onCommitLayout
+    ) {
       return;
     }
     if (ctx.preset() === "essentials") return;

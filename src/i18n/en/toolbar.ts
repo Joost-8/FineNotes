@@ -99,6 +99,7 @@ export const toolbar = {
   "toolbar.zone.end": "End",
   "toolbar.zone.bottom": "Bottom",
   "toolbar.edit.dockOptions": "Dock tool options",
+  "toolbar.edit.lock": "Lock toolbar",
   "toolbar.edit.essentials": "Essentials",
   "toolbar.edit.essentialsNote":
     "Essentials: the buttons on the right sit in ⋯, so the tool options fit in one bar. Drop a tool on a button to swap them.",
