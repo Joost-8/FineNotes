@@ -212,6 +212,36 @@ export class NeatenService {
     void host.models.register(WRITER_MODEL, { formatOf }).check();
   }
 
+  /**
+   * What writing in the hand needs, begun for a corrected word
+   * (write-in-hand.ts `setUp`): the model's download card when it is not on
+   * this device, and once it is (now, or when its download ends) the
+   * practice sheet's dialog when too few of its lines are copied.
+   */
+  setUp(): void {
+    const store = this.host.models.register(WRITER_MODEL);
+    const sheet = async (): Promise<void> => {
+      const model = await this.loadModel();
+      if ("problem" in model) return;
+      const pool = await this.poolOf((ch) => model.manifest.chars.indexOf(ch) > 0);
+      this.practiceLines = pool.length;
+      if (pool.length >= MIN_PRACTICE_LINES) return;
+      const write = () => void writePracticePage(this.host.learningHost());
+      new NeedsSheetModal(this.host.app, write, true).open();
+    };
+    const begin = async (): Promise<void> => {
+      await store.check(true);
+      if (store.state.kind === "ready") return sheet();
+      const stop = store.subscribe(() => {
+        if (store.state.kind !== "ready") return;
+        stop();
+        void sheet().catch((error) => console.warn("FineNotes: practice sheet check", error));
+      });
+      this.host.models.offer(WRITER_MODEL.id, "ask");
+    };
+    void begin().catch((error) => console.warn("FineNotes: could not set up writing", error));
+  }
+
   /** Whether the menu offers Neaten: the model can be downloaded, or is already here. */
   available(): boolean {
     const store = this.host.models.register(WRITER_MODEL);
@@ -897,13 +927,16 @@ export class NeedsSheetModal extends Modal {
   constructor(
     app: App,
     private readonly write: () => void,
+    /** Asked for a corrected word, not by Beautify: says so. */
+    private readonly forWord = false,
   ) {
     super(app);
   }
 
   override onOpen(): void {
-    this.setTitle(t("ai.neaten.needsSheetTitle"));
-    this.contentEl.createEl("p", { text: t("ai.neaten.needsSheet", { min: MIN_PRACTICE_LINES }) });
+    this.setTitle(t(this.forWord ? "ai.hand.needsSheetTitle" : "ai.neaten.needsSheetTitle"));
+    const body = this.forWord ? "ai.hand.needsSheet" : "ai.neaten.needsSheet";
+    this.contentEl.createEl("p", { text: t(body, { min: MIN_PRACTICE_LINES }) });
     const buttons = this.contentEl.createDiv({ cls: "modal-button-container" });
     buttons
       .createEl("button", { text: t("common.cancel") })

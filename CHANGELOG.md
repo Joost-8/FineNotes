@@ -15,6 +15,14 @@ extracted from the matching section of this file by `release.yml`.
   joins your word list: it is not underlined again, Beautify does not ask
   about it again, and the next time a page is read Grape no longer changes
   it into a dictionary word. Your earlier answers count too.
+- **Spelling apart from reading.** A word whose letters Grape is sure of but
+  which is not a word is underlined red and wavy, and its card asks "You
+  wrote …" with the spelling fixes; picking one rewrites only that word in
+  your hand, or, without the writer model, offers its download and then the
+  practice lines. Other underlines ask what Grape misread, and teach it.
+  Correct on a word Grape changed to a dictionary word ("recive" read as
+  "revive") now shows what you wrote. Underlines also come a second after
+  the pen rests, not only when the page changes.
 
 - **Beautify this word.** A long press on a word now rewrites only that word,
   a word alone on its line included; the lasso's Beautify still does whole

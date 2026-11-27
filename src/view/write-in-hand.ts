@@ -53,6 +53,8 @@ export interface KnownWriter {
   ready(): Promise<boolean>;
   readyNow(): boolean;
   writes(ch: string): boolean;
+  /** Start what writing in the hand needs: the model's download, then the practice lines. */
+  setUp(): void;
   writeKnown(
     texts: readonly string[],
     options?: { stop?: () => boolean; seed?: number; exact?: boolean; attempts?: number },
@@ -80,11 +82,21 @@ const REWRITE_ATTEMPTS = 3;
 const freshSeed = (): number => Math.floor(Math.random() * 1_000_000);
 
 export class WriteInHand {
+  /** The setup was started this session (setUp). */
+  private setUpAsked = false;
+
   constructor(private readonly writer: KnownWriter) {}
 
   /** Look once whether the writer can write, so the first menu after a launch already knows. */
   warm(): void {
     void this.writer.ready();
+  }
+
+  /** Start the writer's setup, once a session: a spelling fix wanted the word in the hand. */
+  setUp(): void {
+    if (this.setUpAsked) return;
+    this.setUpAsked = true;
+    this.writer.setUp();
   }
 
   /** Whether known text can be written in the writer's hand now (the last answer, looked at again behind). */
@@ -317,10 +329,13 @@ export class WriteInHand {
 
 /**
  * The word card's way to write a word in the writer's hand (`WordCheck.ask`),
- * or undefined when the writer cannot write yet or the note is read-only
- * (`locked`; then nothing is offered). The offer after an answer is a card
- * of one row where the card was, only for text the model can write;
- * `shown` hands it to whoever closes cards.
+ * or undefined when the note is read-only (`locked`; then nothing is
+ * offered). The offer after an answer is a card of one row where the card
+ * was, only for text the model can write; `shown` hands it to whoever
+ * closes cards. Before the writer can write (no model on this device, or
+ * too few practice lines), a word written as meant starts its setup
+ * instead, once a session (Joost, 2026-11-27: the download card, then the
+ * practice lines), and nothing is offered.
  */
 export function wordInHand(
   service: WriteInHand,
@@ -331,7 +346,10 @@ export function wordInHand(
   shown: (card: WordPopover) => void,
   locked: () => boolean = () => false,
 ): WriteWordInHand | undefined {
-  if (!service.canWrite() || locked()) return undefined;
+  if (locked()) return undefined;
+  if (!service.canWrite()) {
+    return { write: () => service.setUp(), writes: () => true, offer: () => {} };
+  }
   const write = (text: string): void =>
     void service.rewriteWord(surface, pageId, wordIds, text, locked);
   return {

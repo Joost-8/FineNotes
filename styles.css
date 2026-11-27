@@ -14587,9 +14587,9 @@ button.goodobsidian-gallery-back.clickable-icon {
   margin-bottom: 0;
 }
 
-/* A word Grape may have misread: a wavy underline, as a spelling checker
-   draws, in the theme's red; a finger tap asks what it says (word-check.ts). */
-/* A word Grape may have misread: a quiet dotted line, red and wavy while its menu is open. */
+/* A word to check (word-check.ts): Grape may have misread it, a quiet dotted line;
+   a likely misspelling (.is-spelling), red and wavy as a spell checker draws it.
+   While its card is open the mark is wavy and full: red, or the accent for a reading. */
 .goodobsidian-word-flag {
   position: absolute;
   height: 0;
@@ -14597,7 +14597,8 @@ button.goodobsidian-gallery-back.clickable-icon {
   opacity: 0.8;
 }
 
-.goodobsidian-word-flag.is-active {
+.goodobsidian-word-flag.is-active,
+.goodobsidian-word-flag.is-spelling {
   height: 4px;
   margin-top: -1px;
   border-bottom: none;
@@ -14609,8 +14610,31 @@ button.goodobsidian-gallery-back.clickable-icon {
     repeat-x left center / 6px 4px;
 }
 
+.goodobsidian-word-flag.is-active:not(.is-spelling) {
+  background-color: var(--interactive-accent);
+}
+
 .goodobsidian-word-flag.is-hidden {
   display: none;
+}
+
+/* Which question the card asks, above the word: "Grape read" or, in red, "You wrote". */
+.goodobsidian-wordcheck-question {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.goodobsidian-wordcheck-question svg {
+  width: 14px;
+  height: 14px;
+}
+
+.goodobsidian-wordcheck.is-spelling .goodobsidian-wordcheck-question {
+  color: var(--color-red);
 }
 
 /* The card a tapped underlined word opens (word-popover.ts). */

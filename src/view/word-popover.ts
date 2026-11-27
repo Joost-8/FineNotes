@@ -3,10 +3,12 @@
  * it): a FineNotes popover on <body>, below the tap, closed by a tap
  * outside, Escape, or an answer. Styled like the Add Page and AI popovers.
  *
- * - First what Grape read, large: the word to check.
- * - When its ink fits list words about as well as the reading, they follow
- *   right under it as chips, the first tinted with the accent: other words
- *   the ink may say, with no caption ("Did you mean" read as spelling).
+ * - First which question it asks, as a small mark and two words above the
+ *   word: "Grape read" (a doubtful reading) or "You wrote" (a spelling,
+ *   in the spelling mark's red, with the spell-check icon).
+ * - Then the word, large.
+ * - Chips under it, the first tinted: for a reading, other words the ink
+ *   may say; for a spelling, the words it may have been meant as.
  * - Then rows, each an icon, a label and an optional sub-line.
  */
 
@@ -24,8 +26,10 @@ export interface WordPopoverRow {
 }
 
 export interface WordPopoverContent {
-  /** What Grape read. */
+  /** What Grape read; for a spelling question, what the ink spells. */
   read: string;
+  /** A spelling question ("You wrote"), not a reading one ("Grape read"). */
+  spelling?: boolean;
   /** Other words the ink may say, as chips, best first; none for no chips. */
   chips: readonly string[];
   onChip: (word: string) => void;
@@ -68,10 +72,15 @@ export class WordPopover {
   }
 
   private build(content: WordPopoverContent): void {
+    const spelling = content.spelling === true;
+    this.el.toggleClass("is-spelling", spelling);
+    const question = this.el.createDiv({ cls: "goodobsidian-wordcheck-question" });
+    setIcon(question.createSpan(), spelling ? "spell-check" : "scan-text");
+    question.createSpan({ text: t(spelling ? "ai.word.youWrote" : "ai.word.grapeRead") });
     this.el.createDiv({ cls: "goodobsidian-wordcheck-read", text: `“${content.read}”` });
     if (content.chips.length > 0) {
       const chips = this.el.createDiv({ cls: "goodobsidian-wordcheck-chips" });
-      chips.setAttribute("aria-label", t("ai.word.orMaySay"));
+      chips.setAttribute("aria-label", t(spelling ? "ai.word.meantAs" : "ai.word.orMaySay"));
       content.chips.forEach((word, i) => {
         // `clickable-icon`: Obsidian pads any other button 20 px on iPad.
         const chip = chips.createEl("button", {

@@ -1,6 +1,6 @@
 /**
  * The word card's answers and what each records (word-check.ts `ask`):
- * Grape's misreads teach it; a word the writer wrote wrong ("Should be …")
+ * Grape's misreads teach it; a word the writer wrote wrong (a spelling fix)
  * fixes the text, and the ink keeps its reading as label (RESEARCH-LOG 2026-11-25).
  */
 import { describe, expect, it, vi } from "vitest";
@@ -9,6 +9,7 @@ vi.mock("obsidian", () => import("./fake-obsidian"));
 
 interface Content {
   read: string;
+  spelling?: boolean;
   chips: readonly string[];
   onChip: (word: string) => void;
   rows: readonly { icon: string; label: string; sub?: string; run: () => void }[];
@@ -43,7 +44,7 @@ async function setup() {
   const check = new WordCheck(
     app as never,
     () => "plug",
-    () => Promise.resolve(["receive", "relieve", "recline"].join("\n")),
+    () => Promise.resolve(["receive", "relieve", "recline", "revive"].join("\n")),
   );
   await check.load();
   return { check, store };
@@ -84,25 +85,20 @@ async function saved(store: Map<string, string>) {
 }
 
 describe("the word card", () => {
-  it("offers the close list word as what the writer meant when the ink says the reading", async () => {
+  it("asks a spelling question when the ink says the reading and a list word is close", async () => {
     const { check } = await setup();
     const card = open(check, { margin: 2.4, words: ["receive", "relieve"] });
-    expect(card.chips).toEqual([]);
-    expect(card.rows.map((r) => r.label)).toEqual([
-      "It says “recieve”",
-      "Should be “receive”",
-      "Add to dictionary",
-      "Type what it says…",
-    ]);
+    expect(card.spelling).toBe(true);
+    expect(card.read).toBe("recieve");
+    expect(card.chips).toEqual(["receive", "relieve"]);
+    expect(card.rows.map((r) => r.label)).toEqual(["Grape misread it…", "Add to dictionary"]);
   });
 
-  it("Should be: the text says the meant word, the label stays the reading, and the ink is written in the hand", async () => {
+  it("a spelling fix: the text says the meant word, the label stays the ink's, and that word is written in the hand", async () => {
     const { check, store } = await setup();
     const hand = { offer: vi.fn(), write: vi.fn(), writes: () => true };
     const card = open(check, { margin: 2.4, words: ["receive"] }, false, hand);
-    const row = card.rows.find((r) => r.label.startsWith("Should be"));
-    expect(row?.sub).toBe("In your handwriting too");
-    row?.run();
+    card.onChip("receive");
     const [answer] = await saved(store);
     expect(answer).toMatchObject({
       kind: "mistake",
@@ -118,18 +114,23 @@ describe("the word card", () => {
     ]);
   });
 
-  it("Should be without the writer: the text alone, and no line about the hand", async () => {
+  it("a spelling fix without the writer: the text alone", async () => {
     const { check, store } = await setup();
-    const card = open(check, { margin: 2.4, words: ["receive"] });
-    const row = card.rows.find((r) => r.label.startsWith("Should be"));
-    expect(row?.sub).toBeUndefined();
-    row?.run();
+    open(check, { margin: 2.4, words: ["receive"] }).onChip("receive");
     expect((await saved(store))[0].meant).toBe("receive");
   });
 
-  it("keeps the misread card as it was: chips first, no Should be, and a chip teaches", async () => {
+  it("a spelling fix the model cannot write yet: the hand is asked to write, which starts its setup", async () => {
+    const { check } = await setup();
+    const hand = { offer: vi.fn(), write: vi.fn(), writes: () => true };
+    open(check, { margin: 2.4, words: ["receive"] }, false, hand).onChip("receive");
+    await vi.waitFor(() => expect(hand.write).toHaveBeenCalledWith("receive"));
+  });
+
+  it("asks a reading question when the ink fits list words as well: chips first, and a chip teaches", async () => {
     const { check, store } = await setup();
     const card = open(check, { margin: 0.3, words: ["receive", "recline"] });
+    expect(card.spelling).toBeFalsy();
     expect(card.chips).toEqual(["receive", "recline"]);
     expect(card.rows.map((r) => r.label)).toEqual([
       "Type what it says…",
@@ -140,41 +141,82 @@ describe("the word card", () => {
     const [answer] = await saved(store);
     expect(answer).toMatchObject({ kind: "misread", text: "receive" });
     expect(answer.meant).toBeUndefined();
-    expect(check.answeredAt).toHaveLength(1);
   });
 
   it("It says: the reading is what the ink says, and it is learned", async () => {
     const { check, store } = await setup();
-    const card = open(check, { margin: 2.4, words: ["receive"] });
+    const card = open(check, null);
+    expect(card.rows.map((r) => r.label)).toEqual([
+      "It says “recieve”",
+      "Add to dictionary",
+      "Type what it says…",
+    ]);
     card.rows[0].run();
     const [answer] = await saved(store);
     expect(answer).toMatchObject({ kind: "mistake", text: "recieve" });
     expect(answer.meant).toBeUndefined();
-    expect(check.answeredAt).toHaveLength(1);
   });
 
-  it("Correct on a word whose ink says the reading: Type first, then It says and Should be", async () => {
+  it("Correct on a misspelt word asks the spelling question too", async () => {
     const { check } = await setup();
-    const card = open(check, { margin: 2.4, words: ["receive"] }, true);
-    expect(card.rows.map((r) => r.label)).toEqual([
-      "Type what it says…",
-      "It says “recieve”",
-      "Should be “receive”",
-      "Add to dictionary",
-    ]);
-  });
-
-  it("no close word: no Should be", async () => {
-    const { check } = await setup();
-    expect(open(check, null).rows.map((r) => r.label)).toEqual([
-      "It says “recieve”",
-      "Add to dictionary",
-      "Type what it says…",
-    ]);
+    expect(open(check, { margin: 2.4, words: ["receive"] }, true).spelling).toBe(true);
   });
 });
 
-describe("Should be only for a word its list lacks (Joost's iPad test, 2026-11-25)", () => {
+describe("a word Grape's second look changed (recive read as revive, Joost 2026-11-27)", () => {
+  const changed = (check: InstanceType<typeof WordCheck>) => {
+    shown.length = 0;
+    check.ask(
+      {
+        ...word({ margin: 0.2, words: ["revive", "receive", "recite"] }),
+        word: { text: "revive", wrote: "recive", strokeIds: ["s1", "s2"] },
+      },
+      { x: 0, y: 0 },
+      () => {},
+    );
+    return shown[0];
+  };
+
+  it("shows what the ink spells, and the words it may have been meant as", async () => {
+    const { check } = await setup();
+    const card = changed(check);
+    expect(card.spelling).toBe(true);
+    expect(card.read).toBe("recive");
+    expect(card.chips).toEqual(["revive", "receive", "recite"]);
+  });
+
+  it("a fix labels the ink as written and shows the meant word", async () => {
+    const { check, store } = await setup();
+    changed(check).onChip("receive");
+    const [answer] = await saved(store);
+    expect(answer).toMatchObject({
+      kind: "mistake",
+      read: "revive",
+      text: "recive",
+      meant: "receive",
+    });
+  });
+
+  it("Add to dictionary keeps the word as written, and the text shows it", async () => {
+    const { check, store } = await setup();
+    changed(check)
+      .rows.find((r) => r.label === "Add to dictionary")
+      ?.run();
+    const [answer] = await saved(store);
+    expect(answer).toMatchObject({ kind: "ignore", read: "revive", text: "recive" });
+    expect([...check.shownOn("Notes/Week 3.notebook.md", "p1")]).toEqual([
+      [strokeKey(["s1", "s2"]), "recive"],
+    ]);
+  });
+
+  it("is not underlined: the second look mostly puts Grape's own misreads right", async () => {
+    const { check } = await setup();
+    const w = { text: "revive", wrote: "recive", strokeIds: ["s1", "s2"] };
+    expect(await check.flags("n.notebook.md", "p1", [w])).toHaveLength(0);
+  });
+});
+
+describe("a spelling question only for a word its list lacks (Joost's iPad test, 2026-11-25)", () => {
   const list = "on\nat\nin\ntuesday\nthursday\nroom\nsoon\nreceive\nprovincie\n";
   const card = (text: string, suggested: string, language?: "en" | "nl") => {
     shown.length = 0;
@@ -204,12 +246,12 @@ describe("Should be only for a word its list lacks (Joost's iPad test, 2026-11-2
           { x: 0, y: 0 },
           () => {},
         );
-        return shown[0].rows.map((r) => r.label);
+        return shown[0];
       },
     };
   };
 
-  it("offers none for a listed word, a short one, a number, a code or maths", async () => {
+  it("asks none for a listed word, a short one, a number, a code or maths", async () => {
     for (const [text, suggested] of [
       ["Tuesday", "Thursday"],
       ["room", "soon"],
@@ -222,32 +264,28 @@ describe("Should be only for a word its list lacks (Joost's iPad test, 2026-11-2
     ]) {
       const { check, show } = card(text, suggested);
       await check.load();
-      expect(
-        show().some((l) => l.startsWith("Should be")),
-        text,
-      ).toBe(false);
+      expect(show().spelling, text).toBeFalsy();
     }
   });
 
-  it("still offers one for a plain word the list lacks", async () => {
+  it("still asks one for a plain word the list lacks", async () => {
     const { check, show } = card("recieve", "receive");
     await check.load();
-    expect(show()).toContain("Should be “receive”");
+    expect(show().chips).toEqual(["receive"]);
   });
 
-  it("on another language's page, judges by that language's pack, and offers none without it", async () => {
+  it("on another language's page, judges by that language's pack, and asks none without it", async () => {
     const dutch = card("provincie", "province", "nl");
     await dutch.check.flags("n.notebook.md", "p1", [], "nl");
-    expect(dutch.show().some((l) => l.startsWith("Should be"))).toBe(false);
+    expect(dutch.show().spelling).toBeFalsy();
     const unknown = card("bestrigdt", "bestrijdt", "nl");
     await unknown.check.load();
     // The pack's list was never read: nothing to judge by.
-    expect(unknown.show().some((l) => l.startsWith("Should be"))).toBe(false);
+    expect(unknown.show().spelling).toBeFalsy();
     await unknown.check.flags("n.notebook.md", "p1", [], "nl");
-    expect(unknown.show()).toContain("Should be “bestrijdt”");
+    expect(unknown.show().chips).toEqual(["bestrijdt"]);
   });
 });
-
 describe("underlines on a page in another language", () => {
   const read = (text: string, id: string) => ({ text, strokeIds: [id] });
   const words = [read("tentamen", "a"), read("rekenmashine", "b"), read("exam", "c")];

@@ -34,10 +34,11 @@ import {
   parseWordList,
   plainWord,
   serializeCorrections,
+  strokeKey,
 } from "../recognition/hwr/corrections";
 import { type LexiconSuggestion, SUGGEST_MARGIN, replaceCore } from "../recognition/hwr/lexicon";
 import { personalWords, withPersonal } from "../recognition/hwr/personal-words";
-import { offersSpelling } from "../recognition/hwr/spelling-offer";
+import { spellingFixes } from "../recognition/hwr/spelling-flags";
 import type { Stroke } from "../model/document";
 import type { PageLanguage } from "../recognition/hwr/page-language";
 import type { PackWords } from "./language-packs";
@@ -218,16 +219,12 @@ export class WordCheck {
     language: PageLanguage = "en",
   ): Promise<ReadWord[]> {
     await this.load();
+    const answered = answeredOn(this.corrections, note, pageId);
     if (language !== "en") {
       const pack = await this.packs(language);
       if (pack) this.packLists.set(language, pack.words);
       if (!pack?.underline) return [];
-      return flagWords(
-        words,
-        pack.words,
-        this.personal,
-        answeredOn(this.corrections, note, pageId),
-      );
+      return flagWords(words, pack.words, this.personal, answered);
     }
     if (!this.words || this.words.size === 0) {
       if (!this.toldNoList) {
@@ -236,7 +233,35 @@ export class WordCheck {
       }
       return [];
     }
-    return flagWords(words, this.words, this.personal, answeredOn(this.corrections, note, pageId));
+    return flagWords(words, this.words, this.personal, answered);
+  }
+
+  /**
+   * What `word` may have been meant as, when it is a spelling question
+   * (spelling-flags.ts); empty when the question is whether Grape read it
+   * right. Decides the word's mark and its card.
+   */
+  spellingOf(
+    word: ReadWord,
+    suggestion: LexiconSuggestion | null | undefined,
+    language: PageLanguage = "en",
+  ): string[] {
+    const listed = this.listedFor(language);
+    if (!listed) return [];
+    return spellingFixes(word, suggestion, listed, language === "en", SUGGEST_MARGIN);
+  }
+  /**
+   * The underlines of `words`: their ink, and the stroke keys of those that
+   * are spelling questions (`spellingOf`), drawn as such.
+   */
+  marks(
+    words: readonly ReadWord[],
+    found: ReadonlyMap<string, LexiconSuggestion | null> | undefined,
+    language: PageLanguage = "en",
+  ): { flags: string[][]; spelling: Set<string> } {
+    const keys = words.map((w) => strokeKey(w.strokeIds));
+    const spelt = keys.filter((k, i) => this.spellingOf(words[i], found?.get(k), language).length);
+    return { flags: words.map((w) => w.strokeIds), spelling: new Set(spelt) };
   }
 
   /** The answers given on page `pageId` of `note`: what each answered word is, by its strokes (Neaten). */
@@ -286,22 +311,24 @@ export class WordCheck {
   }
 
   /**
-   * The card for a tapped word (word-popover.ts): what Grape read, then the
-   * answers. Nothing is changed without a tap.
+   * The card for a tapped word (word-popover.ts). It asks one of two
+   * questions, and says which above the word (Joost, 2026-11-27: one card
+   * for both left him unable to tell whether he was fixing his spelling or
+   * Grape's reading):
    *
-   * - When its ink fits list words about as well as the reading (margin
-   *   under `SUGGEST_MARGIN`), it is probably a misread: the best list words
-   *   come first, as chips under the reading, then Type what it says, It
-   *   says "…", and Add to dictionary.
-   * - Otherwise the ink really shows this word: It says "…", then Should
-   *   be "…" when a list word is close (the writer wrote it wrong: the text
-   *   shows that word, and the ink is written again in the writer's hand
-   *   when it can be), Add to dictionary, then Type.
+   * - **You wrote** "�": a spelling question (`spellingOf`). The chips are
+   *   what it may have been meant as; one picked is a mistake with `meant`,
+   *   the ink labelled as written, and that word alone is written again in
+   *   the writer's hand (or, without the writer, its setup begins). Then
+   *   Grape misread it� (the ink does not say this), Add to dictionary.
+   * - **Grape read** "�": a reading question. When its ink fits list words
+   *   about as well as the reading (margin under `SUGGEST_MARGIN`), they are
+   *   the chips: what the ink may say. Then Type what it says, It says "�",
+   *   and Add to dictionary.
    *
-   * Which kind of correction an answer is, Grape's misread or the writer's
-   * own mistake, is never guessed: the ink fits both about as well
-   * (RESEARCH-LOG 2026-11-25). The answer picked says it, and Type what it
-   * says asks with its two buttons.
+   * Which kind an answer is, Grape's misread or the writer's own mistake,
+   * is still never guessed from the ink (RESEARCH-LOG 2026-11-25): the card
+   * only picks the question, and the answer picked says the kind.
    *
    * `done` runs after an answer is saved, to take the underline away;
    * `closed` whenever the card closes, answered or not.
@@ -320,38 +347,52 @@ export class WordCheck {
   ): WordPopover {
     const read = word.word.text;
     const found = word.suggestion;
-    const misread = !!found && found.words.length > 0 && found.margin < SUGGEST_MARGIN;
     // A word answered as misread is offered in the writer's hand, as the answer says it.
     const reply = (kind: CorrectionKind, text: string) =>
       void this.answer(word, kind, text).then(() => {
         done();
         if (hand && kind === "misread") hand.offer(text);
       });
-    // Written wrong: the text shows `text`; the label stays the reading, what the ink says (corrections.ts).
+    // Written wrong: the text shows `text`; the label is what the ink says (corrections.ts).
+    const written = word.word.wrote ?? read;
     const meant = (text: string, write: boolean) =>
-      void this.answer(word, "mistake", read, undefined, text).then(() => {
+      void this.answer(word, "mistake", written, undefined, text).then(() => {
         done();
         if (!hand) return;
         if (write) hand.write(text);
         else hand.offer(text);
       });
-    // The ink really says the reading, and a list word is close: the writer may have meant it.
-    const closest = !misread && found?.words[0] ? replaceCore(read, found.words[0]) : null;
-    const inHand = !!hand && !!closest && hand.writes(closest);
-    // Only when it is very likely a misspelling (spelling-offer.ts): never for a listed word
-    // ("on", "Tuesday"), a short one, a code or maths ("B-214", "O(log"); Joost, 2026-11-25.
-    const listed = this.listedFor(word.language ?? "en");
-    const spelled: WordPopoverRow[] =
-      closest && listed && offersSpelling(read, closest, listed, (word.language ?? "en") === "en")
-        ? [
-            {
-              icon: "spell-check",
-              label: t("ai.word.shouldBe", { word: closest }),
-              sub: inHand ? t("ai.word.inYourHand") : undefined,
-              run: () => meant(closest, inHand),
-            },
-          ]
-        : [];
+    const fixes = this.spellingOf(word.word, found, word.language ?? "en");
+    // Stored as "ignore", the kind's name since the first corrections files.
+    const add: WordPopoverRow = {
+      icon: "eye-off",
+      label: t("ai.word.addToDictionary"),
+      sub: t("ai.word.neverUnderline"),
+      run: () => reply("ignore", written),
+    };
+    if (fixes.length > 0) {
+      const misread: WordPopoverRow = {
+        icon: "scan-text",
+        label: t("ai.word.grapeMisread"),
+        run: () =>
+          new WordCorrectionModal(this.app, written, (text, wrong) =>
+            wrong ? meant(text, false) : reply("misread", text),
+          ).open(),
+      };
+      return new WordPopover(
+        at,
+        {
+          read: written,
+          spelling: true,
+          chips: fixes,
+          // The corrected word alone is written again in the hand (Joost, 2026-11-27).
+          onChip: (w) => meant(w, !!hand && hand.writes(w)),
+          rows: [misread, add],
+        },
+        closed,
+      );
+    }
+    const misread = !!found && found.words.length > 0 && found.margin < SUGGEST_MARGIN;
     const correct: WordPopoverRow = {
       icon: "pencil",
       label: t("ai.word.type"),
@@ -365,29 +406,18 @@ export class WordCheck {
       label: t("ai.word.itSays", { word: read }),
       run: () => reply("mistake", read),
     };
-    // Stored as "ignore", the kind's name since the first corrections files.
-    const add: WordPopoverRow = {
-      icon: "eye-off",
-      label: t("ai.word.addToDictionary"),
-      sub: t("ai.word.neverUnderline"),
-      run: () => reply("ignore", read),
-    };
+    const addable = !(asked && this.unflagged(read)) ? [add] : [];
     return new WordPopover(
       at,
       {
         read,
         chips: misread ? found.words : [],
         onChip: (w) => reply("misread", replaceCore(read, w)),
-        rows: misread
-          ? [correct, wrote, ...(asked && this.unflagged(read) ? [] : [add])]
-          : asked
-            ? [correct, wrote, ...spelled, ...(this.unflagged(read) ? [] : [add])]
-            : [wrote, ...spelled, add, correct],
+        rows: misread || asked ? [correct, wrote, ...addable] : [wrote, add, correct],
       },
       closed,
     );
   }
-
   /**
    * Whether a word (lower case) is in `language`'s list or answered as
    * right; null when that list is not known (another language whose pack's
