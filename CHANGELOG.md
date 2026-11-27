@@ -43,6 +43,7 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Copy and Cut reach other apps** ([#333](https://github.com/Joost-8/FineNotes/pull/333), thanks @koltensaccount): a lasso of text boxes pastes elsewhere as formatted text, anything with ink or shapes as a transparent picture; pasted back into FineNotes, it stays editable.
 - **Help improve Grape: share new items automatically.** The consent has a
   box (ticked unless you untick it) to send later practice lines and corrections as they are
   made; it is also under ⋯ in settings. Without it, FineNotes reminds you
