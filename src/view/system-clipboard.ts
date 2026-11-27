@@ -48,6 +48,22 @@ export function writeSystemText(text: string): Promise<void> {
 }
 
 /**
+ * Empty the system clipboard, without telling {@link onSystemTextWritten}'s
+ * listeners: FineNotes' own clipboard stays the fresher one, so a paste
+ * after leaving the app still pastes it. Never rejects.
+ */
+export async function clearSystemClipboard(): Promise<boolean> {
+  const clip = typeof navigator !== "undefined" ? navigator.clipboard : undefined;
+  if (!clip || typeof clip.writeText !== "function") return false;
+  try {
+    await clip.writeText("");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Write both clipboard representations in the gesture. This text represents
  * editable ink. `plainOnly`: Android's WebView takes a `ClipboardItem` and
  * then pastes it as nothing, so there only the plain text is written.

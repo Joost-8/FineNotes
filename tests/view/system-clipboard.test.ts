@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  clearSystemClipboard,
   onSystemTextWritten,
   readSystemClipboard,
   writeSelectionText,
@@ -118,5 +119,28 @@ describe("writeSelectionText", () => {
     expect(await writeSelectionText(selection, () => true)).toBe(true);
     expect(await writeSelectionText(selection, () => false)).toBe(false);
     expect(writeText).toHaveBeenCalledExactlyOnceWith(selection.text);
+  });
+});
+
+describe("clearSystemClipboard", () => {
+  it("empties the clipboard without telling the text listeners (the ink stays the fresher copy)", async () => {
+    const writeText = vi.fn(async () => undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const heard = vi.fn();
+    const stop = onSystemTextWritten(heard);
+    try {
+      expect(await clearSystemClipboard()).toBe(true);
+      expect(writeText).toHaveBeenCalledWith("");
+      expect(heard).not.toHaveBeenCalled();
+    } finally {
+      stop();
+    }
+  });
+
+  it("never rejects", async () => {
+    vi.stubGlobal("navigator", { clipboard: { writeText: () => Promise.reject(new Error("no")) } });
+    expect(await clearSystemClipboard()).toBe(false);
+    vi.stubGlobal("navigator", {});
+    expect(await clearSystemClipboard()).toBe(false);
   });
 });

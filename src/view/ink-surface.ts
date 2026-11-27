@@ -739,6 +739,7 @@ import { FINGER_HOLD_MS, FingerHold } from "../input/finger-hold";
 import { cleanPastedText, imageFileOf, inkFirst, pastedTextOrigin } from "./paste-choice";
 import {
   canReadSystemClipboard,
+  clearSystemClipboard,
   onSystemTextWritten,
   writeSelectionText,
   readSystemClipboard,
@@ -16960,8 +16961,11 @@ ${this.inkLatency.line()} desync=${this.renderer?.wetLowLatency() ?? "-"}`
               if (written) clipboard.noteOwnText(cleanPastedText(rich.text), version);
             },
           );
-        } else if (!Platform.isAndroidApp) {
-          // Android pastes every clipboard picture empty: no 13 s render for nothing.
+        } else if (Platform.isAndroidApp) {
+          // Android pastes every clipboard picture empty, so no 13 s render for
+          // nothing; emptied, the clipboard cannot paste an older app's text.
+          void clearSystemClipboard();
+        } else {
           copySelectionPngToSystemClipboard(clipboard, version, () =>
             this.selectionPicture({ ...group, images: copied.images }, null).then(
               (shot) => shot?.blob ?? null,
@@ -23710,10 +23714,6 @@ function isEditable(target: EventTarget | null): boolean {
   return el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
 }
 
-/**
- * The first picture file a paste carries, or `null`. Looked for in `files`
- * and then among the items, since engines fill one or the other.
- */
 /** `setIcon`, with a text fallback for mobile builds where an icon comes up blank. */
 /**
  * A closed shape, whole: a side dot copies it, and a side dot's arrow may be
