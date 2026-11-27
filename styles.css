@@ -798,40 +798,11 @@ body:not(.is-mobile) .goodobsidian-view {
   );
 }
 
-/* A pen held to be moved: it lifts and follows the finger along the row,
-   and a line marks the gap it would land in (pen-type-drag.ts). */
+/* A pen held to be moved: dimmed in its live slot while the floating ghost
+   chip follows the pointer (pen-type-drag.ts). */
 .goodobsidian-options button.goodobsidian-pentype.is-lifted {
-  z-index: 1;
-  background: var(--gob-pill-bg);
-  box-shadow: var(--gob-shadow-float);
-  translate: var(--gob-pen-shift, 0px) 0;
-  scale: 1.08;
-}
-
-.goodobsidian-options.is-upright button.goodobsidian-pentype.is-lifted {
-  translate: 0 var(--gob-pen-shift, 0px);
-}
-
-.goodobsidian-pentype-gap {
-  position: absolute;
-  top: 4px;
-  bottom: 4px;
-  left: var(--gob-pen-gap, 0px);
-  width: 2px;
-  margin-left: -1px;
-  border-radius: 1px;
-  background: var(--interactive-accent);
-  pointer-events: none;
-}
-
-.goodobsidian-options.is-upright .goodobsidian-pentype-gap {
-  top: var(--gob-pen-gap, 0px);
-  right: 4px;
-  bottom: auto;
-  left: 4px;
-  width: auto;
-  height: 2px;
-  margin: -1px 0 0;
+  background: var(--background-modifier-hover);
+  opacity: 0.4;
 }
 
 /* A stroke width, drawn as a literal stroke; the active one is boxed. */
@@ -26168,4 +26139,56 @@ button.goodobsidian-ns-companion-folder.clickable-icon {
     0 4px,
     4px -4px,
     -4px 0;
+}
+
+/* --- Direct press-and-hold toolbar icon reorder & blank-space drag-to-dock --- */
+.goodobsidian-toolbar.is-bar-held {
+  outline: 1.5px solid var(--interactive-accent);
+  outline-offset: -1.5px;
+}
+.goodobsidian-toolbar.is-reordering button.is-drag-held {
+  background: var(--background-modifier-hover);
+  color: var(--interactive-accent);
+  opacity: 0.4;
+}
+.goodobsidian-toolbar .goodobsidian-accessories-button.is-drop-target,
+.goodobsidian-pen-types.is-drop-target,
+.goodobsidian-options.is-drop-target {
+  background: hsla(var(--interactive-accent-hsl), 0.18);
+  outline: 1.5px dashed var(--interactive-accent);
+  color: var(--interactive-accent);
+}
+.goodobsidian-dock-preview {
+  position: absolute;
+  z-index: 40;
+  pointer-events: none;
+  border-radius: var(--gob-dock-radius, 0px);
+  border: 2px dashed var(--interactive-accent);
+  background: hsla(var(--interactive-accent-hsl), 0.14);
+  box-shadow: var(--shadow-s);
+  transition: all 0.14s ease-out;
+}
+.goodobsidian-dock-preview.is-dock-top,
+.goodobsidian-dock-preview.is-dock-bottom {
+  left: var(--gob-dock-start, 0px);
+  right: var(--gob-dock-end, 0px);
+  height: var(--gob-dock-size, 52px);
+}
+.goodobsidian-dock-preview.is-dock-top {
+  top: var(--gob-dock-edge, 0px);
+}
+.goodobsidian-dock-preview.is-dock-bottom {
+  bottom: var(--gob-dock-edge, 0px);
+}
+.goodobsidian-dock-preview.is-dock-left,
+.goodobsidian-dock-preview.is-dock-right {
+  top: var(--gob-dock-start, 0px);
+  bottom: var(--gob-dock-end, 0px);
+  width: var(--gob-dock-size, 52px);
+}
+.goodobsidian-dock-preview.is-dock-left {
+  left: var(--gob-dock-edge, 0px);
+}
+.goodobsidian-dock-preview.is-dock-right {
+  right: var(--gob-dock-edge, 0px);
 }

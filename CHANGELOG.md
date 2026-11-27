@@ -43,6 +43,7 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Move tools and the toolbar by holding them** ([#337](https://github.com/Joost-8/FineNotes/pull/337), thanks @koltensaccount): hold a tool to drag it along the bar, into ⋯ or back; hold a pen in its options to pin it to the bar; hold the bar's empty space and drag it to another edge. **Lock toolbar** (the lock in Customize toolbar) turns these off, so the bar changes only in Customize.
 - **Copy and Cut reach other apps** ([#333](https://github.com/Joost-8/FineNotes/pull/333), thanks @koltensaccount): a lasso of text boxes pastes elsewhere as formatted text, anything with ink or shapes as a transparent picture; pasted back into FineNotes, it stays editable.
 - **Help improve Grape: share new items automatically.** The consent has a
   box (ticked unless you untick it) to send later practice lines and corrections as they are

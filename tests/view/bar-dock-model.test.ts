@@ -4,6 +4,7 @@ import {
   type Box,
   DEFAULT_BAR_DOCK,
   barMenuSide,
+  dockCandidate,
   isBarUpright,
   menuPlace,
   menuRoom,
@@ -334,5 +335,37 @@ describe("a popover under the pill in a narrow pane (FineNotes#210)", () => {
 
   it("keeps a popover wider than the pane against its left edge", () => {
     expect(60 + sideLift(60, 400, 8, 367) - 400 / 2).toBe(8);
+  });
+});
+
+describe("dockCandidate", () => {
+  const host = { left: 0, top: 0, right: 1000, bottom: 800 };
+
+  it("stays on the current edge for small movements along the middle of the bar", () => {
+    expect(dockCandidate(525, 40, host, "top", 500, 40)).toBe("top");
+    expect(dockCandidate(440, 40, host, "top", 500, 40)).toBe("top");
+    expect(dockCandidate(560, 760, host, "bottom", 500, 760)).toBe("bottom");
+    expect(dockCandidate(40, 460, host, "left", 40, 400)).toBe("left");
+  });
+
+  it("picks left or right only when dragged near those edges from top or bottom", () => {
+    expect(dockCandidate(120, 40, host, "top", 500, 40)).toBe("left");
+    expect(dockCandidate(880, 40, host, "top", 500, 40)).toBe("right");
+    expect(dockCandidate(120, 760, host, "bottom", 500, 760)).toBe("left");
+    expect(dockCandidate(880, 760, host, "bottom", 500, 760)).toBe("right");
+  });
+
+  it("picks opposite edge when dragged across the pane", () => {
+    expect(dockCandidate(500, 720, host, "top", 500, 40)).toBe("bottom");
+    expect(dockCandidate(500, 80, host, "bottom", 500, 760)).toBe("top");
+    expect(dockCandidate(900, 400, host, "left", 40, 400)).toBe("right");
+    expect(dockCandidate(100, 400, host, "right", 960, 400)).toBe("left");
+  });
+
+  it("picks top or bottom when dragged near those edges from left or right", () => {
+    expect(dockCandidate(40, 120, host, "left", 40, 400)).toBe("top");
+    expect(dockCandidate(40, 680, host, "left", 40, 400)).toBe("bottom");
+    expect(dockCandidate(960, 120, host, "right", 960, 400)).toBe("top");
+    expect(dockCandidate(960, 680, host, "right", 960, 400)).toBe("bottom");
   });
 });

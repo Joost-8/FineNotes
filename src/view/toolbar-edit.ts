@@ -28,6 +28,7 @@
 import { setIcon } from "obsidian";
 import { type TextKey, t } from "../i18n/translate";
 import { type BarDock, isBarUpright } from "./bar-dock-model";
+import { setToolbarLocked, toolbarLocked } from "./toolbar-lock";
 import {
   LOOK_PALETTES,
   LOOK_STYLES,
@@ -100,6 +101,8 @@ export interface ToolbarEditorHost {
     customize?: (place: (slot: BarItemId) => void) => void;
   };
   layout: () => ToolbarLayout;
+  /** Preview `layout` live on the bar without persisting yet. */
+  preview?: (layout: ToolbarLayout) => void;
   /** Show `layout` and keep it. */
   apply: (layout: ToolbarLayout) => void;
   /** Mark what would fold into ⋯ at this width, every button shown. */
@@ -204,6 +207,7 @@ export class ToolbarEditor {
   private closedBy: "scrim" | BarItemId | null = null;
   private press: Press | null = null;
   private ghost: HTMLElement | null = null;
+  private dragStartLayout: ToolbarLayout | null = null;
   private gap: HTMLElement | null = null;
   private target: Target | null = null;
   /** Essentials: the bar button a drop would swap with (`swapItems`). */
@@ -378,6 +382,17 @@ export class ToolbarEditor {
         button.addEventListener("click", () => setDock(d));
       }
     }
+    // Lock toolbar (toolbar-lock.ts): locked, holding the bar drags nothing.
+    const locked = toolbarLocked();
+    const lock = head.createEl("button", { cls: "goodobsidian-edit-dock clickable-icon" });
+    setIcon(lock, locked ? "lock" : "lock-open");
+    lock.toggleClass("is-active", locked);
+    lock.setAttribute("aria-pressed", String(locked));
+    lock.setAttribute("aria-label", t("toolbar.edit.lock"));
+    lock.addEventListener("click", () => {
+      setToolbarLocked(!locked);
+      this.buildTray();
+    });
     const setRow = this.h.setPillRow;
     if (setRow) {
       const on = this.h.pillRow();
@@ -403,7 +418,11 @@ export class ToolbarEditor {
     this.newPenChip(head);
     if (this.h.newPen?.remove) {
       // Beside New pen, while a pen button is carried: dropped here, it goes.
-      const trash = head.createDiv({ cls: "goodobsidian-edit-trash is-hidden" });
+      const trash = head.createDiv({ cls: "goodobsidian-edit-trash" });
+      // A live preview redraws the tray mid-drag: a pen still carried keeps it.
+      const carried = this.press?.dragging === true && isPenSlot(this.press.id);
+      trash.toggleClass("is-hidden", !carried);
+      trash.toggleClass("is-target", carried && this.overTrash);
       setIcon(trash, "trash-2");
       trash.setAttribute("aria-label", t("toolbar.edit.deletePen"));
       this.trash = trash;
@@ -616,6 +635,7 @@ export class ToolbarEditor {
     if (!press.dragging) {
       if (Math.hypot(event.clientX - press.x, event.clientY - press.y) < DRAG_SLOP) return;
       press.dragging = true;
+      this.dragStartLayout = this.h.layout();
       // Its own element, not a clone: a copied <button> would take Obsidian's
       // button padding (20 px a side on an iPad) and squeeze its icon away.
       const ghost = this.doc.body.createDiv({ cls: "goodobsidian-edit-ghost" });
@@ -659,7 +679,18 @@ export class ToolbarEditor {
       this.setSwap(shelf ? null : this.swapAt(press.id, event.clientX, event.clientY));
       return;
     }
-    this.setTarget(this.hitTest(press.id, event.clientX, event.clientY));
+    const nextTarget = this.hitTest(press.id, event.clientX, event.clientY);
+    this.setTarget(nextTarget);
+    if (this.h.preview && this.dragStartLayout && (press.id as string) !== NEW_PEN) {
+      const previewed =
+        nextTarget && typeof nextTarget !== "string"
+          ? moveTo(this.dragStartLayout, press.id, nextTarget)
+          : this.dragStartLayout;
+      if (!sameLayout(this.h.layout(), previewed)) this.h.preview(previewed);
+      this.h
+        .button(press.id)
+        ?.toggleClass("is-drag-source", nextTarget !== null && typeof nextTarget !== "string");
+    }
   }
 
   /**
@@ -827,6 +858,15 @@ export class ToolbarEditor {
   private endPress(): void {
     this.pressCleanup?.();
     this.pressCleanup = null;
+    if (
+      this.dragStartLayout &&
+      this.h.preview &&
+      !sameLayout(this.h.layout(), this.dragStartLayout)
+    ) {
+      this.h.preview(this.dragStartLayout);
+    }
+    this.dragStartLayout = null;
+    if (this.press) this.h.button(this.press.id)?.removeClass("is-drag-source");
     this.press?.el.removeClass("is-drag-source");
     this.press = null;
     this.ghost?.remove();
@@ -897,6 +937,8 @@ export class ToolbarEditor {
     this.gap?.remove();
     this.gap = null;
     if (!target || typeof target === "string" || !this.press) return;
+    // Live preview already moves the real button into its slot; only NEW_PEN needs a gap placeholder.
+    if (this.h.preview && (this.press.id as string) !== NEW_PEN) return;
     const zone = this.h.zones()[target.zone];
     if (!zone) return;
     const gap = zone.createDiv({ cls: "goodobsidian-edit-gap" });
