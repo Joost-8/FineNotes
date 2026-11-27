@@ -9,6 +9,25 @@ export function writingGuidePitch(style: WritingGuideStyle, rasterScale: number)
   return style.spacing * stride;
 }
 
+/**
+ * The page-local positions of guides between `from` and `to` along one axis:
+ * every multiple of `pitch` counted from the notebook's start, which is
+ * `offset` before this page's (joined pages, `gridPhase`), so lines run on
+ * across a join. The notebook's own first edge gets none: a line there would
+ * sit on the page's edge.
+ */
+export function guideStops(from: number, to: number, pitch: number, offset = 0): number[] {
+  if (!(pitch > 0) || !(to >= from)) return [];
+  const out: number[] = [];
+  for (let k = Math.max(1, Math.ceil((from + offset) / pitch)); ; k++) {
+    const at = k * pitch - offset;
+    if (at > to) break;
+    out.push(at);
+    if (out.length > 16384) break;
+  }
+  return out;
+}
+
 export function paintWritingGuides(
   ctx: CanvasRenderingContext2D,
   page: Page,
@@ -17,6 +36,7 @@ export function paintWritingGuides(
   paper: string,
   screenScale: number,
   rasterScale: number,
+  phase?: { x: number; y: number },
 ): number {
   if (!style || !guidesEligible(page) || !(screenScale > 0) || !(rasterScale > 0)) return 0;
   const { width, height } = page.geometry;
@@ -29,11 +49,12 @@ export function paintWritingGuides(
   const pitch = writingGuidePitch(style, rasterScale);
   const weight = style.thickness / screenScale;
   const pad = weight / 2;
-  const firstX = Math.max(0, Math.ceil((left - pad) / pitch) * pitch);
-  const firstY = Math.max(0, Math.ceil((top - pad) / pitch) * pitch);
-  const nx = Math.max(0, Math.floor((Math.min(width, right + pad) - firstX) / pitch) + 1);
-  const ny = Math.max(0, Math.floor((Math.min(height, bottom + pad) - firstY) / pitch) + 1);
-  if ((style.style === "dots" ? nx * ny : nx + ny) > 32768) return 0;
+  const xs =
+    style.style === "lines"
+      ? []
+      : guideStops(left - pad, Math.min(width, right + pad), pitch, phase?.x ?? 0);
+  const ys = guideStops(top - pad, Math.min(height, bottom + pad), pitch, phase?.y ?? 0);
+  if ((style.style === "dots" ? xs.length * ys.length : xs.length + ys.length) > 32768) return 0;
 
   ctx.save();
   ctx.beginPath();
@@ -47,10 +68,8 @@ export function paintWritingGuides(
 
   let count = 0;
   if (style.style === "dots") {
-    for (let row = 0; row < ny; row++) {
-      for (let col = 0; col < nx; col++) {
-        const x = firstX + col * pitch;
-        const y = firstY + row * pitch;
+    for (const y of ys) {
+      for (const x of xs) {
         ctx.moveTo(x + pad, y);
         ctx.arc(x, y, pad, 0, Math.PI * 2);
         count++;
@@ -58,19 +77,15 @@ export function paintWritingGuides(
     }
     ctx.fill();
   } else {
-    for (let row = 0; row < ny; row++) {
-      const y = firstY + row * pitch;
+    for (const y of ys) {
       ctx.moveTo(left, y);
       ctx.lineTo(right, y);
       count++;
     }
-    if (style.style === "grid") {
-      for (let col = 0; col < nx; col++) {
-        const x = firstX + col * pitch;
-        ctx.moveTo(x, top);
-        ctx.lineTo(x, bottom);
-        count++;
-      }
+    for (const x of xs) {
+      ctx.moveTo(x, top);
+      ctx.lineTo(x, bottom);
+      count++;
     }
     ctx.stroke();
   }

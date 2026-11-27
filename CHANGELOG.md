@@ -43,6 +43,7 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Added
 
+- **Writing guides** ([#335](https://github.com/Joost-8/FineNotes/pull/335), thanks @koltensaccount): lines, a grid or dots over a notebook's pages to write along, never printed or exported. Each notebook has its own; tap the guides button (in More tools) to turn them on, its arrow for their look. Inline Handwrite here blocks show their notebook's guides.
 - **Help improve Grape: share new items automatically.** The consent has a
   box (ticked unless you untick it) to send later practice lines and corrections as they are
   made; it is also under ⋯ in settings. Without it, FineNotes reminds you

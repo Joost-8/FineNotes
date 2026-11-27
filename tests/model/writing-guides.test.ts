@@ -3,9 +3,13 @@ import { blankPage } from "../../src/model/document";
 import {
   DEFAULT_WRITING_GUIDES,
   guideColor,
+  guideMapOf,
+  guidesOf,
+  moveGuidePaths,
+  withGuides,
   writingGuidesOf,
 } from "../../src/model/writing-guides";
-import { paintWritingGuides } from "../../src/canvas/writing-guides";
+import { guideStops, paintWritingGuides } from "../../src/canvas/writing-guides";
 
 describe("writing-guides pure model", () => {
   it("normalizes and clamps writing guide settings safely", () => {
@@ -45,6 +49,44 @@ describe("writing-guides pure model", () => {
       colorMode: "custom",
       customColor: DEFAULT_WRITING_GUIDES.customColor,
     });
+  });
+
+  it("keeps each notebook's guides by path, off in the last look until set", () => {
+    const last = { ...DEFAULT_WRITING_GUIDES, style: "dots" };
+    expect(guidesOf(undefined, last, "a.md")).toEqual({
+      on: false,
+      style: writingGuidesOf(last),
+    });
+    expect(guidesOf({ "a.md": { on: true } }, last, null).on).toBe(false);
+    const map = withGuides({}, "a.md", {
+      on: true,
+      style: { ...DEFAULT_WRITING_GUIDES, spacing: 48 },
+    });
+    expect(guidesOf(map, last, "a.md")).toEqual({
+      on: true,
+      style: { ...DEFAULT_WRITING_GUIDES, spacing: 48 },
+    });
+    expect(guidesOf(map, last, "b.md").on).toBe(false);
+    expect(guideMapOf({ bad: 3, "a.md": { on: true } })).toEqual({ "a.md": { on: true } });
+  });
+
+  it("follows a notebook or its folder when moved, and forgets it when deleted", () => {
+    const map = { "N/a.md": { on: true }, "N/sub/b.md": { on: false }, "Nx/c.md": { on: true } };
+    expect(Object.keys(moveGuidePaths(map, "N", "M"))).toEqual(["M/a.md", "M/sub/b.md", "Nx/c.md"]);
+    expect(Object.keys(moveGuidePaths(map, "N/a.md"))).toEqual(["N/sub/b.md", "Nx/c.md"]);
+    const same = guideMapOf(map);
+    expect(moveGuidePaths(same, "Q")).toEqual(same);
+  });
+
+  it("runs guides on across a join, the spacing kept, and never on the first edge", () => {
+    // Two joined A4 pages, 1123 px tall, spacing 32: page 1 ends on 1120,
+    // page 2 must go on at 1152 - 1123 = 29, not start again at 0.
+    expect(guideStops(0, 100, 32)).toEqual([32, 64, 96]);
+    const page1 = guideStops(1080, 1123, 32, 0);
+    const page2 = guideStops(0, 70, 32, 1123);
+    expect(page1).toEqual([1088, 1120]);
+    expect(page2).toEqual([29, 61]);
+    expect(1123 - page1[page1.length - 1]! + page2[0]!).toBe(32);
   });
 
   it("picks auto contrast color based on paper brightness and honors custom colors", () => {

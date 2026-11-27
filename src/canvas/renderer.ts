@@ -1209,6 +1209,15 @@ export class Renderer {
     this.tiles.deleteWhere((tile) => tile.level !== level && tile.level !== last);
   }
 
+  /**
+   * Every page's look changed but not its content (writing guides): tiles and
+   * previews are repaired in place within the frame budget, as a PDF page
+   * landing is (`refreshPage`), not dropped and made again in one frame.
+   */
+  refreshAll(): void {
+    for (let i = 0; i < this.layout.boxes.length; i++) this.refreshPage(i);
+  }
+
   invalidateAll(): void {
     this.tiles.clear();
     this.previews.clear();
@@ -2631,6 +2640,7 @@ export class Renderer {
         paperColorOf(page, this.paper),
         level / this.screen.dpr,
         level,
+        gridPhase(this.layout, box.index),
       );
     }
     if (this.doc) {

@@ -1,8 +1,15 @@
 /**
- * Writing Guides popover — reuses FineNotes' existing popover switches
- * (`.goodobsidian-switch-row`), tile selectors (`.goodobsidian-shape-tiles`),
- * range sliders (`.goodobsidian-width-range` + `dragRange` + `syncRangeFill`),
- * and colour picker (`renderColorPicker`).
+ * Writing guides in a view: each notebook's own (`model/writing-guides.ts`),
+ * kept in the plugin's settings by its path, shown on its surface and in its
+ * inline Handwrite here blocks alike.
+ *
+ * The toolbar button works as the ruler's does: a tap turns the guides on or
+ * off; while they are on, its chevron opens their look (style, spacing,
+ * thickness, opacity, colour) in the toolbar's own popover.
+ *
+ * A slider changes the page as it is dragged, but only the page: the
+ * surface repairs its tiles within the frame budget (`Renderer.refreshAll`)
+ * and the settings are written once, when the slider is let go.
  */
 
 import { addIcon, setIcon } from "obsidian";
@@ -10,14 +17,16 @@ import { t } from "../i18n/translate";
 import type { GoodObsidianSettings } from "../settings-data";
 import { dragRange } from "./range-drag";
 import { syncRangeFill } from "./range-fill";
-import { blankPage } from "../model/document";
+import { pageToMm } from "../model/units";
 import {
   DEFAULT_WRITING_GUIDES,
+  type GuideEntry,
   WRITING_GUIDES_ICON,
+  guidesOf,
+  withGuides,
   writingGuidesOf,
   type WritingGuideStyle,
 } from "../model/writing-guides";
-import { paintWritingGuides } from "../canvas/writing-guides";
 import { renderColorPicker } from "./color-picker";
 
 export { WRITING_GUIDES_ICON };
@@ -36,67 +45,104 @@ export function ensureWritingGuidesIcon(): void {
   addIcon(WRITING_GUIDES_ICON, WRITING_GUIDES_SVG);
 }
 
-export interface WritingGuideHost {
-  state: () => {
-    enabled: boolean;
-    style: WritingGuideStyle;
-    paper: string;
-    scale: number;
+/** Every binding over one settings object hears a change to any notebook's guides. */
+const listenersBySettings = new WeakMap<GoodObsidianSettings, Set<(path: string) => void>>();
+
+function listenersOf(settings: GoodObsidianSettings): Set<(path: string) => void> {
+  let set = listenersBySettings.get(settings);
+  if (!set) {
+    set = new Set();
+    listenersBySettings.set(settings, set);
+  }
+  return set;
+}
+
+/** One view's hold on its notebook's guides (`bindWritingGuides`). */
+export interface GuideBinding {
+  /** Whether this notebook's guides show. */
+  on: () => boolean;
+  /** Turn them on or off, and keep it. */
+  toggle: () => void;
+  /** Read the notebook's guides again (its path changed) and show them. */
+  sync: () => void;
+  /** Draw the look's controls into `body`; the returned function takes them down. */
+  render: (body: HTMLElement, resize: () => void) => () => void;
+  dispose: () => void;
+}
+
+export function bindWritingGuides(opts: {
+  settings: GoodObsidianSettings;
+  /** Write the settings to disk. */
+  save: () => void;
+  /** The notebook's path; `null` while it has no file. */
+  path: () => string | null;
+  /** Show `style` on the surface, or no guides (`null`). */
+  apply: (style: WritingGuideStyle | null) => void;
+  /** The guides were turned on or off: the toolbar's mark follows. */
+  changed: () => void;
+}): GuideBinding {
+  const { settings } = opts;
+  const listeners = listenersOf(settings);
+  const entry = (): GuideEntry =>
+    guidesOf(settings.writingGuideNotebooks, settings.writingGuides, opts.path());
+  const sync = (): void => {
+    const now = entry();
+    opts.apply(now.on ? now.style : null);
+    opts.changed();
   };
-  enable: (enabled: boolean) => void;
-  configure: (patch: Partial<WritingGuideStyle>) => void;
+  /** Set this notebook's guides; every view of it follows; `keep` writes them to disk. */
+  const set = (next: GuideEntry, keep: boolean): void => {
+    const path = opts.path();
+    if (path === null) return;
+    settings.writingGuideNotebooks = withGuides(settings.writingGuideNotebooks, path, next);
+    // A notebook turned on later starts in the look chosen last.
+    settings.writingGuides = { ...next.style };
+    for (const heard of [...listeners]) heard(path);
+    if (keep) opts.save();
+  };
+  const heard = (path: string): void => {
+    if (path === opts.path()) sync();
+  };
+  listeners.add(heard);
+  sync();
+  return {
+    on: () => entry().on,
+    toggle: () => {
+      const now = entry();
+      set({ on: !now.on, style: now.style }, true);
+    },
+    sync,
+    render: (body, resize) =>
+      renderGuideControls(body, resize, {
+        style: () => entry().style,
+        configure: (patch, keep) => {
+          const now = entry();
+          set({ on: now.on, style: writingGuidesOf({ ...now.style, ...patch }) }, keep);
+        },
+        save: opts.save,
+        subscribe: (update) => {
+          const onChange = (path: string): void => {
+            if (path === opts.path()) update();
+          };
+          listeners.add(onChange);
+          return () => listeners.delete(onChange);
+        },
+      }),
+    dispose: () => {
+      listeners.delete(heard);
+    },
+  };
+}
+
+interface ControlsHost {
+  style: () => WritingGuideStyle;
+  /** Change the look; `keep` writes it to disk (a slider passes false while it moves). */
+  configure: (patch: Partial<WritingGuideStyle>, keep: boolean) => void;
+  save: () => void;
   subscribe: (changed: () => void) => () => void;
 }
 
-/** All open surfaces reflect the same plugin settings. */
-const listenersBySettings = new WeakMap<GoodObsidianSettings, Set<() => void>>();
-
-export function watchWritingGuides(settings: GoodObsidianSettings, update: () => void): () => void {
-  let listeners = listenersBySettings.get(settings);
-  if (!listeners) {
-    listeners = new Set();
-    listenersBySettings.set(settings, listeners);
-  }
-  listeners.add(update);
-  return () => listeners.delete(update);
-}
-
-export function writingGuideHost(
-  settings: GoodObsidianSettings,
-  save: () => void,
-  context: () => { paper: string; scale: number } | undefined,
-): WritingGuideHost {
-  const apply = (enabled: boolean, style: WritingGuideStyle): void => {
-    settings.writingGuidesEnabled = enabled;
-    settings.writingGuides = { ...style };
-    for (const update of listenersBySettings.get(settings) ?? []) update();
-    save();
-  };
-  return {
-    state: () => ({
-      enabled: settings.writingGuidesEnabled === true,
-      style: writingGuidesOf(settings.writingGuides),
-      ...(context() ?? { paper: "#ffffff", scale: 1 }),
-    }),
-    enable: (enabled) => apply(enabled, writingGuidesOf(settings.writingGuides)),
-    configure: (patch) =>
-      apply(
-        settings.writingGuidesEnabled === true,
-        writingGuidesOf({ ...writingGuidesOf(settings.writingGuides), ...patch }),
-      ),
-    subscribe: (update) => watchWritingGuides(settings, update),
-  };
-}
-
-interface SwitchControl {
-  set: (on: boolean) => void;
-}
-
-function makeSwitchRow(
-  parent: HTMLElement,
-  label: string,
-  onChange: (on: boolean) => void,
-): SwitchControl {
+function switchRow(parent: HTMLElement, label: string, onChange: (on: boolean) => void) {
   const row = parent.createEl("button", {
     cls: "goodobsidian-switch-row clickable-icon",
     attr: { role: "switch", "aria-checked": "false" },
@@ -109,27 +155,16 @@ function makeSwitchRow(
     row.toggleClass("is-on", on);
     row.setAttribute("aria-checked", String(on));
   };
-  row.addEventListener("click", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const next = !current;
-    set(next);
-    onChange(next);
-  });
+  row.addEventListener("click", () => onChange(!current));
   return { set };
 }
 
-function renderWritingGuideControls(
+/** The look's controls: style tiles, three sliders, auto colour or a colour, reset. */
+function renderGuideControls(
   parent: HTMLElement,
-  host: WritingGuideHost,
-  onResize?: () => void,
+  resize: () => void,
+  host: ControlsHost,
 ): () => void {
-  const switches = parent.createDiv({ cls: "goodobsidian-switch-list" });
-  const enabled = makeSwitchRow(switches, t("toolbar.tool.guides"), (v) => host.enable(v));
-  parent.createDiv({ cls: "goodobsidian-popover-divider" });
-
-  // Style tiles reusing FineNotes' `.goodobsidian-shape-tiles` row.
-  parent.createDiv({ cls: "goodobsidian-popover-label", text: t("toolbar.text.style") });
   const tiles = parent.createDiv({
     cls: "goodobsidian-shape-tiles",
     attr: { role: "group", "aria-label": t("toolbar.text.style") },
@@ -146,15 +181,10 @@ function renderWritingGuideControls(
     });
     setIcon(btn.createSpan({ cls: "goodobsidian-shape-tile-icon" }), icon);
     btn.createSpan({ cls: "goodobsidian-shape-tile-label", text: label });
-    btn.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      host.configure({ style: id });
-    });
+    btn.addEventListener("click", () => host.configure({ style: id }, true));
     styleButtons.set(id, btn);
   }
 
-  // Sliders reusing FineNotes' `.goodobsidian-width-head` + `.goodobsidian-width-range`.
   const sliders = new Map<
     "spacing" | "thickness" | "opacity",
     { input: HTMLInputElement; readout: HTMLElement }
@@ -177,66 +207,51 @@ function renderWritingGuideControls(
     input.max = String(max);
     input.step = String(step);
     dragRange(input);
+    // While it moves the page follows; it is written to disk once, let go.
     input.addEventListener("input", () => {
       syncRangeFill(input);
-      host.configure({ [key]: Number(input.value) / factor });
+      host.configure({ [key]: Number(input.value) / factor }, false);
     });
+    input.addEventListener("change", () => host.save());
     sliders.set(key, { input, readout });
   }
 
-  parent.createDiv({ cls: "goodobsidian-popover-divider" });
-
-  // Auto colour switch + FineNotes' shared colour picker when custom colour is enabled.
   const colorSwitches = parent.createDiv({ cls: "goodobsidian-switch-list" });
-  const autoColor = makeSwitchRow(colorSwitches, t("toolbar.guides.autoColor"), (on) => {
-    host.configure({ colorMode: on ? "auto" : "custom" });
-  });
+  const autoColor = switchRow(colorSwitches, t("toolbar.guides.autoColor"), (on) =>
+    host.configure({ colorMode: on ? "auto" : "custom" }, true),
+  );
   const pickerWrap = parent.createDiv({ cls: "is-hidden" });
   let pickerColor = "";
 
-  const preview = parent.createEl("canvas", {
-    cls: "goodobsidian-guide-preview",
-    attr: { "aria-label": t("toolbar.guides.preview") },
-  });
-
-  const footer = parent.createDiv({ cls: "goodobsidian-guide-footer" });
-  const hint = footer.createSpan({ cls: "goodobsidian-popover-hint" });
-  const reset = footer.createEl("button", {
+  const reset = parent.createEl("button", {
     cls: "goodobsidian-width-reset clickable-icon",
-    attr: { "aria-label": t("toolbar.reset"), title: t("toolbar.reset") },
+    attr: { "aria-label": t("toolbar.reset") },
   });
   setIcon(reset, "rotate-ccw");
-  reset.addEventListener("click", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    host.configure({ ...DEFAULT_WRITING_GUIDES });
-  });
+  reset.addEventListener("click", () => host.configure({ ...DEFAULT_WRITING_GUIDES }, true));
 
-  let previewKey = "";
   const refresh = (): void => {
-    const state = host.state();
-    const style = writingGuidesOf(state.style);
-    enabled.set(state.enabled);
-
+    const style = host.style();
     for (const [id, btn] of styleButtons) {
       const active = id === style.style;
       btn.toggleClass("is-active", active);
       btn.setAttribute("aria-pressed", String(active));
     }
-
     for (const [key, ctrl] of sliders) {
       const n = style[key];
-      ctrl.input.value = String(key === "opacity" ? Math.round(n * 100) : n);
-      syncRangeFill(ctrl.input);
+      // A slider being dragged keeps its own value.
+      if (parent.ownerDocument.activeElement !== ctrl.input) {
+        ctrl.input.value = String(key === "opacity" ? Math.round(n * 100) : n);
+        syncRangeFill(ctrl.input);
+      }
       ctrl.readout.setText(
         key === "opacity"
           ? `${Math.round(n * 100)}%`
           : key === "thickness"
-            ? `${n.toFixed(1)} px`
-            : `${n} px`,
+            ? n.toFixed(1)
+            : `${pageToMm(n).toFixed(1)} mm`,
       );
     }
-
     const isAuto = style.colorMode === "auto";
     const wasHidden = pickerWrap.hasClass("is-hidden");
     autoColor.set(isAuto);
@@ -248,121 +263,16 @@ function renderWritingGuideControls(
         current: style.customColor,
         recent: [],
         onPick: (color) => {
-          if (color) host.configure({ customColor: color, colorMode: "custom" });
+          if (color) host.configure({ customColor: color, colorMode: "custom" }, true);
         },
-        onCustom: (color) => host.configure({ customColor: color, colorMode: "custom" }),
+        onCustom: (color) => host.configure({ customColor: color, colorMode: "custom" }, true),
       });
     } else if (isAuto) {
       pickerColor = "";
     }
-    if (wasHidden !== isAuto) onResize?.();
-
-    const scale = Math.max(0.1, state.scale);
-    hint.setText(t("toolbar.guides.zoomSpacing", { value: (style.spacing * scale).toFixed(0) }));
-    const key = JSON.stringify([style, state.paper, Math.round(scale * 100)]);
-    if (previewKey === key) return;
-    previewKey = key;
-
-    const dpr = Math.min(2, parent.ownerDocument.defaultView?.devicePixelRatio || 1);
-    const width = 264;
-    const height = 56;
-    preview.width = width * dpr;
-    preview.height = height * dpr;
-    const ctx = preview.getContext("2d");
-    if (!ctx) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = state.paper;
-    ctx.fillRect(0, 0, width, height);
-    ctx.scale(scale, scale);
-    const page = blankPage("guide-preview", { width: width / scale, height: height / scale });
-    paintWritingGuides(
-      ctx,
-      page,
-      { minX: 0, minY: 0, maxX: page.geometry.width, maxY: page.geometry.height },
-      style,
-      state.paper,
-      scale,
-      scale * dpr,
-    );
+    if (wasHidden !== isAuto) resize();
   };
 
   refresh();
   return host.subscribe(refresh);
-}
-
-export class WritingGuidePopover {
-  private readonly el: HTMLElement;
-  private readonly cleanups: Array<() => void> = [];
-  private closed = false;
-
-  constructor(
-    readonly anchorEl: HTMLElement,
-    host: WritingGuideHost,
-    onClose?: () => void,
-  ) {
-    const doc = anchorEl.ownerDocument;
-    const win = doc.defaultView ?? window;
-    this.el = doc.body.createDiv({
-      cls: "goodobsidian-popover goodobsidian-guide-popover",
-    });
-    this.el.setAttribute("role", "dialog");
-    const body = this.el.createDiv({ cls: "goodobsidian-popover-body goodobsidian-shape-panel" });
-
-    // Isolate events so tapping inside the popover never flips Live Preview to raw code.
-    const stop = (e: Event): void => e.stopPropagation();
-    for (const evt of ["mousedown", "pointerdown", "touchstart", "click"] as const) {
-      this.el.addEventListener(evt, stop);
-      this.cleanups.push(() => this.el.removeEventListener(evt, stop));
-    }
-
-    const place = (): void => {
-      const rect = anchorEl.getBoundingClientRect();
-      const popW = this.el.offsetWidth || 320;
-      const popH = this.el.offsetHeight || 340;
-      const left = Math.max(
-        8,
-        Math.min(win.innerWidth - popW - 8, rect.left + rect.width / 2 - popW / 2),
-      );
-      const below = rect.bottom + 8;
-      const top = below + popH <= win.innerHeight - 8 ? below : Math.max(8, rect.top - popH - 8);
-      this.el.setCssStyles({ left: `${Math.round(left)}px`, top: `${Math.round(top)}px` });
-    };
-
-    this.cleanups.push(renderWritingGuideControls(body, host, place));
-    place();
-    const raf = win.requestAnimationFrame(place);
-    this.cleanups.push(() => win.cancelAnimationFrame(raf));
-
-    const onOutside = (e: Event): void => {
-      const target = e.target as Node | null;
-      if (!target || this.el.contains(target) || anchorEl.contains(target)) return;
-      this.close();
-    };
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== "Escape") return;
-      e.preventDefault();
-      e.stopPropagation();
-      this.close();
-      anchorEl.focus({ preventScroll: true });
-    };
-    win.addEventListener("resize", place);
-    this.cleanups.push(() => win.removeEventListener("resize", place));
-    win.addEventListener("pointerdown", onOutside, true);
-    win.addEventListener("keydown", onKey, true);
-    this.cleanups.push(() => win.removeEventListener("pointerdown", onOutside, true));
-    this.cleanups.push(() => win.removeEventListener("keydown", onKey, true));
-    if (onClose) this.cleanups.push(onClose);
-  }
-
-  get isOpen(): boolean {
-    return !this.closed;
-  }
-
-  close(): void {
-    if (this.closed) return;
-    this.closed = true;
-    for (const fn of this.cleanups) fn();
-    this.cleanups.length = 0;
-    this.el.remove();
-  }
 }

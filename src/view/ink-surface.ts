@@ -4653,23 +4653,15 @@ export class InkSurface {
 
   private writingGuides: WritingGuideStyle | null = null;
 
-  setWritingGuides(enabled: boolean, style: WritingGuideStyle): void {
-    if (!enabled && !this.writingGuides) return;
-    this.writingGuides = enabled ? style : null;
+  /** Show `style`'s guides, or none: tiles are repaired within the frame budget. */
+  setWritingGuides(style: WritingGuideStyle | null): void {
+    const key = style ? JSON.stringify(style) : "";
+    if (key === (this.writingGuides ? JSON.stringify(this.writingGuides) : "")) return;
+    this.writingGuides = style;
     if (!this.renderer) return;
-    this.renderer.writingGuides = this.writingGuides;
-    this.renderer.invalidateAll();
+    this.renderer.writingGuides = style;
+    this.renderer.refreshAll();
     this.requestFrame();
-  }
-
-  writingGuideContext(): { paper: string; scale: number } {
-    const page = this.doc.pages[this.currentPage] ?? this.doc.pages[0];
-    return {
-      paper: page ? paperColorOf(page, this.paper) : this.paper.paper,
-      scale: this.renderer?.deviceScale
-        ? this.renderer.deviceScale / (this.win.devicePixelRatio || 1)
-        : 1,
-    };
   }
 
   get paperTheme(): PaperTheme {

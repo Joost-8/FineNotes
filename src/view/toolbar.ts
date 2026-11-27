@@ -994,10 +994,12 @@ export interface ToolbarCallbacks {
   onEditPens?: () => void;
   /** Bring the ruler out or put it away. Without it the bar has no ruler. */
   onRuler?: () => void;
-  /** Open/toggle the Writing Guides popover anchored to the primary toolbar button. */
-  onWritingGuides?: (anchor: HTMLElement) => void;
-  /** Whether Writing Guides are currently enabled in this notebook. */
+  /** Turn this notebook's writing guides on or off. Without it the bar has no guides. */
+  onWritingGuides?: () => void;
+  /** Whether this notebook's writing guides show. */
   writingGuidesEnabled?: () => boolean;
+  /** Draw the guides' look into their popover; returns what takes it down. */
+  renderWritingGuides?: (body: HTMLElement, resize: () => void) => () => void;
   /** Open the sticker picker; `anchor` is the button. Without it the bar has no stickers. */
   onStickers?: (anchor: HTMLElement) => void;
   /**
@@ -1377,6 +1379,8 @@ export class Toolbar {
   private readonly leavingPopovers = new Map<HTMLElement, number>();
   /** Redraws the open text popover's body in place after a change it made. */
   private popoverRender: (() => void) | null = null;
+  /** What the open popover set up outside itself (a subscription), taken down on close. */
+  private popoverCleanup: (() => void) | null = null;
   /** Places the open popover again after its rows changed on their own (`fitTextPopover`). */
   private popoverRefit: (() => void) | null = null;
   /** The device's fonts for the font menu (`deviceFamilies`), once read. */
@@ -1667,21 +1671,7 @@ export class Toolbar {
       });
     }
     if (cb.onWritingGuides) {
-      ensureWritingGuidesIcon();
-      const guides = this.foldButton(
-        tools,
-        FOLD_RANK.guides,
-        WRITING_GUIDES_ICON,
-        t("toolbar.tool.guides"),
-        (anchor) => {
-          this.closePopover();
-          this.callbacks.onWritingGuides?.(anchor);
-        },
-      );
-      this.guidesButton = item("guides", guides, (anchor) => {
-        this.closePopover();
-        this.callbacks.onWritingGuides?.(anchor);
-      });
+      item("guides", this.addGuidesButton(tools), () => this.callbacks.onWritingGuides?.());
       this.syncWritingGuides();
     }
     const action = (
@@ -2328,7 +2318,7 @@ export class Toolbar {
   /** Light the accessories button while one of the items its menu lists is on. */
   private syncAccessoriesMark(): void {
     const listed = menuItems(this.layout);
-    const hiddenOn = (["ruler", "sticky", "stylus"] as const).some((id) => {
+    const hiddenOn = (["ruler", "guides", "sticky", "stylus"] as const).some((id) => {
       const button = this.barItems.get(id);
       return button !== undefined && button.hasClass("is-on") && listed.includes(id);
     });
@@ -2848,12 +2838,58 @@ export class Toolbar {
    * chevron shows, and a tap there opens its kinds and its snapping, as the
    * lasso's chevron does.
    */
+  /**
+   * Writing guides, as the ruler: a tap turns them on or off; while they
+   * are on a chevron shows, and a tap there opens their look.
+   */
+  private addGuidesButton(parent: HTMLElement): HTMLButtonElement {
+    ensureWritingGuidesIcon();
+    const label = t("toolbar.tool.guides");
+    const button = parent.createEl("button", { cls: "goodobsidian-tool has-caret" });
+    iconOrText(button, WRITING_GUIDES_ICON, label);
+    button.setAttr("aria-label", label);
+    button.setAttribute("aria-pressed", "false");
+    iconOrText(button.createSpan({ cls: "goodobsidian-tool-caret" }), "chevron-down", "");
+    button.addEventListener("click", (event) => {
+      const box = button.getBoundingClientRect();
+      const onCaret = button.hasClass("is-on") && event.detail !== 0;
+      if (onCaret && event.clientX >= box.right - RULER_CARET_STRIP) {
+        this.toggleGuidesPopover(button);
+        return;
+      }
+      this.closePopover();
+      this.callbacks.onWritingGuides?.();
+    });
+    this.fold(FOLD_RANK.guides, button, "guides", label, () => this.callbacks.onWritingGuides?.());
+    this.guidesButton = button;
+    return button;
+  }
+
+  /** The guides were turned on or off: the button's mark and chevron follow. */
   syncWritingGuides(): void {
     const button = this.guidesButton;
-    if (!button) return;
     const on = this.callbacks.writingGuidesEnabled?.() === true;
+    if (!button || button.hasClass("is-on") === on) return;
     button.toggleClass("is-on", on);
     button.setAttribute("aria-pressed", String(on));
+    this.syncAccessoriesMark();
+    if (!on && this.popoverKind === "guides") this.closePopover();
+    const tool = this.state.tool === "highlighter" ? "pen" : this.state.tool;
+    this.fitBar(tool);
+    this.placeIndicator(tool, null);
+  }
+
+  private toggleGuidesPopover(anchor: HTMLElement): void {
+    const render = this.callbacks.renderWritingGuides;
+    if (this.popoverKind === "guides" || !render) {
+      this.closePopover();
+      return;
+    }
+    const body = this.openPopover("guides", anchor);
+    this.popover?.addClass("has-arrow");
+    body.addClass("goodobsidian-shape-panel");
+    this.popoverCleanup = render(body, () => this.keepPopoverInside(anchor));
+    this.keepPopoverInside(anchor);
   }
 
   private addRulerButton(parent: HTMLElement): HTMLButtonElement {
@@ -7064,6 +7100,8 @@ export class Toolbar {
     this.popover = null;
     this.popoverKind = null;
     this.popoverRender = null;
+    this.popoverCleanup?.();
+    this.popoverCleanup = null;
     this.popoverRefit = null;
     this.sizeMarksRender = null;
     // The sticky colours closed with a note still waiting (Escape, another

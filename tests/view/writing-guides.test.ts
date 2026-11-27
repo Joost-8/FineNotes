@@ -1,29 +1,61 @@
 import { expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS } from "../../src/settings-data";
+import type { WritingGuideStyle } from "../../src/model/writing-guides";
 
 vi.mock("obsidian", () => import("./fake-obsidian"));
 
-const { watchWritingGuides, writingGuideHost } = await import("../../src/view/writing-guides");
+const { bindWritingGuides } = await import("../../src/view/writing-guides");
 
-it("syncs guide changes across surfaces and keeps the enabled toggle independent", () => {
-  const settings = { ...DEFAULT_SETTINGS, writingGuidesEnabled: false };
-  const save = vi.fn();
-  const updateNotebook = vi.fn();
-  const updateInline = vi.fn();
-  const unwatchNotebook = watchWritingGuides(settings, updateNotebook);
-  const unwatchInline = watchWritingGuides(settings, updateInline);
-  const host = writingGuideHost(settings, save, () => undefined);
+function bind(settings: typeof DEFAULT_SETTINGS, path: string, save = vi.fn()) {
+  const shown: Array<WritingGuideStyle | null> = [];
+  const changed = vi.fn();
+  const binding = bindWritingGuides({
+    settings,
+    save,
+    path: () => path,
+    apply: (style) => shown.push(style),
+    changed,
+  });
+  return { binding, shown, changed, save };
+}
 
-  host.configure({ spacing: 99, style: "dots" });
-  expect(host.state()).toMatchObject({ enabled: false, style: { spacing: 99, style: "dots" } });
-  expect(updateNotebook).toHaveBeenCalledOnce();
-  expect(updateInline).toHaveBeenCalledOnce();
-  unwatchInline();
+it("keeps guides per notebook: turning one on leaves another off", () => {
+  const settings = { ...DEFAULT_SETTINGS };
+  const a = bind(settings, "A.md");
+  const b = bind(settings, "B.md");
+  expect(a.shown).toEqual([null]);
 
-  host.enable(true);
-  expect(host.state().enabled).toBe(true);
-  expect(updateNotebook).toHaveBeenCalledTimes(2);
-  expect(updateInline).toHaveBeenCalledOnce();
-  expect(save).toHaveBeenCalledTimes(2);
-  unwatchNotebook();
+  a.binding.toggle();
+  expect(a.binding.on()).toBe(true);
+  expect(b.binding.on()).toBe(false);
+  expect(a.shown.at(-1)).not.toBeNull();
+  // B heard nothing: only views of A follow A.
+  expect(b.shown).toEqual([null]);
+  expect(a.save).toHaveBeenCalledOnce();
+});
+
+it("follows every view of one notebook (its view and its inline blocks)", () => {
+  const settings = { ...DEFAULT_SETTINGS };
+  const view = bind(settings, "A.md");
+  const block = bind(settings, "A.md");
+  view.binding.toggle();
+  expect(block.binding.on()).toBe(true);
+  expect(block.shown.at(-1)).not.toBeNull();
+  expect(block.changed).toHaveBeenCalledTimes(2);
+  block.binding.dispose();
+  view.binding.toggle();
+  expect(block.changed).toHaveBeenCalledTimes(2);
+});
+
+it("a new notebook starts in the look chosen last", () => {
+  const settings = { ...DEFAULT_SETTINGS };
+  const a = bind(settings, "A.md");
+  settings.writingGuideNotebooks = { "A.md": { on: true, spacing: 64 } };
+  a.binding.toggle();
+  a.binding.toggle();
+  expect(a.shown.at(-1)?.spacing).toBe(64);
+
+  const b = bind(settings, "B.md");
+  b.binding.toggle();
+  expect(b.shown.at(-1)?.spacing).toBe(64);
 });

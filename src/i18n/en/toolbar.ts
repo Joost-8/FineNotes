@@ -19,8 +19,6 @@ export const toolbar = {
   "toolbar.tool.guides": "Writing guides",
   "toolbar.guides.thickness": "Thickness",
   "toolbar.guides.autoColor": "Auto colour",
-  "toolbar.guides.preview": "Writing guide preview",
-  "toolbar.guides.zoomSpacing": "{value} px at zoom",
   "toolbar.tool.coverTape": "Cover tape",
   "toolbar.tool.recordAudio": "Record audio",
   "toolbar.tool.fill": "Fill",

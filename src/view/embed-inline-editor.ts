@@ -42,10 +42,9 @@ import { VaultImageCache } from "./image-cache";
 import { InkSurface } from "./ink-surface";
 import { toolStateFrom } from "./ink-view";
 import { SavedPenModal } from "./saved-pen-modal";
+import { type GuideBinding, bindWritingGuides } from "./writing-guides";
 import { penOfState, Toolbar, type ToolbarState } from "./toolbar";
 import { normalizeLayout, type BarItemId, type ToolbarLayout } from "./toolbar-layout";
-import { writingGuidesOf } from "../model/writing-guides";
-import { watchWritingGuides, writingGuideHost, WritingGuidePopover } from "./writing-guides";
 import { editClosedNotebook, notebookIsOpen, readClosedNotebook } from "./notebook-transaction";
 import { deviceIdOf } from "./device-pages-session";
 import {
@@ -111,7 +110,7 @@ function inlineLayoutFrom(raw: unknown, savedPenIds: ReadonlySet<string>): Toolb
 export class EmbedInlineEditor implements InlineEditorHandle {
   private surface: InkSurface | null = null;
   private toolbar: Toolbar | null = null;
-  private guidePopover: WritingGuidePopover | null = null;
+  private guides: GuideBinding | null = null;
   private images: VaultImageCache | null = null;
   private toolState: ToolbarState;
   private doc: InkDocument | null = null;
@@ -411,6 +410,9 @@ export class EmbedInlineEditor implements InlineEditorHandle {
             if (file) void this.pastePicture(file);
           });
         },
+        onWritingGuides: () => this.guides?.toggle(),
+        writingGuidesEnabled: () => this.guides?.on() === true,
+        renderWritingGuides: (body, resize) => this.guides?.render(body, resize) ?? (() => {}),
         onRuler: () => {
           const surface = this.surface;
           if (!surface) return;
@@ -450,8 +452,6 @@ export class EmbedInlineEditor implements InlineEditorHandle {
           this.syncFingerScroll();
           void plugin.setOnlyStylusMode(on);
         },
-        writingGuidesEnabled: () => plugin.settings.writingGuidesEnabled === true,
-        onWritingGuides: (anchor) => this.toggleWritingGuides(anchor),
       },
       {
         defaultSize: plugin.settings.defaultSize,
@@ -605,15 +605,14 @@ export class EmbedInlineEditor implements InlineEditorHandle {
     slotEl.focus({ preventScroll: true });
 
     this.bindFinishKeys();
-    const syncGuides = (): void => {
-      this.surface?.setWritingGuides(
-        plugin.settings.writingGuidesEnabled === true,
-        writingGuidesOf(plugin.settings.writingGuides),
-      );
-      this.toolbar?.syncWritingGuides();
-    };
-    this.cleanups.push(watchWritingGuides(plugin.settings, syncGuides));
-    syncGuides();
+    // The notebook's own writing guides, as its notebook view shows them.
+    this.guides = bindWritingGuides({
+      settings: plugin.settings,
+      save: () => void plugin.saveSettings(),
+      path: () => this.req.notebookFile.path,
+      apply: (style) => this.surface?.setWritingGuides(style),
+      changed: () => this.toolbar?.syncWritingGuides(),
+    });
     const onKey = (e: KeyboardEvent): void => {
       if (e.defaultPrevented) return;
       // Esc and Mod+Enter are the scope's (bindFinishKeys): a popover's Esc must reach it.
@@ -667,9 +666,7 @@ export class EmbedInlineEditor implements InlineEditorHandle {
         editable:
           target instanceof HTMLElement &&
           (target.isContentEditable || target.closest("input, textarea, select") !== null),
-        popoverOpen:
-          slotEl.querySelector(".goodobsidian-popover") !== null ||
-          this.guidePopover?.isOpen === true,
+        popoverOpen: slotEl.querySelector(".goodobsidian-popover") !== null,
       });
       if (verdict === "pass") return undefined;
       if (verdict === "surface" && this.surface?.handleKeyDown(event)) return false;
@@ -900,31 +897,13 @@ export class EmbedInlineEditor implements InlineEditorHandle {
     return this.closing;
   }
 
-  private toggleWritingGuides(anchor: HTMLElement): void {
-    if (this.guidePopover?.isOpen) {
-      const sameAnchor = this.guidePopover.anchorEl === anchor;
-      this.guidePopover.close();
-      this.guidePopover = null;
-      if (sameAnchor) return;
-    }
-    const { plugin } = this.req;
-    const host = writingGuideHost(
-      plugin.settings,
-      () => void plugin.saveSettings(),
-      () => this.surface?.writingGuideContext(),
-    );
-    this.guidePopover = new WritingGuidePopover(anchor, host, () => {
-      this.guidePopover = null;
-    });
-  }
-
   /** Take everything down: the surface's canvases, the toolbar, listeners, the claim. */
   private dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     this.closed = true;
-    this.guidePopover?.close();
-    this.guidePopover = null;
+    this.guides?.dispose();
+    this.guides = null;
     if (this.saveTimer !== null) {
       window.clearTimeout(this.saveTimer);
       this.saveTimer = null;
