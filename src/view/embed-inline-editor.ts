@@ -317,6 +317,7 @@ export class EmbedInlineEditor implements InlineEditorHandle {
       this.toolState,
       {
         returnToPenOnReselect: () => plugin.settings.returnToPenOnReselect === true,
+        keepOptionsAcrossTools: () => plugin.settings.keepOptionsAcrossTools === true,
         onToolChange: (tool) => this.surface?.setTool(tool),
         onColorChange: () => {
           this.surface?.refreshPenCursor();

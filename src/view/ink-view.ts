@@ -4993,6 +4993,7 @@ export class InkView extends TextFileView {
       this.toolState,
       {
         returnToPenOnReselect: () => this.settings.returnToPenOnReselect === true,
+        keepOptionsAcrossTools: () => this.settings.keepOptionsAcrossTools === true,
         onToolChange: (tool) => {
           this.surface?.setTool(tool);
           if (tool === "text" && this.surface) this.plugin.offerTextHint(this.surface);

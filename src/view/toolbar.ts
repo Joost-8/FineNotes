@@ -838,6 +838,8 @@ export interface ToolbarCallbacks {
   // class would lose `this` the moment we read one. A callback is a value.
   onToolChange: (tool: ActiveTool) => void;
   returnToPenOnReselect?: () => boolean;
+  /** Tool switches keep the options pill open or closed as it is, for every tool. */
+  keepOptionsAcrossTools?: () => boolean;
   onColorChange: (color: string) => void;
   onSizeChange: (size: number) => void;
   /** The laser pointer's colour changed in its pill. Hosts persist it. */
@@ -2622,6 +2624,7 @@ export class Toolbar {
     const spec = PEN_TYPES.find((p) => p.id === (type ?? pen?.type));
     if (!spec || (this.practice && spec.tool === "highlighter")) return;
     this.closePopover();
+    this.tuckedByStroke = false; // the last pen's stroke timer must not reopen this one
     if (pen) {
       this.applySavedPen(pen);
       return;
@@ -3206,7 +3209,7 @@ export class Toolbar {
         this.handButton = "main";
         this.closePopover();
         this.tuckedByStroke = false;
-        this.optionsVisible = true;
+        if (!this.sharedOptions()) this.optionsVisible = true;
         this.applySavedPen(own);
         return;
       }
@@ -3278,13 +3281,19 @@ export class Toolbar {
     );
   }
 
+  /** One open or closed state for every tool (a setting), not each tool's own (#338). */
+  private sharedOptions(): boolean {
+    return this.callbacks.keepOptionsAcrossTools?.() === true;
+  }
+
   private leaveToolFor(next: ActiveTool): void {
     if (next !== "laser") this.state.laserFromTool = null;
     if (optionsKey(next) === optionsKey(this.optionsTool)) return;
     this.tuckedByStroke = false;
     if (this.optionsVisible) this.tuckedTools.delete(optionsKey(this.optionsTool));
     else this.tuckedTools.add(optionsKey(this.optionsTool));
-    const remembered = !this.tuckedTools.has(optionsKey(next)) && !this.startsTucked(next);
+    const remembered =
+      this.sharedOptions() || (!this.tuckedTools.has(optionsKey(next)) && !this.startsTucked(next));
     this.optionsVisible = optionsAfterSwitch(
       this.optionsVisible,
       remembered,

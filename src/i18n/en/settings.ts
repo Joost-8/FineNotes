@@ -54,6 +54,9 @@ export const settings = {
   "settings.savedPens.restoreMessage": "Your saved pens are replaced by FineNotes' own eight.",
   "settings.savedPens.restore": "Restore",
   "settings.savedPens.penLabel": "Pen {number}: {label}",
+  "settings.keepOptionsAcrossTools.name": "Keep tool options open or closed",
+  "settings.keepOptionsAcrossTools.line":
+    "One open or closed state for every tool's options, the pen's too.",
   "settings.fingerTapUndo.name": "Two-finger double-tap to undo",
   "settings.fingerTapUndo.desc": "Three fingers redo.",
   "settings.textDragSize.name": "Drag to size text boxes",

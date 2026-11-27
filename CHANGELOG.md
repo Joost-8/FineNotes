@@ -45,6 +45,7 @@ extracted from the matching section of this file by `release.yml`.
 
 - **Writing guides** ([#335](https://github.com/Joost-8/FineNotes/pull/335), thanks @koltensaccount): lines, a grid or dots over a notebook's pages to write along, never printed or exported. Each notebook has its own; turn them on from More tools; on the bar, the button's arrow sets their look, as the ruler's does. Inline Handwrite here blocks show their notebook's guides.
 - **Move tools and the toolbar by holding them** ([#337](https://github.com/Joost-8/FineNotes/pull/337), thanks @koltensaccount): hold a tool to drag it along the bar, into ⋯ or back; hold a pen in its options to pin it to the bar; hold the bar's empty space and drag it to another edge. **Lock toolbar** (the lock in Customize toolbar) turns these off, so the bar changes only in Customize.
+- **Keep tool options open or closed** ([#338](https://github.com/Joost-8/FineNotes/pull/338), thanks @koltensaccount): a setting in General, off by default. On, switching tools keeps the options open or closed as they were, the pen's included. Off, each tool remembers its own and the pen's start closed, as before.
 - **Copy and Cut reach other apps** ([#333](https://github.com/Joost-8/FineNotes/pull/333), thanks @koltensaccount): a lasso of text boxes pastes elsewhere as formatted text, anything with ink or shapes as a transparent picture; pasted back into FineNotes, it stays editable.
 - **Help improve Grape: share new items automatically.** The consent has a
   box (ticked unless you untick it) to send later practice lines and corrections as they are
@@ -183,6 +184,7 @@ extracted from the matching section of this file by `release.yml`.
 
 ### Fixed
 
+- Picking another pinned pen while "Until the pen lifts" was waiting no longer reopens the options ([#338](https://github.com/Joost-8/FineNotes/pull/338)).
 - **Toolbar details** ([#336](https://github.com/Joost-8/FineNotes/pull/336), thanks @koltensaccount): no tooltip over the toolbar's empty space; the page shows the desk colour while thumbnails slide; the page selection bar and the strip under a bottom toolbar take the toolbar's look.
 - **Beautify on a slanted line.** Words Beautify left alone no longer end up
   below the line, on top of the next one, and a rewritten "I" no longer gets

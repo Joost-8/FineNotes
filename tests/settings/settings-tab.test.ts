@@ -511,6 +511,7 @@ describe("the rows", () => {
       ["general", "", "Simple look", "toggle:simpleLook"],
       ["general", "", "(block)", "render"],
       ["general", "", "Hints for faster ways", "toggle:gestureHints"],
+      ["general", "", "Keep tool options open or closed", "toggle:keepOptionsAcrossTools"],
       ["general", "", "Updates", "dropdown:checkForUpdates"],
       ["writing", "Pens", "Start with", "render"],
       ["writing", "Pens", "Saved pens", "render"],
