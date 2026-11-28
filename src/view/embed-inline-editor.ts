@@ -407,7 +407,7 @@ export class EmbedInlineEditor implements InlineEditorHandle {
         onTextList: (kind) => void this.surface?.applyTextList(kind),
         onTextDelete: () => void this.surface?.deleteEditingTextBox(),
         onInsertImage: () => {
-          void pickImageFiles(slotEl, false, "image/*", false).then(([file]) => {
+          void pickImageFiles(slotEl.ownerDocument.body, false, "image/*", false).then(([file]) => {
             if (file) void this.pastePicture(file);
           });
         },
