@@ -947,6 +947,20 @@ export class Renderer {
     }
     this.viewportBytes = deviceWidth * deviceHeight * 4;
     this.applyTileBudget();
+    // Sizing the wet canvas empties it; callers replay wet ink once the new viewport is set.
+    this.wetInk = null;
+  }
+
+  /** Repaint any in-flight wet stroke or shape using the current viewport transform. */
+  replayWet(): void {
+    const replay = this.wetReplay;
+    const box = replay ? this.layout.boxes[replay.pageIndex] : null;
+    if (!replay || !box) return;
+    const ctx = this.wet.ctx;
+    this.toLayoutSpace(ctx);
+    this.enterWetPage(ctx, box);
+    replay.paint(ctx, this.safeScale);
+    ctx.restore();
   }
 
   /** One pane's worth of device px, bytes: what the tile budget scales with. */

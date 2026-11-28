@@ -5967,6 +5967,7 @@ export class InkSurface {
     this.renderer?.resize(cssW, cssH, backingScale(this.win.devicePixelRatio));
     this.tellPainterScreen();
     this.syncViewport();
+    this.renderer?.replayWet?.();
     this.syncInkCursor();
     this.settleIfIdle();
     this.renderAll();
@@ -6469,6 +6470,7 @@ export class InkSurface {
   refreshInlinePage(pageId: string): void {
     this.renderer?.invalidatePage(pageId);
     this.layout();
+    this.wetSeen = null;
     if (this.builder) this.drawWet();
     this.requestFrame();
   }
@@ -11638,6 +11640,7 @@ export class InkSurface {
     this.layout();
     const grown = this.pageLayout.boxes[box.index] ?? box;
     this.activePage = grown;
+    this.wetSeen = null;
     if (this.builder) this.drawWet();
     return grown;
   }
@@ -11724,6 +11727,7 @@ export class InkSurface {
       return;
     }
     if (this.shapeDrag) {
+      if (last) box = this.extendInlineInk(box, last);
       const drag = this.shapeDrag;
       if (drag.trail) {
         const room = this.shapeRoom(box);
@@ -11768,6 +11772,7 @@ export class InkSurface {
     }
     const snap = this.snap;
     if (snap) {
+      if (last) box = this.extendInlineInk(box, last);
       // Snapped and still held: the shape follows the pen, and a corner or
       // its far end lands on another shape's when it comes near one. A line
       // or an arrow that did not, turned near level or upright, settles

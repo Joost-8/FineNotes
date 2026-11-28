@@ -154,4 +154,27 @@ describe("paintWetInto", () => {
     expect(renderer.paintWetInto(recorder(log), LAYOUT.boxes[0], 4)).toBe(false);
     expect(log).toEqual([]);
   });
+
+  it("replays wet ink using the updated viewport after resize() clears the wet canvas", () => {
+    const wetLog: Call[] = [];
+    const renderer = new Renderer(
+      fakeCanvas([]) as HTMLCanvasElement,
+      fakeCanvas([]) as HTMLCanvasElement,
+      fakeCanvas(wetLog) as HTMLCanvasElement,
+      false,
+    );
+    renderer.setLayout(LAYOUT);
+    renderer.resize(880, 1000, 1);
+    renderer.setViewport({ scrollY: 0, scale: 1, width: 880 }, 0);
+    renderer.renderWetRuns(0, runs, style);
+
+    // Resizing mid-stroke clears the backing store; replayWet runs after setViewport updates scale.
+    renderer.resize(880, 1200, 1);
+    wetLog.length = 0;
+    renderer.setViewport({ scrollY: 50, scale: 1.5, width: 880 }, 20);
+    renderer.replayWet();
+
+    expect(wetLog.some(([name]) => name === "stroke")).toBe(true);
+    expect(wetLog).toContainEqual(["setTransform", 1.5, 0, 0, 1.5, 20, -75]);
+  });
 });
