@@ -2728,13 +2728,15 @@ export default class GoodObsidianPlugin extends Plugin {
   }
 
   /** Customize toolbar changed the bar or its menu: every open notebook shows the new one. */
-  saveToolbarLayout(layout: ToolbarLayout): void {
+  saveToolbarLayout(layout: ToolbarLayout, target?: "essentials" | "own"): void {
     const toolbar = normalizeLayout(layout);
     // The preset in use keeps the change; the other layout stays as it was.
-    if (this.settings.toolbarPreset === "essentials" && this.pillRow)
-      this.settings.toolbarEssentials = toolbar;
+    const activeEssentials = this.settings.toolbarPreset === "essentials" && this.pillRow;
+    const saveEssentials = target !== undefined ? target === "essentials" : activeEssentials;
+    if (saveEssentials) this.settings.toolbarEssentials = toolbar;
     else this.settings.toolbarLayout = toolbar;
     void this.saveSettings();
+    if (saveEssentials !== activeEssentials) return;
     // Each notebook ends what an item now shown nowhere left on (effectsOfOffItems).
     for (const view of this.openNotebooks()) view.setToolbarItems(toolbar);
     if (this.settings.onlyStylusMode && isItemOff(toolbar, "stylus")) {
