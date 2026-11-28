@@ -3624,5 +3624,9 @@
   "notebooks.companion.errWrite": "無法寫入 PDF。已保留先前的版本。",
   "notebooks.companion.errFrontmatter": "無法讀取筆記本的內容屬性。請修復後重試。",
   "notebooks.companion.errPath": "該資料夾無法存放 PDF。",
-  "notebooks.companion.errDuplicate": "此筆記本的一個副本保持著同一個 PDF。請在副本中將其關閉。"
+  "notebooks.companion.errDuplicate": "此筆記本的一個副本保持著同一個 PDF。請在副本中將其關閉。",
+  "notebooks.handwrite.firstUseIntro": "每個手寫區塊都會儲存為筆記本檔案 (.notebook.md) 中的一頁，並顯示在你的筆記內。",
+  "notebooks.handwrite.modeNoteDescription": "重複使用此筆記中連結的筆記本，或在需要時於 Obsidian 的附件資料夾中建立一本新的。",
+  "notebooks.handwrite.modeAskDescription": "每次新增區塊時選擇現有筆記本或建立新的筆記本。",
+  "notebooks.handwrite.modeOneDescription": "接著選擇一本筆記本。來自每則筆記的新手寫區塊都會存放在其中。"
 }

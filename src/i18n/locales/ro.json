@@ -3849,5 +3849,9 @@
   "notebooks.companion.errWrite": "PDF-ul nu a putut fi scris. Cel anterior a fost păstrat.",
   "notebooks.companion.errFrontmatter": "Proprietățile caietului nu au putut fi citite. Corectează-le și încearcă din nou.",
   "notebooks.companion.errPath": "Acel dosar nu poate conține PDF-ul.",
-  "notebooks.companion.errDuplicate": "O copie a acestui caiet păstrează același PDF. Dezactivează asta în copie."
+  "notebooks.companion.errDuplicate": "O copie a acestui caiet păstrează același PDF. Dezactivează asta în copie.",
+  "notebooks.handwrite.firstUseIntro": "Fiecare bloc scris de mână este salvat ca o pagină într-un fișier caiet (.notebook.md) și afișat în nota ta.",
+  "notebooks.handwrite.modeNoteDescription": "Refolosește un caiet legat în această notă sau creează unul în folderul de atașamente Obsidian dacă este nevoie.",
+  "notebooks.handwrite.modeAskDescription": "Alege un caiet existent sau creează unul nou de fiecare dată când adaugi un bloc.",
+  "notebooks.handwrite.modeOneDescription": "Alege un caiet în continuare. Noile blocuri scrise de mână din fiecare notă vor merge în el."
 }

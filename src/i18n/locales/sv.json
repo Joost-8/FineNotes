@@ -3738,5 +3738,9 @@
   "notebooks.companion.errWrite": "PDF:en kunde inte skrivas. Den föregående behölls.",
   "notebooks.companion.errFrontmatter": "Anteckningsbokens egenskaper kunde inte läsas. Åtgärda dem och försök igen.",
   "notebooks.companion.errPath": "Den mappen kan inte rymma PDF:en.",
-  "notebooks.companion.errDuplicate": "En kopia av den här anteckningsboken håller samma PDF. Stäng av det i kopian."
+  "notebooks.companion.errDuplicate": "En kopia av den här anteckningsboken håller samma PDF. Stäng av det i kopian.",
+  "notebooks.handwrite.firstUseIntro": "Varje handskriftsblock sparas som en sida i en anteckningsboksfil (.notebook.md) och visas i din anteckning.",
+  "notebooks.handwrite.modeNoteDescription": "Återanvänd en anteckningsbok som är länkad i denna anteckning, eller skapa en i Obsidians bilagemapp vid behov.",
+  "notebooks.handwrite.modeAskDescription": "Välj en befintlig anteckningsbok eller skapa en ny varje gång du lägger till ett block.",
+  "notebooks.handwrite.modeOneDescription": "Välj en anteckningsbok härnäst. Nya handskriftsblock från varje anteckning hamnar i den."
 }

@@ -3960,5 +3960,9 @@
   "notebooks.companion.errWrite": "Не удалось записать PDF. Предыдущий сохранён.",
   "notebooks.companion.errFrontmatter": "Не удалось прочитать свойства тетради. Исправьте их и повторите попытку.",
   "notebooks.companion.errPath": "В эту папку нельзя поместить PDF.",
-  "notebooks.companion.errDuplicate": "Копия этой тетради поддерживает тот же PDF. Выключите это в копии."
+  "notebooks.companion.errDuplicate": "Копия этой тетради поддерживает тот же PDF. Выключите это в копии.",
+  "notebooks.handwrite.firstUseIntro": "Каждый рукописный блок сохраняется как страница в файле тетради (.notebook.md) и отображается внутри заметки.",
+  "notebooks.handwrite.modeNoteDescription": "Повторно использует тетрадь, связанную с этой заметкой, или при необходимости создаёт новую в папке вложений Obsidian.",
+  "notebooks.handwrite.modeAskDescription": "Выбирайте существующую тетрадь или создавайте новую каждый раз при добавлении блока.",
+  "notebooks.handwrite.modeOneDescription": "Выберите тетрадь на следующем шаге. Новые рукописные блоки из всех заметок будут сохраняться в неё."
 }

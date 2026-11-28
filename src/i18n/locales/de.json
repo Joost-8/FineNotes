@@ -3738,5 +3738,9 @@
   "notebooks.companion.errWrite": "Das PDF konnte nicht geschrieben werden. Das vorherige wurde behalten.",
   "notebooks.companion.errFrontmatter": "Die Eigenschaften des Notizbuchs konnten nicht gelesen werden. Behebe das und versuche es erneut.",
   "notebooks.companion.errPath": "Dieser Ordner kann das PDF nicht aufnehmen.",
-  "notebooks.companion.errDuplicate": "Eine Kopie dieses Notizbuchs hält dasselbe PDF. Schalte es in der Kopie aus."
+  "notebooks.companion.errDuplicate": "Eine Kopie dieses Notizbuchs hält dasselbe PDF. Schalte es in der Kopie aus.",
+  "notebooks.handwrite.firstUseIntro": "Jeder Handschrift-Block wird als Seite in einer Notizbuchdatei (.notebook.md) gespeichert und in deiner Notiz angezeigt.",
+  "notebooks.handwrite.modeNoteDescription": "Verwendet ein in dieser Notiz verknüpftes Notizbuch wieder oder erstellt bei Bedarf eines im Anhangsordner von Obsidian.",
+  "notebooks.handwrite.modeAskDescription": "Wähle jedes Mal beim Hinzufügen eines Blocks ein vorhandenes Notizbuch oder erstelle ein neues.",
+  "notebooks.handwrite.modeOneDescription": "Wähle als Nächstes ein Notizbuch. Neue Handschrift-Blöcke aus jeder Notiz landen darin."
 }

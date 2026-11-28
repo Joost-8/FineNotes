@@ -3738,5 +3738,9 @@
   "notebooks.companion.errWrite": "PDF’en kunne ikke skrives. Den forrige blev beholdt.",
   "notebooks.companion.errFrontmatter": "Notesbogens egenskaber kunne ikke læses. Ret dem, og prøv igen.",
   "notebooks.companion.errPath": "Den mappe kan ikke rumme PDF’en.",
-  "notebooks.companion.errDuplicate": "En kopi af denne notesbog holder den samme PDF. Slå det fra i kopien."
+  "notebooks.companion.errDuplicate": "En kopi af denne notesbog holder den samme PDF. Slå det fra i kopien.",
+  "notebooks.handwrite.firstUseIntro": "Hver håndskriftsblok gemmes som en side i en notesbogsfil (.notebook.md) og vises inde i din note.",
+  "notebooks.handwrite.modeNoteDescription": "Genbrug en notesbog linket i denne note, eller opret en i Obsidians vedhæftningsmappe om nødvendigt.",
+  "notebooks.handwrite.modeAskDescription": "Vælg en eksisterende notesbog eller opret en ny hver gang du tilføjer en blok.",
+  "notebooks.handwrite.modeOneDescription": "Vælg en notesbog næste. Nye håndskriftsblokke fra alle noter gemmes i den."
 }

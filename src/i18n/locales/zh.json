@@ -3624,5 +3624,9 @@
   "notebooks.companion.errWrite": "无法写入 PDF。已保留之前的版本。",
   "notebooks.companion.errFrontmatter": "无法读取笔记本的属性。请修复后重试。",
   "notebooks.companion.errPath": "该文件夹无法存放 PDF。",
-  "notebooks.companion.errDuplicate": "此笔记本的一个副本保持着同一个 PDF。请在副本中将其关闭。"
+  "notebooks.companion.errDuplicate": "此笔记本的一个副本保持着同一个 PDF。请在副本中将其关闭。",
+  "notebooks.handwrite.firstUseIntro": "每个手写块都会保存为笔记本文件 (.notebook.md) 中的一页，并显示在你的笔记内。",
+  "notebooks.handwrite.modeNoteDescription": "复用此笔记中链接的笔记本，或在需要时于 Obsidian 的附件文件夹中新建一本。",
+  "notebooks.handwrite.modeAskDescription": "每次添加手写块时选择现有笔记本或新建一本。",
+  "notebooks.handwrite.modeOneDescription": "接下来选择一本笔记本。来自每条笔记的新手写块都会存入其中。"
 }

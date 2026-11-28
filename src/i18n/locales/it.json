@@ -3738,5 +3738,9 @@
   "notebooks.companion.errWrite": "Impossibile scrivere il PDF. Quello precedente è stato mantenuto.",
   "notebooks.companion.errFrontmatter": "Impossibile leggere le proprietà del quaderno. Correggile e riprova.",
   "notebooks.companion.errPath": "Quella cartella non può contenere il PDF.",
-  "notebooks.companion.errDuplicate": "Una copia di questo quaderno mantiene lo stesso PDF. Disattivalo nella copia."
+  "notebooks.companion.errDuplicate": "Una copia di questo quaderno mantiene lo stesso PDF. Disattivalo nella copia.",
+  "notebooks.handwrite.firstUseIntro": "Ogni blocco scritto a mano viene salvato come pagina in un file quaderno (.notebook.md) e mostrato nella tua nota.",
+  "notebooks.handwrite.modeNoteDescription": "Riutilizza un quaderno collegato in questa nota o ne crea uno nella cartella allegati di Obsidian se necessario.",
+  "notebooks.handwrite.modeAskDescription": "Scegli un quaderno esistente o creane uno nuovo ogni volta che aggiungi un blocco.",
+  "notebooks.handwrite.modeOneDescription": "Scegli un quaderno nel passaggio successivo. I nuovi blocchi scritti a mano di ogni nota finiranno lì."
 }

@@ -3738,5 +3738,9 @@
   "notebooks.companion.errWrite": "Le PDF n’a pas pu être écrit. Le précédent a été conservé.",
   "notebooks.companion.errFrontmatter": "Les propriétés du carnet n’ont pas pu être lues. Corrigez-les, puis réessayez.",
   "notebooks.companion.errPath": "Ce dossier ne peut pas contenir le PDF.",
-  "notebooks.companion.errDuplicate": "Une copie de ce carnet garde le même PDF. Désactivez-le dans la copie."
+  "notebooks.companion.errDuplicate": "Une copie de ce carnet garde le même PDF. Désactivez-le dans la copie.",
+  "notebooks.handwrite.firstUseIntro": "Chaque bloc manuscrit est enregistré comme une page dans un fichier cahier (.notebook.md) et affiché dans votre note.",
+  "notebooks.handwrite.modeNoteDescription": "Réutilise un cahier lié dans cette note, ou en crée un dans le dossier de pièces jointes d'Obsidian si besoin.",
+  "notebooks.handwrite.modeAskDescription": "Choisissez un cahier existant ou créez-en un nouveau chaque fois que vous ajoutez un bloc.",
+  "notebooks.handwrite.modeOneDescription": "Choisissez un cahier ensuite. Les nouveaux blocs manuscrits de chaque note y seront enregistrés."
 }

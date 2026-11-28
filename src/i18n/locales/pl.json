@@ -3960,5 +3960,9 @@
   "notebooks.companion.errWrite": "Nie udało się zapisać PDF. Poprzedni został zachowany.",
   "notebooks.companion.errFrontmatter": "Nie udało się odczytać właściwości notatnika. Popraw je i spróbuj ponownie.",
   "notebooks.companion.errPath": "Ten folder nie może zawierać PDF.",
-  "notebooks.companion.errDuplicate": "Kopia tego notatnika utrzymuje ten sam PDF. Wyłącz to w kopii."
+  "notebooks.companion.errDuplicate": "Kopia tego notatnika utrzymuje ten sam PDF. Wyłącz to w kopii.",
+  "notebooks.handwrite.firstUseIntro": "Każdy blok pisma odręcznego zapisywany jest jako strona w pliku notesu (.notebook.md) i wyświetlany w notatce.",
+  "notebooks.handwrite.modeNoteDescription": "Ponownie używa notesu powiązanego z tą notatką lub w razie potrzeby tworzy nowy w folderze załączników Obsidian.",
+  "notebooks.handwrite.modeAskDescription": "Wybierz istniejący notes lub utwórz nowy za każdym razem, gdy dodajesz blok.",
+  "notebooks.handwrite.modeOneDescription": "Wybierz notes w kolejnym kroku. Nowe bloki pisma odręcznego z każdej notatki trafią właśnie tam."
 }

@@ -3738,5 +3738,9 @@
   "notebooks.companion.errWrite": "PDF लेख्न सकिएन। अघिल्लो राखियो।",
   "notebooks.companion.errFrontmatter": "नोटबुकका गुणहरू पढ्न सकिएन। ठीक गरेर फेरि प्रयास गर्नुहोस्।",
   "notebooks.companion.errPath": "त्यो फोल्डरमा PDF राख्न सकिँदैन।",
-  "notebooks.companion.errDuplicate": "यो नोटबुकको एउटा प्रतिले उही PDF राखिरहेको छ। प्रतिमा यसलाई बन्द गर्नुहोस्।"
+  "notebooks.companion.errDuplicate": "यो नोटबुकको एउटा प्रतिले उही PDF राखिरहेको छ। प्रतिमा यसलाई बन्द गर्नुहोस्।",
+  "notebooks.handwrite.firstUseIntro": "प्रत्येक हस्तलेखन ब्लक नोटबुक फाइल (.notebook.md) मा पृष्ठको रूपमा सुरक्षित हुन्छ र तपाईंको नोटभित्र देखिन्छ।",
+  "notebooks.handwrite.modeNoteDescription": "यस नोटमा जोडिएको नोटबुक पुनः प्रयोग गर्नुहोस्, वा आवश्यक परे Obsidian को संलग्नक फोल्डरमा नयाँ बनाउनुहोस्।",
+  "notebooks.handwrite.modeAskDescription": "प्रत्येक पटक ब्लक थप्दा अवस्थित नोटबुक छान्नुहोस् वा नयाँ बनाउनुहोस्।",
+  "notebooks.handwrite.modeOneDescription": "अर्को चरणमा नोटबुक छान्नुहोस्। हरेक नोटका नयाँ हस्तलेखन ब्लकहरू त्यसैमा सुरक्षित हुनेछन्।"
 }

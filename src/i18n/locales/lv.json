@@ -3731,5 +3731,9 @@
   "notebooks.companion.errWrite": "PDF neizdevās ierakstīt. Iepriekšējais tika saglabāts.",
   "notebooks.companion.errFrontmatter": "Piezīmju grāmatas rekvizītus neizdevās nolasīt. Izlabojiet tos un mēģiniet vēlreiz.",
   "notebooks.companion.errPath": "Šajā mapē PDF nevar ievietot.",
-  "notebooks.companion.errDuplicate": "Šīs piezīmju grāmatas kopija uztur to pašu PDF. Izslēdziet to kopijā."
+  "notebooks.companion.errDuplicate": "Šīs piezīmju grāmatas kopija uztur to pašu PDF. Izslēdziet to kopijā.",
+  "notebooks.handwrite.firstUseIntro": "Katrs rokraksta bloks tiek saglabāts kā lapa piezīmju grāmatiņas failā (.notebook.md) un rādīts jūsu piezīmē.",
+  "notebooks.handwrite.modeNoteDescription": "Atkārtoti izmanto šajā piezīmē sasaistīto piezīmju grāmatiņu vai vajadzības gadījumā izveido jaunu Obsidian pielikumu mapē.",
+  "notebooks.handwrite.modeAskDescription": "Katru reizi, pievienojot bloku, izvēlies esošu piezīmju grāmatiņu vai izveido jaunu.",
+  "notebooks.handwrite.modeOneDescription": "Tālāk izvēlies piezīmju grāmatiņu. Tajā tiks saglabāti jaunie rokraksta bloki no katras piezīmes."
 }

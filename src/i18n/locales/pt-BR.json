@@ -3738,5 +3738,9 @@
   "notebooks.companion.errWrite": "Não foi possível gravar o PDF. O anterior foi mantido.",
   "notebooks.companion.errFrontmatter": "Não foi possível ler as propriedades do caderno. Corrija-as e tente de novo.",
   "notebooks.companion.errPath": "Essa pasta não pode conter o PDF.",
-  "notebooks.companion.errDuplicate": "Uma cópia deste caderno mantém o mesmo PDF. Desative-o na cópia."
+  "notebooks.companion.errDuplicate": "Uma cópia deste caderno mantém o mesmo PDF. Desative-o na cópia.",
+  "notebooks.handwrite.firstUseIntro": "Cada bloco manuscrito é salvo como uma página em um arquivo de caderno (.notebook.md) e exibido dentro da sua nota.",
+  "notebooks.handwrite.modeNoteDescription": "Reutilize um caderno vinculado nesta nota ou crie um na pasta de anexos do Obsidian, se necessário.",
+  "notebooks.handwrite.modeAskDescription": "Escolha um caderno existente ou crie um novo sempre que adicionar um bloco.",
+  "notebooks.handwrite.modeOneDescription": "Escolha um caderno a seguir. Novos blocos manuscritos de todas as notas irão para ele."
 }

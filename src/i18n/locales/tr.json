@@ -3738,5 +3738,9 @@
   "notebooks.companion.errWrite": "PDF yazılamadı. Önceki korundu.",
   "notebooks.companion.errFrontmatter": "Defterin özellikleri okunamadı. Düzelt ve tekrar dene.",
   "notebooks.companion.errPath": "O klasör PDF’i barındıramaz.",
-  "notebooks.companion.errDuplicate": "Bu defterin bir kopyası aynı PDF’i güncel tutuyor. Kopyada kapat."
+  "notebooks.companion.errDuplicate": "Bu defterin bir kopyası aynı PDF’i güncel tutuyor. Kopyada kapat.",
+  "notebooks.handwrite.firstUseIntro": "Her el yazısı bloğu bir defter dosyasında (.notebook.md) sayfa olarak kaydedilir ve notunuzun içinde gösterilir.",
+  "notebooks.handwrite.modeNoteDescription": "Bu nota bağlı bir defteri yeniden kullanın veya gerekirse Obsidian ekler klasöründe yeni bir tane oluşturun.",
+  "notebooks.handwrite.modeAskDescription": "Her blok eklediğinizde mevcut bir defter seçin veya yeni bir tane oluşturun.",
+  "notebooks.handwrite.modeOneDescription": "Sonraki adımda bir defter seçin. Her nottaki yeni el yazısı blokları buraya kaydedilir."
 }

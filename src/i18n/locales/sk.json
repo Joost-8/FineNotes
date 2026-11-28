@@ -3960,5 +3960,9 @@
   "notebooks.companion.errWrite": "PDF sa nepodarilo zapísať. Predchádzajúce zostalo zachované.",
   "notebooks.companion.errFrontmatter": "Vlastnosti zošita sa nepodarilo prečítať. Opravte ich a skúste to znova.",
   "notebooks.companion.errPath": "Tento priečinok nemôže obsahovať PDF.",
-  "notebooks.companion.errDuplicate": "Kópia tohto zošita udržiava rovnaké PDF. Vypnite to v kópii."
+  "notebooks.companion.errDuplicate": "Kópia tohto zošita udržiava rovnaké PDF. Vypnite to v kópii.",
+  "notebooks.handwrite.firstUseIntro": "Každý blok rukopisu sa uloží ako strana v súbore zápisníka (.notebook.md) a zobrazí sa vo vašej poznámke.",
+  "notebooks.handwrite.modeNoteDescription": "Znova použije zápisník prepojený v tejto poznámke alebo podľa potreby vytvorí nový v priečinku príloh Obsidianu.",
+  "notebooks.handwrite.modeAskDescription": "Pri každom pridaní bloku vyberte existujúci zápisník alebo vytvorte nový.",
+  "notebooks.handwrite.modeOneDescription": "V ďalšom kroku vyberte zápisník. Nové bloky rukopisu zo všetkých poznámok sa uložia doň."
 }

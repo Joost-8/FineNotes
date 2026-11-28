@@ -3738,5 +3738,9 @@
   "notebooks.companion.errWrite": "PDF نوشته نشد. نسخه قبلی نگه داشته شد.",
   "notebooks.companion.errFrontmatter": "ویژگی‌های دفترچه خوانده نشد. آن‌ها را درست کنید و دوباره تلاش کنید.",
   "notebooks.companion.errPath": "آن پوشه نمی‌تواند PDF را نگه دارد.",
-  "notebooks.companion.errDuplicate": "یک کپی از این دفترچه همین PDF را نگه می‌دارد. آن را در کپی خاموش کنید."
+  "notebooks.companion.errDuplicate": "یک کپی از این دفترچه همین PDF را نگه می‌دارد. آن را در کپی خاموش کنید.",
+  "notebooks.handwrite.firstUseIntro": "هر بخش دست‌نویس به‌عنوان یک صفحه در فایل دفترچه (.notebook.md) ذخیره می‌شود و داخل یادداشت شما نمایش داده می‌شود.",
+  "notebooks.handwrite.modeNoteDescription": "از دفترچه‌ای که در این یادداشت پیوند داده شده استفاده مجدد کنید، یا در صورت نیاز یکی در پوشه پیوست‌های Obsidian بسازید.",
+  "notebooks.handwrite.modeAskDescription": "هر بار که بخشی اضافه می‌کنید، یک دفترچه موجود انتخاب کنید یا دفترچه جدیدی بسازید.",
+  "notebooks.handwrite.modeOneDescription": "در مرحله بعد یک دفترچه انتخاب کنید. بخش‌های دست‌نویس جدید از همه یادداشت‌ها در آن ذخیره می‌شوند."
 }

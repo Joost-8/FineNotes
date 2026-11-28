@@ -3960,5 +3960,9 @@
   "notebooks.companion.errWrite": "Не ўдалося запісаць PDF. Папярэдні захаваны.",
   "notebooks.companion.errFrontmatter": "Не ўдалося прачытаць уласцівасці сшытка. Выпраўце іх і паспрабуйце яшчэ раз.",
   "notebooks.companion.errPath": "У гэтую папку нельга змясціць PDF.",
-  "notebooks.companion.errDuplicate": "Копія гэтага сшытка падтрымлівае той самы PDF. Выключыце гэта ў копіі."
+  "notebooks.companion.errDuplicate": "Копія гэтага сшытка падтрымлівае той самы PDF. Выключыце гэта ў копіі.",
+  "notebooks.handwrite.firstUseIntro": "Кожны блок рукапісу захоўваецца як старонка ў файле сшытка (.notebook.md) і паказваецца ў вашай нататцы.",
+  "notebooks.handwrite.modeNoteDescription": "Выкарыстоўвайце сшытак, звязаны з гэтай нататкай, або стварыце новы ў папцы ўкладанняў Obsidian пры неабходнасці.",
+  "notebooks.handwrite.modeAskDescription": "Выбірайце існуючы сшытак або стварайце новы кожны раз, калі дадаеце блок.",
+  "notebooks.handwrite.modeOneDescription": "Выберыце сшытак далей. Новыя блокі рукапісу з кожнай нататкі будуць захоўвацца ў ім."
 }

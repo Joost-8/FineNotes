@@ -3822,5 +3822,9 @@
   "notebooks.companion.errWrite": "Не вдалося записати PDF. Попередній збережено.",
   "notebooks.companion.errFrontmatter": "Не вдалося прочитати властивості зошита. Виправте їх і спробуйте ще раз.",
   "notebooks.companion.errPath": "У цю теку не можна помістити PDF.",
-  "notebooks.companion.errDuplicate": "Копія цього зошита підтримує той самий PDF. Вимкніть це в копії."
+  "notebooks.companion.errDuplicate": "Копія цього зошита підтримує той самий PDF. Вимкніть це в копії.",
+  "notebooks.handwrite.firstUseIntro": "Кожен рукописний блок зберігається як сторінка у файлі зошита (.notebook.md) і показується у вашій нотатці.",
+  "notebooks.handwrite.modeNoteDescription": "Повторно використовує зошит, пов'язаний із цією нотаткою, або за потреби створює новий у папці вкладень Obsidian.",
+  "notebooks.handwrite.modeAskDescription": "Вибирайте наявний зошит або створюйте новий щоразу, коли додаєте блок.",
+  "notebooks.handwrite.modeOneDescription": "Виберіть зошит далі. Нові рукописні блоки з кожної нотатки зберігатимуться в ньому."
 }

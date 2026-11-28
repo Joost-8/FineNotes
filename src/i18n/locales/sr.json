@@ -3849,5 +3849,9 @@
   "notebooks.companion.errWrite": "PDF није могао бити записан. Претходни је задржан.",
   "notebooks.companion.errFrontmatter": "Својства свеске нису могла бити прочитана. Исправите их и покушајте поново.",
   "notebooks.companion.errPath": "Та фасцикла не може да садржи PDF.",
-  "notebooks.companion.errDuplicate": "Копија ове свеске одржава исти PDF. Искључите то у копији."
+  "notebooks.companion.errDuplicate": "Копија ове свеске одржава исти PDF. Искључите то у копији.",
+  "notebooks.handwrite.firstUseIntro": "Сваки рукописни блок се чува као страница у датотеци свеске (.notebook.md) и приказује унутар ваше белешке.",
+  "notebooks.handwrite.modeNoteDescription": "Поново користите свеску повезану са овом белешком или по потреби направите нову у фасцикли прилога у Obsidian-у.",
+  "notebooks.handwrite.modeAskDescription": "Изаберите постојећу свеску или направите нову сваки пут када додајете блок.",
+  "notebooks.handwrite.modeOneDescription": "Изаберите свеску у следећем кораку. Нови рукописни блокови из сваке белешке ићи ће у њу."
 }

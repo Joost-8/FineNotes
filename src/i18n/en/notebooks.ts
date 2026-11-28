@@ -1627,9 +1627,17 @@ export const notebooks = {
   "notebooks.handwrite.errAddImage": "FineNotes: could not add the picture ({error}).",
   "notebooks.handwrite.errSaveFailed": "FineNotes: could not save the handwriting ({error}).",
   "notebooks.handwrite.firstUseTitle": "Where should handwriting blocks go?",
+  "notebooks.handwrite.firstUseIntro":
+    "Each handwriting block is saved as a page in a notebook file (.notebook.md) and shown inside your note.",
   "notebooks.handwrite.modeNote": "One notebook per note",
+  "notebooks.handwrite.modeNoteDescription":
+    "Reuse a notebook linked in this note, or create one in Obsidian's attachment folder if needed.",
   "notebooks.handwrite.modeAsk": "Ask each time",
+  "notebooks.handwrite.modeAskDescription":
+    "Choose an existing notebook or create a new one each time you add a block.",
   "notebooks.handwrite.modeOne": "One notebook for everything",
+  "notebooks.handwrite.modeOneDescription":
+    "Choose a notebook next. New handwriting blocks from every note will go into it.",
   "notebooks.handwrite.firstUseHint": "You can change this in FineNotes settings.",
   "notebooks.handwrite.continue": "Continue",
   "notebooks.handwrite.pickFixedPlaceholder": "Choose the notebook for all handwriting…",

@@ -137,23 +137,31 @@ async function resolveBackingNotebook(
 
   let target = where();
   if (target.kind === "first-use") {
-    // Asked once; Esc keeps "One notebook per note", and the block goes on.
-    settings.handwriteBlocks = await HandwriteBlocksModal.choose(app);
-    settings.handwriteBlocksChosen = true;
-    if (settings.handwriteBlocks === "one") {
+    // Asked until the user confirms with Continue; dismissing cancels without saving the flag.
+    const picked = await HandwriteBlocksModal.choose(app);
+    if (picked === null) return null;
+    if (picked === "one") {
       const choice = await InlineNotebookPickerModal.pick(app, {
         defaultCreateName: t("notebooks.handwrite.blockName"),
         placeholder: t("notebooks.handwrite.pickFixedPlaceholder"),
       });
-      if (choice?.kind === "existing") settings.handwriteNotebook = choice.file.path;
-      else if (choice?.kind === "create") {
+      if (!choice) return null;
+      settings.handwriteBlocks = "one";
+      settings.handwriteBlocksChosen = true;
+      if (choice.kind === "existing") {
+        settings.handwriteNotebook = choice.file.path;
+        await plugin.saveSettings();
+      } else {
         const made = await notebookFor(plugin, source.path, choice.name, initialPage);
         settings.handwriteNotebook = made.file.path;
         await plugin.saveSettings();
         return made;
       }
+    } else {
+      settings.handwriteBlocks = picked;
+      settings.handwriteBlocksChosen = true;
+      await plugin.saveSettings();
     }
-    await plugin.saveSettings();
     target = where();
   }
   if (target.kind === "fixed-missing") {
