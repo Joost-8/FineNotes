@@ -25862,7 +25862,7 @@ button.goodobsidian-ns-companion-folder.clickable-icon {
 }
 
 /* --- Handwrite here: blocks in a note, and one written in place --- */
-.markdown-source-view.mod-cm6 .goodobsidian-page-embed-page.is-transparent {
+.markdown-source-view.mod-cm6 .goodobsidian-page-embed-page.is-transparent:not(.is-inline-editing) {
   border-radius: var(--radius-m);
   border: 1px solid var(--background-modifier-border);
   background: var(--background-secondary-alt);
@@ -25913,7 +25913,11 @@ button.goodobsidian-ns-companion-folder.clickable-icon {
 .goodobsidian-page-embed-page.is-inline-editing > .goodobsidian-page-embed-canvas {
   display: none;
 }
-.finenotes-inline-active-embed {
+.finenotes-inline-active-embed,
+.callout.finenotes-inline-active-embed,
+.markdown-source-view.mod-cm6 .finenotes-inline-active-embed,
+.markdown-source-view.mod-cm6
+  .cm-embed-block.finenotes-inline-active-embed:not(.cm-table-widget, .cm-lang-base):hover {
   overflow: visible;
 }
 .goodobsidian-inline-overlay {
@@ -25925,12 +25929,68 @@ button.goodobsidian-ns-companion-folder.clickable-icon {
 }
 .goodobsidian-inline-toolbar-host {
   position: sticky;
-  top: 0;
+  top: var(--gob-inline-follow-inset, 8px);
   z-index: 30;
+  margin-inline: 0;
   border-radius: var(--radius-m) var(--radius-m) 0 0;
+  transition: margin-inline 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.goodobsidian-inline-toolbar-host.is-detached {
+  margin-inline: 10px;
+}
+.goodobsidian-inline-toolbar-host.is-floating-follow {
+  position: relative;
+  top: auto;
+  transform: translateY(var(--gob-pill-y, 0px));
+  will-change: transform;
 }
 .goodobsidian-inline-toolbar-host .goodobsidian-toolbar {
   border-radius: var(--radius-m) var(--radius-m) 0 0;
+  box-shadow: 0 0 0 rgb(0 0 0 / 0%);
+  transition:
+    border-radius 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.goodobsidian-inline-toolbar-host.is-detached .goodobsidian-toolbar {
+  border: var(--gob-bar-border);
+  border-radius: 24px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 24%);
+}
+.goodobsidian-options.is-mounting,
+.goodobsidian-options.is-floating.is-collapsed.is-mounting,
+.goodobsidian-inline-overlay.is-mounting .goodobsidian-inline-toolbar-host,
+.goodobsidian-inline-overlay.is-mounting .goodobsidian-inline-toolbar-host .goodobsidian-toolbar,
+.goodobsidian-inline-overlay.is-mounting .goodobsidian-inline-faux-bg,
+.goodobsidian-inline-overlay.is-mounting .goodobsidian-inline-faux-header,
+.goodobsidian-inline-overlay.is-mounting .goodobsidian-inline-stage {
+  transition: none;
+}
+.goodobsidian-inline-faux-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  border-radius: var(--radius-m) var(--radius-m) 0 0;
+  transition: height 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.goodobsidian-inline-faux-header {
+  position: relative;
+  width: 100%;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transition: height 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.goodobsidian-inline-faux-canvas {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  display: block;
+  width: 100%;
 }
 .goodobsidian-inline-done-icon.clickable-icon {
   color: var(--interactive-accent);
@@ -25941,6 +26001,10 @@ button.goodobsidian-ns-companion-folder.clickable-icon {
   min-height: 0;
   overflow: hidden;
   border-radius: 0 0 var(--radius-m) var(--radius-m);
+  transition: height 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.goodobsidian-inline-stage.is-resizing {
+  transition: none;
 }
 .goodobsidian-inline-stage .goodobsidian-surface {
   width: 100%;
