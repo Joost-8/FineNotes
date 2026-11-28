@@ -879,3 +879,95 @@ const PDF_TAB_HIDES: ReadonlySet<BarItemId> = new Set<BarItemId>([
 export function hiddenOnPdfTab(id: BarItemId): boolean {
   return PDF_TAB_HIDES.has(id);
 }
+
+// --- Handwrite here: inline block toolbar layout ---------------------------------
+
+/** Bar items shown inside an inline "Handwrite here" block. */
+export const INLINE_BAR_ITEMS: ReadonlySet<BarItemId> = new Set<BarItemId>([
+  "undo",
+  "redo",
+  "select",
+  "pen",
+  "eraser",
+  "shape",
+  "text",
+  "accessories",
+  "stylus",
+  "ruler",
+  "fill",
+  "tape",
+  "image",
+  "sticker",
+  "sticky",
+  "guides",
+]);
+
+/** Whether `id` can appear on an inline block's toolbar (including pinned pen slots). */
+export function isInlineBarItem(id: BarItemId): boolean {
+  return isPenSlot(id) || INLINE_BAR_ITEMS.has(id);
+}
+
+/**
+ * Derive an inline block's toolbar layout from a full notebook layout without
+ * restoring a default Pen the user intentionally tucked into `off`.
+ */
+export function inlineLayoutFrom(raw: unknown, savedPenIds: ReadonlySet<string>): ToolbarLayout {
+  const full = normalizeLayout(raw, savedPenIds);
+  const keep = (ids: BarItemId[]): BarItemId[] => ids.filter(isInlineBarItem);
+  const start = keep(full.start);
+  const middle = keep(full.middle);
+  const end = keep(full.end);
+  const hasAnyPen = [...start, ...middle, ...end].some((id) => id === "pen" || isPenSlot(id));
+  if (!hasAnyPen && !full.off.includes("pen")) {
+    middle.unshift("pen");
+  }
+  return { start, middle, end, off: full.off };
+}
+
+/**
+ * Merge an inline-edited layout back into the user's full notebook layout
+ * without dropping or reordering notebook-only items.
+ */
+export function mergeInlineLayout(full: ToolbarLayout, edited: ToolbarLayout): ToolbarLayout {
+  const mergeZone = (
+    fullIds: readonly BarItemId[],
+    editedIds: readonly BarItemId[],
+  ): BarItemId[] => {
+    const prevInline = fullIds.filter(isInlineBarItem);
+    if (
+      prevInline.length === editedIds.length &&
+      prevInline.every((id, i) => id === editedIds[i])
+    ) {
+      return [...fullIds];
+    }
+    const out: BarItemId[] = [];
+    let ei = 0;
+    let lastInlineOut = -1;
+    for (const id of fullIds) {
+      if (isInlineBarItem(id)) {
+        if (ei < editedIds.length) {
+          out.push(editedIds[ei++]);
+          lastInlineOut = out.length;
+        }
+      } else {
+        out.push(id);
+      }
+    }
+    if (ei < editedIds.length) {
+      const tail = editedIds.slice(ei);
+      if (lastInlineOut >= 0) out.splice(lastInlineOut, 0, ...tail);
+      else out.push(...tail);
+    }
+    return out;
+  };
+  const off = [
+    ...full.off.filter((id) => !isInlineBarItem(id)),
+    ...edited.off.filter(isInlineBarItem),
+  ];
+  return {
+    start: mergeZone(full.start, edited.start),
+    middle: mergeZone(full.middle, edited.middle),
+    end: mergeZone(full.end, edited.end),
+    off,
+  };
+}

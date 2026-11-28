@@ -16,7 +16,7 @@ import { pushRecentColor } from "../model/colors";
 import { InsertImage, SetBackdrop } from "../model/commands";
 import { resolveAttachmentFolder } from "../model/attachment-folders";
 import { newImageElement, placeImageBox } from "../model/images";
-import { addSavedPen, isPenId, samePen, savedPensOf } from "../model/saved-pens";
+import { addSavedPen, samePen, savedPensOf } from "../model/saved-pens";
 import { DEFAULT_PAGE_GEOMETRY, type InkDocument, type Page } from "../model/document";
 import { dotClockOf } from "../model/dot-ids";
 import {
@@ -44,7 +44,13 @@ import { toolStateFrom } from "./ink-view";
 import { SavedPenModal } from "./saved-pen-modal";
 import { type GuideBinding, bindWritingGuides } from "./writing-guides";
 import { penOfState, Toolbar, type ToolbarState } from "./toolbar";
-import { normalizeLayout, type BarItemId, type ToolbarLayout } from "./toolbar-layout";
+import {
+  INLINE_BAR_ITEMS,
+  inlineLayoutFrom,
+  mergeInlineLayout,
+  normalizeLayout,
+  type BarItemId,
+} from "./toolbar-layout";
 import { editClosedNotebook, notebookIsOpen, readClosedNotebook } from "./notebook-transaction";
 import { deviceIdOf } from "./device-pages-session";
 import {
@@ -65,25 +71,6 @@ export interface EmbedInlineEditRequest {
   onClosed?: () => void;
 }
 
-const INLINE_BAR_ITEMS = new Set<BarItemId>([
-  "undo",
-  "redo",
-  "select",
-  "pen",
-  "eraser",
-  "shape",
-  "text",
-  "accessories",
-  "stylus",
-  "ruler",
-  "fill",
-  "tape",
-  "image",
-  "sticker",
-  "sticky",
-  "guides",
-]);
-
 const ISOLATED_EVENTS = [
   "mousedown",
   "pointerdown",
@@ -93,19 +80,6 @@ const ISOLATED_EVENTS = [
   "dblclick",
   "contextmenu",
 ] as const;
-
-function inlineLayoutFrom(raw: unknown, savedPenIds: ReadonlySet<string>): ToolbarLayout {
-  const full = normalizeLayout(raw, savedPenIds);
-  const keep = (ids: BarItemId[]): BarItemId[] =>
-    ids.filter((id) => isPenId(id) || INLINE_BAR_ITEMS.has(id));
-  const start = keep(full.start);
-  const middle = keep(full.middle);
-  const end = keep(full.end);
-  if (!middle.includes("pen") && !start.includes("pen") && !end.includes("pen")) {
-    middle.unshift("pen");
-  }
-  return { start, middle, end, off: full.off };
-}
 
 export class EmbedInlineEditor implements InlineEditorHandle {
   private surface: InkSurface | null = null;
@@ -310,6 +284,15 @@ export class EmbedInlineEditor implements InlineEditorHandle {
       ...(savedPenIds as Set<BarItemId>),
     ]);
 
+    const mountedPreset: "essentials" | "own" =
+      plugin.pillRow === true && plugin.settings.toolbarPreset === "essentials"
+        ? "essentials"
+        : "own";
+    const storedLayout = (): unknown =>
+      mountedPreset === "essentials"
+        ? plugin.settings.toolbarEssentials
+        : plugin.settings.toolbarLayout;
+
     this.toolbar = new Toolbar(
       toolbarHost,
       palette,
@@ -411,6 +394,10 @@ export class EmbedInlineEditor implements InlineEditorHandle {
             if (file) void this.pastePicture(file);
           });
         },
+        onLayout: (edited) => {
+          const full = normalizeLayout(storedLayout(), savedPenIds);
+          plugin.saveToolbarLayout(mergeInlineLayout(full, edited), mountedPreset);
+        },
         onWritingGuides: () => this.guides?.toggle(),
         writingGuidesEnabled: () => this.guides?.on() === true,
         renderWritingGuides: (body, resize) => this.guides?.render(body, resize) ?? (() => {}),
@@ -457,8 +444,9 @@ export class EmbedInlineEditor implements InlineEditorHandle {
       {
         defaultSize: plugin.settings.defaultSize,
         reservedColors: [plugin.settings.defaultColor, ...(plugin.settings.customColors ?? [])],
-        // The notebook's own layout, less what a block has no use for.
-        layout: inlineLayoutFrom(plugin.settings.toolbarLayout, savedPenIds),
+        // The active preset's layout, less what a block has no use for.
+        layout: inlineLayoutFrom(storedLayout(), savedPenIds),
+        preset: mountedPreset,
         allowedItems,
         popoverBounds: slotEl,
         // A press anywhere in the block, the page included, closes a popover.
