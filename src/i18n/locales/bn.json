@@ -3738,5 +3738,9 @@
   "notebooks.companion.errWrite": "PDF লেখা যায়নি। আগেরটি রাখা হয়েছে।",
   "notebooks.companion.errFrontmatter": "নোটবইয়ের বৈশিষ্ট্য পড়া যায়নি। ঠিক করে আবার চেষ্টা করুন।",
   "notebooks.companion.errPath": "ওই ফোল্ডারে PDF রাখা যাবে না।",
-  "notebooks.companion.errDuplicate": "এই নোটবইয়ের একটি কপি একই PDF রাখছে। কপিতে এটি বন্ধ করুন।"
+  "notebooks.companion.errDuplicate": "এই নোটবইয়ের একটি কপি একই PDF রাখছে। কপিতে এটি বন্ধ করুন।",
+  "notebooks.handwrite.firstUseIntro": "প্রতিটি হাতে লেখার ব্লক একটি নোটবুক ফাইলে (.notebook.md) পৃষ্ঠা হিসেবে সংরক্ষিত হয় এবং আপনার নোটের ভিতরে দেখানো হয়।",
+  "notebooks.handwrite.modeNoteDescription": "এই নোটে যুক্ত থাকা নোটবুকটি আবার ব্যবহার করুন, অথবা প্রয়োজনে Obsidian-এর সংযুক্তি ফোল্ডারে একটি নতুন নোটবুক তৈরি করুন।",
+  "notebooks.handwrite.modeAskDescription": "প্রতিবার একটি ব্লক যোগ করার সময় বিদ্যমান নোটবুক বেছে নিন বা নতুন একটি তৈরি করুন।",
+  "notebooks.handwrite.modeOneDescription": "এরপর একটি নোটবুক বেছে নিন। প্রতিটি নোটের নতুন হাতে লেখার ব্লক এতে সংরক্ষিত হবে।"
 }

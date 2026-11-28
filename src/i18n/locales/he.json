@@ -3849,5 +3849,9 @@
   "notebooks.companion.errWrite": "לא ניתן היה לכתוב את ה-PDF. הקודם נשמר.",
   "notebooks.companion.errFrontmatter": "לא ניתן היה לקרוא את מאפייני המחברת. תקן אותם ונסה שוב.",
   "notebooks.companion.errPath": "התיקייה הזו לא יכולה להכיל את ה-PDF.",
-  "notebooks.companion.errDuplicate": "עותק של המחברת הזו שומר על אותו PDF. כבה זאת בעותק."
+  "notebooks.companion.errDuplicate": "עותק של המחברת הזו שומר על אותו PDF. כבה זאת בעותק.",
+  "notebooks.handwrite.firstUseIntro": "כל מקטע כתב יד נשמר כעמוד בקובץ מחברת (.notebook.md) ומוצג בתוך ההערה שלך.",
+  "notebooks.handwrite.modeNoteDescription": "השתמש שוב במחברת המקושרת בהערה זו, או צור חדשה בתיקיית הקבצים המצורפים של Obsidian בעת הצורך.",
+  "notebooks.handwrite.modeAskDescription": "בחר מחברת קיימת או צור חדשה בכל פעם שאתה מוסיף מקטע.",
+  "notebooks.handwrite.modeOneDescription": "בחר מחברת בשלב הבא. מקטעי כתב יד חדשים מכל הערה יישמרו בה."
 }

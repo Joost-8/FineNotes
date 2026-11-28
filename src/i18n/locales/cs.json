@@ -3960,5 +3960,9 @@
   "notebooks.companion.errWrite": "PDF se nepodařilo zapsat. Předchozí zůstalo zachováno.",
   "notebooks.companion.errFrontmatter": "Vlastnosti sešitu se nepodařilo přečíst. Opravte je a zkuste to znovu.",
   "notebooks.companion.errPath": "Tato složka nemůže PDF obsahovat.",
-  "notebooks.companion.errDuplicate": "Kopie tohoto sešitu udržuje stejné PDF. Vypněte to v kopii."
+  "notebooks.companion.errDuplicate": "Kopie tohoto sešitu udržuje stejné PDF. Vypněte to v kopii.",
+  "notebooks.handwrite.firstUseIntro": "Každý blok ručního psaní se uloží jako stránka v souboru zápisníku (.notebook.md) a zobrazí se v poznámce.",
+  "notebooks.handwrite.modeNoteDescription": "Znovu použije zápisník propojený v této poznámce, nebo podle potřeby vytvoří nový ve složce příloh Obsidianu.",
+  "notebooks.handwrite.modeAskDescription": "Pokaždé při přidání bloku vyberte existující zápisník nebo vytvořte nový.",
+  "notebooks.handwrite.modeOneDescription": "V dalším kroku vyberte zápisník. Nové bloky ručního psaní ze všech poznámek se uloží do něj."
 }

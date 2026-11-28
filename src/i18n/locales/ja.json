@@ -3624,5 +3624,9 @@
   "notebooks.companion.errWrite": "PDF を書き込めませんでした。前のものは残してあります。",
   "notebooks.companion.errFrontmatter": "ノートブックのプロパティを読み込めませんでした。修正してからもう一度お試しください。",
   "notebooks.companion.errPath": "そのフォルダには PDF を置けません。",
-  "notebooks.companion.errDuplicate": "このノートブックのコピーが同じ PDF を保っています。コピー側でオフにしてください。"
+  "notebooks.companion.errDuplicate": "このノートブックのコピーが同じ PDF を保っています。コピー側でオフにしてください。",
+  "notebooks.handwrite.firstUseIntro": "各手書きブロックはノートブックファイル (.notebook.md) の1ページとして保存され、ノート内に表示されます。",
+  "notebooks.handwrite.modeNoteDescription": "このノートにリンクされているノートブックを再利用するか、必要に応じて Obsidian の添付ファイルフォルダに作成します。",
+  "notebooks.handwrite.modeAskDescription": "ブロックを追加するたびに、既存のノートブックを選ぶか新しく作成します。",
+  "notebooks.handwrite.modeOneDescription": "次にノートブックを選びます。すべてのノートの新しい手書きブロックがそこに保存されます。"
 }

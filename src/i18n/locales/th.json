@@ -3624,5 +3624,9 @@
   "notebooks.companion.errWrite": "เขียน PDF ไม่ได้ เก็บฉบับก่อนหน้าไว้แล้ว",
   "notebooks.companion.errFrontmatter": "อ่านคุณสมบัติของสมุดบันทึกไม่ได้ แก้ไขแล้วลองอีกครั้ง",
   "notebooks.companion.errPath": "โฟลเดอร์นั้นเก็บ PDF ไม่ได้",
-  "notebooks.companion.errDuplicate": "สำเนาของสมุดบันทึกนี้รักษา PDF ฉบับเดียวกันไว้ ปิดในสำเนา"
+  "notebooks.companion.errDuplicate": "สำเนาของสมุดบันทึกนี้รักษา PDF ฉบับเดียวกันไว้ ปิดในสำเนา",
+  "notebooks.handwrite.firstUseIntro": "บล็อกลายมือแต่ละบล็อกจะถูกบันทึกเป็นหนึ่งหน้าในไฟล์สมุดบันทึก (.notebook.md) และแสดงภายในโน้ตของคุณ",
+  "notebooks.handwrite.modeNoteDescription": "ใช้สมุดบันทึกที่เชื่อมโยงไว้ในโน้ตนี้ซ้ำ หรือสร้างใหม่ในโฟลเดอร์ไฟล์แนบของ Obsidian หากจำเป็น",
+  "notebooks.handwrite.modeAskDescription": "เลือกสมุดบันทึกที่มีอยู่หรือสร้างใหม่ทุกครั้งที่คุณเพิ่มบล็อก",
+  "notebooks.handwrite.modeOneDescription": "เลือกสมุดบันทึกในขั้นถัดไป บล็อกลายมือใหม่จากทุกโน้ตจะถูกเก็บไว้ในสมุดนี้"
 }

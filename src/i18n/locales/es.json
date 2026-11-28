@@ -3738,5 +3738,9 @@
   "notebooks.companion.errWrite": "No se pudo escribir el PDF. Se conservó el anterior.",
   "notebooks.companion.errFrontmatter": "No se pudieron leer las propiedades del cuaderno. Corrígelas e inténtalo de nuevo.",
   "notebooks.companion.errPath": "Esa carpeta no puede contener el PDF.",
-  "notebooks.companion.errDuplicate": "Una copia de este cuaderno mantiene el mismo PDF. Desactívalo en la copia."
+  "notebooks.companion.errDuplicate": "Una copia de este cuaderno mantiene el mismo PDF. Desactívalo en la copia.",
+  "notebooks.handwrite.firstUseIntro": "Cada bloque manuscrito se guarda como una página en un archivo de cuaderno (.notebook.md) y se muestra dentro de tu nota.",
+  "notebooks.handwrite.modeNoteDescription": "Reutiliza un cuaderno enlazado en esta nota o crea uno en la carpeta de adjuntos de Obsidian si hace falta.",
+  "notebooks.handwrite.modeAskDescription": "Elige un cuaderno existente o crea uno nuevo cada vez que añadas un bloque.",
+  "notebooks.handwrite.modeOneDescription": "Elige un cuaderno a continuación. Los nuevos bloques manuscritos de cada nota se guardarán en él."
 }

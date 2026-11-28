@@ -26050,6 +26050,12 @@ button.goodobsidian-ns-companion-folder.clickable-icon {
 }
 
 /* The first Handwrite here: where blocks go, three rows and Continue. */
+.goodobsidian-hw-blocks-intro {
+  margin-bottom: var(--size-4-3);
+  font-size: var(--font-ui-small);
+  line-height: 1.45;
+  color: var(--text-muted);
+}
 .goodobsidian-hw-blocks {
   display: flex;
   flex-direction: column;
@@ -26057,7 +26063,7 @@ button.goodobsidian-ns-companion-folder.clickable-icon {
 }
 .goodobsidian-hw-blocks-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--size-4-2);
   width: 100%;
   height: auto;
@@ -26076,13 +26082,30 @@ button.goodobsidian-ns-companion-folder.clickable-icon {
 }
 .goodobsidian-hw-blocks-icon {
   display: flex;
+  flex: none;
+  margin-top: 2px;
   color: var(--text-muted);
 }
-.goodobsidian-hw-blocks-name {
+.goodobsidian-hw-blocks-copy {
+  display: flex;
   flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.goodobsidian-hw-blocks-name {
+  font-weight: var(--font-medium);
+}
+.goodobsidian-hw-blocks-desc {
+  font-size: var(--font-ui-smaller);
+  line-height: 1.4;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
 }
 .goodobsidian-hw-blocks-check {
   display: flex;
+  flex: none;
+  margin-top: 2px;
   color: var(--interactive-accent);
   visibility: hidden;
 }

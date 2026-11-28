@@ -3738,5 +3738,9 @@
   "notebooks.companion.errWrite": "PDF’ni yozib bo‘lmadi. Avvalgisi saqlab qolindi.",
   "notebooks.companion.errFrontmatter": "Daftar xossalarini o‘qib bo‘lmadi. Ularni to‘g‘rilab, qayta urinib ko‘ring.",
   "notebooks.companion.errPath": "Bu papkada PDF saqlab bo‘lmaydi.",
-  "notebooks.companion.errDuplicate": "Bu daftarning nusxasi xuddi shu PDF’ni saqlab turibdi. Nusxada uni o‘chiring."
+  "notebooks.companion.errDuplicate": "Bu daftarning nusxasi xuddi shu PDF’ni saqlab turibdi. Nusxada uni o‘chiring.",
+  "notebooks.handwrite.firstUseIntro": "Har bir qo'lyozma bloki daftar faylida (.notebook.md) sahifa sifatida saqlanadi va qaydingiz ichida ko'rsatiladi.",
+  "notebooks.handwrite.modeNoteDescription": "Ushbu qaydda bog'langan daftardan qayta foydalaning yoki kerak bo'lsa Obsidian ilovalar jildida yangisini yarating.",
+  "notebooks.handwrite.modeAskDescription": "Har safar blok qo'shganda mavjud daftarni tanlang yoki yangisini yarating.",
+  "notebooks.handwrite.modeOneDescription": "Keyingi bosqichda daftarni tanlang. Har bir qayddagi yangi qo'lyozma bloklari unga tushadi."
 }

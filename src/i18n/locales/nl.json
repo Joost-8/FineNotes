@@ -3738,5 +3738,9 @@
   "notebooks.companion.errWrite": "De PDF kon niet worden geschreven. De vorige is bewaard.",
   "notebooks.companion.errFrontmatter": "De eigenschappen van het notitieboek konden niet worden gelezen. Herstel ze en probeer het opnieuw.",
   "notebooks.companion.errPath": "Die map kan de PDF niet bevatten.",
-  "notebooks.companion.errDuplicate": "Een kopie van dit notitieboek houdt dezelfde PDF bij. Zet het uit in de kopie."
+  "notebooks.companion.errDuplicate": "Een kopie van dit notitieboek houdt dezelfde PDF bij. Zet het uit in de kopie.",
+  "notebooks.handwrite.firstUseIntro": "Elk handschriftblok wordt opgeslagen als een pagina in een notitieboekbestand (.notebook.md) en in je notitie getoond.",
+  "notebooks.handwrite.modeNoteDescription": "Gebruikt een notitieboek dat aan deze notitie is gekoppeld opnieuw, of maakt er zo nodig een aan in de bijlagenmap van Obsidian.",
+  "notebooks.handwrite.modeAskDescription": "Kies een bestaand notitieboek of maak een nieuw aan telkens wanneer je een blok toevoegt.",
+  "notebooks.handwrite.modeOneDescription": "Kies hierna een notitieboek. Nieuwe handschriftblokken uit elke notitie komen daarin terecht."
 }

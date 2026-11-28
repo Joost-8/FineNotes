@@ -3624,5 +3624,9 @@
   "notebooks.companion.errWrite": "Không thể ghi PDF. Bản trước đã được giữ lại.",
   "notebooks.companion.errFrontmatter": "Không đọc được thuộc tính của sổ tay. Hãy sửa rồi thử lại.",
   "notebooks.companion.errPath": "Thư mục đó không thể chứa PDF.",
-  "notebooks.companion.errDuplicate": "Một bản sao của sổ tay này giữ cùng PDF. Hãy tắt trong bản sao."
+  "notebooks.companion.errDuplicate": "Một bản sao của sổ tay này giữ cùng PDF. Hãy tắt trong bản sao.",
+  "notebooks.handwrite.firstUseIntro": "Mỗi khối viết tay được lưu thành một trang trong tệp sổ tay (.notebook.md) và hiển thị bên trong ghi chú của bạn.",
+  "notebooks.handwrite.modeNoteDescription": "Dùng lại sổ tay được liên kết trong ghi chú này, hoặc tạo mới trong thư mục tệp đính kèm của Obsidian nếu cần.",
+  "notebooks.handwrite.modeAskDescription": "Chọn một sổ tay có sẵn hoặc tạo sổ mới mỗi khi bạn thêm khối.",
+  "notebooks.handwrite.modeOneDescription": "Chọn một sổ tay ở bước tiếp theo. Các khối viết tay mới từ mọi ghi chú sẽ được lưu vào đó."
 }

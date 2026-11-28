@@ -3738,5 +3738,9 @@
   "notebooks.companion.errWrite": "PDF-ja nuk u shkrua. E mëparshmja u ruajt.",
   "notebooks.companion.errFrontmatter": "Vetitë e fletores nuk u lexuan. Korrigjoji dhe provo përsëri.",
   "notebooks.companion.errPath": "Ajo dosje nuk mund ta mbajë PDF-në.",
-  "notebooks.companion.errDuplicate": "Një kopje e kësaj fletoreje mban të njëjtën PDF. Çaktivizoje në kopje."
+  "notebooks.companion.errDuplicate": "Një kopje e kësaj fletoreje mban të njëjtën PDF. Çaktivizoje në kopje.",
+  "notebooks.handwrite.firstUseIntro": "Çdo bllok shkrimi me dorë ruhet si faqe në një skedar fletoreje (.notebook.md) dhe shfaqet brenda shënimit tuaj.",
+  "notebooks.handwrite.modeNoteDescription": "Ripërdorni një fletore të lidhur në këtë shënim ose krijoni një në dosjen e bashkëngjitjeve të Obsidian nëse nevojitet.",
+  "notebooks.handwrite.modeAskDescription": "Zgjidhni një fletore ekzistuese ose krijoni një të re sa herë që shtoni një bllok.",
+  "notebooks.handwrite.modeOneDescription": "Zgjidhni një fletore më pas. Blloqet e reja të shkrimit me dorë nga çdo shënim do të ruhen në të."
 }

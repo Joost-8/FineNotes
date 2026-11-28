@@ -133,6 +133,18 @@ export function handwriteBlocksLabel(mode: HandwriteBlocks): string {
   }
 }
 
+/** Short description of each storage choice in the first-use dialog. */
+export function handwriteBlocksDescription(mode: HandwriteBlocks): string {
+  switch (mode) {
+    case "note":
+      return t("notebooks.handwrite.modeNoteDescription");
+    case "ask":
+      return t("notebooks.handwrite.modeAskDescription");
+    case "one":
+      return t("notebooks.handwrite.modeOneDescription");
+  }
+}
+
 const MODE_ICONS: Record<HandwriteBlocks, string> = {
   note: "file-text",
   ask: "list",
@@ -140,28 +152,34 @@ const MODE_ICONS: Record<HandwriteBlocks, string> = {
 };
 
 /**
- * The first "Handwrite here" asks once where blocks go: the three choices,
- * "One notebook per note" picked, and Continue. Closing it any other way
- * keeps what is picked: it never stops the block.
+ * The first "Handwrite here" asks where blocks go: the three choices,
+ * "One notebook per note" picked, and Continue. Dismissing it without
+ * pressing Continue cancels without saving the first-use flag, so the
+ * prompt appears again until the user confirms a choice.
  */
 export class HandwriteBlocksModal extends Modal {
   private picked: HandwriteBlocks = "note";
+  private confirmed = false;
   private done = false;
 
   constructor(
     app: App,
-    private readonly onChosen: (mode: HandwriteBlocks) => void,
+    private readonly onChosen: (mode: HandwriteBlocks | null) => void,
   ) {
     super(app);
   }
 
-  static choose(app: App): Promise<HandwriteBlocks> {
+  static choose(app: App): Promise<HandwriteBlocks | null> {
     return new Promise((resolve) => new HandwriteBlocksModal(app, resolve).open());
   }
 
   override onOpen(): void {
     this.modalEl.addClass("goodobsidian-hw-blocks-modal");
     this.setTitle(t("notebooks.handwrite.firstUseTitle"));
+    this.contentEl.createDiv({
+      cls: "goodobsidian-hw-blocks-intro",
+      text: t("notebooks.handwrite.firstUseIntro"),
+    });
     const list = this.contentEl.createDiv({
       cls: "goodobsidian-hw-blocks",
       attr: { role: "radiogroup", "aria-label": t("notebooks.handwrite.firstUseTitle") },
@@ -180,7 +198,12 @@ export class HandwriteBlocksModal extends Modal {
         attr: { type: "button", role: "radio" },
       });
       setIcon(row.createSpan({ cls: "goodobsidian-hw-blocks-icon" }), MODE_ICONS[mode]);
-      row.createSpan({ cls: "goodobsidian-hw-blocks-name", text: handwriteBlocksLabel(mode) });
+      const copy = row.createSpan({ cls: "goodobsidian-hw-blocks-copy" });
+      copy.createSpan({ cls: "goodobsidian-hw-blocks-name", text: handwriteBlocksLabel(mode) });
+      copy.createSpan({
+        cls: "goodobsidian-hw-blocks-desc",
+        text: handwriteBlocksDescription(mode),
+      });
       setIcon(row.createSpan({ cls: "goodobsidian-hw-blocks-check" }), "check");
       row.addEventListener("click", () => {
         this.picked = mode;
@@ -198,7 +221,10 @@ export class HandwriteBlocksModal extends Modal {
       cls: "mod-cta",
       text: t("notebooks.handwrite.continue"),
     });
-    go.addEventListener("click", () => this.close());
+    go.addEventListener("click", () => {
+      this.confirmed = true;
+      this.close();
+    });
     window.setTimeout(() => go.focus(), 0);
   }
 
@@ -206,6 +232,6 @@ export class HandwriteBlocksModal extends Modal {
     this.contentEl.empty();
     if (this.done) return;
     this.done = true;
-    this.onChosen(this.picked);
+    this.onChosen(this.confirmed ? this.picked : null);
   }
 }

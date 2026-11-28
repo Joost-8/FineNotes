@@ -3624,5 +3624,9 @@
   "notebooks.companion.errWrite": "មិនអាចសរសេរ PDF បានទេ។ បានរក្សាឯកសារមុន។",
   "notebooks.companion.errFrontmatter": "មិនអាចអានលក្ខណសម្បត្តិរបស់សៀវភៅកត់ត្រាបានទេ។ សូមកែ រួចសាកល្បងម្ដងទៀត។",
   "notebooks.companion.errPath": "ថតនោះមិនអាចផ្ទុក PDF បានទេ។",
-  "notebooks.companion.errDuplicate": "ច្បាប់ចម្លងនៃសៀវភៅកត់ត្រានេះរក្សា PDF ដូចគ្នា។ សូមបិទវាក្នុងច្បាប់ចម្លង។"
+  "notebooks.companion.errDuplicate": "ច្បាប់ចម្លងនៃសៀវភៅកត់ត្រានេះរក្សា PDF ដូចគ្នា។ សូមបិទវាក្នុងច្បាប់ចម្លង។",
+  "notebooks.handwrite.firstUseIntro": "ប្លុកសរសេរដៃនីមួយៗត្រូវបានរក្សាទុកជាទំព័រមួយក្នុងឯកសារសៀវភៅកំណត់ត្រា (.notebook.md) និងបង្ហាញក្នុងកំណត់ត្រារបស់អ្នក។",
+  "notebooks.handwrite.modeNoteDescription": "ប្រើសៀវភៅកំណត់ត្រាដែលបានភ្ជាប់ក្នុងកំណត់ត្រានេះឡើងវិញ ឬបង្កើតថ្មីក្នុងថតឯកសារភ្ជាប់របស់ Obsidian បើចាំបាច់។",
+  "notebooks.handwrite.modeAskDescription": "ជ្រើសរើសសៀវភៅកំណត់ត្រាដែលមានស្រាប់ ឬបង្កើតថ្មីរៀងរាល់ពេលអ្នកបន្ថែមប្លុក។",
+  "notebooks.handwrite.modeOneDescription": "ជ្រើសរើសសៀវភៅកំណត់ត្រាបន្ទាប់។ ប្លុកសរសេរដៃថ្មីពីគ្រប់កំណត់ត្រានឹងចូលទៅក្នុងនោះ។"
 }

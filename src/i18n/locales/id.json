@@ -3624,5 +3624,9 @@
   "notebooks.companion.errWrite": "PDF tidak dapat ditulis. Yang sebelumnya dipertahankan.",
   "notebooks.companion.errFrontmatter": "Properti buku catatan tidak dapat dibaca. Perbaiki lalu coba lagi.",
   "notebooks.companion.errPath": "Folder itu tidak dapat menyimpan PDF.",
-  "notebooks.companion.errDuplicate": "Salinan buku catatan ini menjaga PDF yang sama. Matikan di salinan."
+  "notebooks.companion.errDuplicate": "Salinan buku catatan ini menjaga PDF yang sama. Matikan di salinan.",
+  "notebooks.handwrite.firstUseIntro": "Setiap blok tulisan tangan disimpan sebagai halaman dalam file buku catatan (.notebook.md) dan ditampilkan di dalam catatan Anda.",
+  "notebooks.handwrite.modeNoteDescription": "Gunakan kembali buku catatan yang tertaut di catatan ini, atau buat baru di folder lampiran Obsidian jika perlu.",
+  "notebooks.handwrite.modeAskDescription": "Pilih buku catatan yang ada atau buat yang baru setiap kali Anda menambahkan blok.",
+  "notebooks.handwrite.modeOneDescription": "Pilih buku catatan berikutnya. Blok tulisan tangan baru dari setiap catatan akan disimpan di dalamnya."
 }

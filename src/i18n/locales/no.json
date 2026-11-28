@@ -3738,5 +3738,9 @@
   "notebooks.companion.errWrite": "PDF-en kunne ikke skrives. Den forrige ble beholdt.",
   "notebooks.companion.errFrontmatter": "Notatbokens egenskaper kunne ikke leses. Rett dem og prøv igjen.",
   "notebooks.companion.errPath": "Den mappen kan ikke romme PDF-en.",
-  "notebooks.companion.errDuplicate": "En kopi av denne notatboken holder den samme PDF-en. Slå det av i kopien."
+  "notebooks.companion.errDuplicate": "En kopi av denne notatboken holder den samme PDF-en. Slå det av i kopien.",
+  "notebooks.handwrite.firstUseIntro": "Hver håndskriftsblokk lagres som en side i en notatbokfil (.notebook.md) og vises inne i notatet ditt.",
+  "notebooks.handwrite.modeNoteDescription": "Bruk en notatbok lenket i dette notatet på nytt, eller opprett en i Obsidians vedleggsmappe ved behov.",
+  "notebooks.handwrite.modeAskDescription": "Velg en eksisterende notatbok eller opprett en ny hver gang du legger til en blokk.",
+  "notebooks.handwrite.modeOneDescription": "Velg en notatbok neste. Nye håndskriftsblokker fra alle notater lagres i den."
 }

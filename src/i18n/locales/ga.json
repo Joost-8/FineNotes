@@ -4071,5 +4071,9 @@
   "notebooks.companion.errWrite": "Níorbh fhéidir an PDF a scríobh. Coinníodh an ceann roimhe.",
   "notebooks.companion.errFrontmatter": "Níorbh fhéidir airíonna an leabhair nótaí a léamh. Ceartaigh iad agus bain triail eile as.",
   "notebooks.companion.errPath": "Ní féidir leis an bhfillteán sin an PDF a choinneáil.",
-  "notebooks.companion.errDuplicate": "Coinníonn cóip den leabhar nótaí seo an PDF céanna. Cuir as é sa chóip."
+  "notebooks.companion.errDuplicate": "Coinníonn cóip den leabhar nótaí seo an PDF céanna. Cuir as é sa chóip.",
+  "notebooks.handwrite.firstUseIntro": "Sábháiltear gach bloc lámhscríbhneoireachta mar leathanach i gcomhad leabhair nótaí (.notebook.md) agus taispeántar laistigh de do nóta é.",
+  "notebooks.handwrite.modeNoteDescription": "Athúsáid leabhar nótaí atá nasctha sa nóta seo, nó cruthaigh ceann i bhfillteán ceangaltán Obsidian más gá.",
+  "notebooks.handwrite.modeAskDescription": "Roghnaigh leabhar nótaí atá ann cheana nó cruthaigh ceann nua gach uair a chuireann tú bloc leis.",
+  "notebooks.handwrite.modeOneDescription": "Roghnaigh leabhar nótaí ina dhiaidh seo. Rachaidh bloic nua lámhscríbhneoireachta ó gach nóta isteach ann."
 }

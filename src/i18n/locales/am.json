@@ -3738,5 +3738,9 @@
   "notebooks.companion.errWrite": "PDF መጻፍ አልተቻለም። ቀዳሚው ተጠብቋል።",
   "notebooks.companion.errFrontmatter": "የማስታወሻ ደብተሩን ንብረቶች ማንበብ አልተቻለም። ያስተካክሏቸው እና እንደገና ይሞክሩ።",
   "notebooks.companion.errPath": "ያ ማህደር PDF ማስቀመጥ አይችልም።",
-  "notebooks.companion.errDuplicate": "የዚህ ማስታወሻ ደብተር ቅጂ ተመሳሳዩን PDF ይይዛል። በቅጂው ውስጥ ያጥፉት።"
+  "notebooks.companion.errDuplicate": "የዚህ ማስታወሻ ደብተር ቅጂ ተመሳሳዩን PDF ይይዛል። በቅጂው ውስጥ ያጥፉት።",
+  "notebooks.handwrite.firstUseIntro": "እያንዳንዱ የእጅ ጽሑፍ ክፍል በማስታወሻ ደብተር ፋይል (.notebook.md) ውስጥ እንደ ገጽ ተቀምጦ በማስታወሻዎ ውስጥ ይታያል።",
+  "notebooks.handwrite.modeNoteDescription": "በዚህ ማስታወሻ ውስጥ የተገናኘውን ማስታወሻ ደብተር እንደገና ይጠቀሙ፣ ወይም ካስፈለገ በObsidian አባሪ አቃፊ ውስጥ አዲስ ይፍጠሩ።",
+  "notebooks.handwrite.modeAskDescription": "በእያንዳንዱ ጊዜ ክፍል ሲያክሉ ነባር ማስታወሻ ደብተር ይምረጡ ወይም አዲስ ይፍጠሩ።",
+  "notebooks.handwrite.modeOneDescription": "ቀጥሎ ማስታወሻ ደብተር ይምረጡ። ከእያንዳንዱ ማስታወሻ የሚመጡ አዳዲስ የእጅ ጽሑፍ ክፍሎች እዚያ ይገባሉ።"
 }

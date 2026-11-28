@@ -3738,5 +3738,9 @@
   "notebooks.companion.errWrite": "PDF:ää ei voitu kirjoittaa. Edellinen säilytettiin.",
   "notebooks.companion.errFrontmatter": "Muistikirjan ominaisuuksia ei voitu lukea. Korjaa ne ja yritä uudelleen.",
   "notebooks.companion.errPath": "Tuo kansio ei voi sisältää PDF:ää.",
-  "notebooks.companion.errDuplicate": "Tämän muistikirjan kopio pitää samaa PDF:ää. Poista se käytöstä kopiossa."
+  "notebooks.companion.errDuplicate": "Tämän muistikirjan kopio pitää samaa PDF:ää. Poista se käytöstä kopiossa.",
+  "notebooks.handwrite.firstUseIntro": "Jokainen käsinkirjoituslohko tallennetaan sivuna muistikirjatiedostoon (.notebook.md) ja näytetään muistiinpanossasi.",
+  "notebooks.handwrite.modeNoteDescription": "Käytä uudelleen tähän muistiinpanoon linkitettyä muistikirjaa tai luo tarvittaessa uusi Obsidianin liitekansioon.",
+  "notebooks.handwrite.modeAskDescription": "Valitse olemassa oleva muistikirja tai luo uusi joka kerta, kun lisäät lohkon.",
+  "notebooks.handwrite.modeOneDescription": "Valitse muistikirja seuraavaksi. Kaikkien muistiinpanojen uudet käsinkirjoituslohkot tallennetaan siihen."
 }

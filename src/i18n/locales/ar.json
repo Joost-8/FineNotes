@@ -4182,5 +4182,9 @@
   "notebooks.companion.errWrite": "تعذّرت كتابة ملف PDF. تم الاحتفاظ بالسابق.",
   "notebooks.companion.errFrontmatter": "تعذّرت قراءة خصائص الدفتر. أصلحها ثم حاول مرة أخرى.",
   "notebooks.companion.errPath": "لا يمكن لذلك المجلد أن يحتوي ملف PDF.",
-  "notebooks.companion.errDuplicate": "نسخة من هذا الدفتر تُبقي ملف PDF نفسه. أوقف ذلك في النسخة."
+  "notebooks.companion.errDuplicate": "نسخة من هذا الدفتر تُبقي ملف PDF نفسه. أوقف ذلك في النسخة.",
+  "notebooks.handwrite.firstUseIntro": "يُحفظ كل مقطع خط يد كصفحة في ملف دفتر ملاحظات (.notebook.md) ويظهر داخل ملاحظتك.",
+  "notebooks.handwrite.modeNoteDescription": "أعد استخدام دفتر ملاحظات مرتبط بهذه الملاحظة، أو أنشئ واحدًا في مجلد المرفقات في Obsidian عند الحاجة.",
+  "notebooks.handwrite.modeAskDescription": "اختر دفتر ملاحظات موجودًا أو أنشئ واحدًا جديدًا في كل مرة تضيف فيها مقطعًا.",
+  "notebooks.handwrite.modeOneDescription": "اختر دفتر ملاحظات تاليًا. ستُحفظ مقاطع خط اليد الجديدة من كل ملاحظة فيه."
 }

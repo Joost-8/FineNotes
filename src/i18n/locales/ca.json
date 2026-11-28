@@ -3738,5 +3738,9 @@
   "notebooks.companion.errWrite": "No s’ha pogut escriure el PDF. S’ha conservat l’anterior.",
   "notebooks.companion.errFrontmatter": "No s’han pogut llegir les propietats del quadern. Corregeix-les i torna-ho a provar.",
   "notebooks.companion.errPath": "Aquesta carpeta no pot contenir el PDF.",
-  "notebooks.companion.errDuplicate": "Una còpia d’aquest quadern manté el mateix PDF. Desactiva-ho a la còpia."
+  "notebooks.companion.errDuplicate": "Una còpia d’aquest quadern manté el mateix PDF. Desactiva-ho a la còpia.",
+  "notebooks.handwrite.firstUseIntro": "Cada bloc escrit a mà es desa com una pàgina en un fitxer de quadern (.notebook.md) i es mostra dins de la nota.",
+  "notebooks.handwrite.modeNoteDescription": "Reutilitza un quadern enllaçat en aquesta nota o crea'n un a la carpeta de fitxers adjunts d'Obsidian si cal.",
+  "notebooks.handwrite.modeAskDescription": "Tria un quadern existent o crea'n un de nou cada vegada que afegeixis un bloc.",
+  "notebooks.handwrite.modeOneDescription": "Tria un quadern a continuació. Els nous blocs escrits a mà de cada nota s'hi desaran."
 }

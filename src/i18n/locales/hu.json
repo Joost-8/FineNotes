@@ -3738,5 +3738,9 @@
   "notebooks.companion.errWrite": "A PDF-et nem sikerült megírni. Az előzőt megtartottuk.",
   "notebooks.companion.errFrontmatter": "A jegyzetfüzet tulajdonságait nem sikerült beolvasni. Javítsd ki őket, majd próbáld újra.",
   "notebooks.companion.errPath": "Ebbe a mappába nem fér be a PDF.",
-  "notebooks.companion.errDuplicate": "A jegyzetfüzet egy másolata ugyanazt a PDF-et tartja karban. Kapcsold ki a másolatban."
+  "notebooks.companion.errDuplicate": "A jegyzetfüzet egy másolata ugyanazt a PDF-et tartja karban. Kapcsold ki a másolatban.",
+  "notebooks.handwrite.firstUseIntro": "Minden kézírásos blokk egy jegyzetfüzetfájl (.notebook.md) oldalaként mentődik el, és a jegyzetedben jelenik meg.",
+  "notebooks.handwrite.modeNoteDescription": "Újrahasználja az ebben a jegyzetben hivatkozott jegyzetfüzetet, vagy szükség esetén létrehoz egyet az Obsidian mellékletmappájában.",
+  "notebooks.handwrite.modeAskDescription": "Minden blokk hozzáadásakor válassz egy meglévő jegyzetfüzetet, vagy hozz létre egy újat.",
+  "notebooks.handwrite.modeOneDescription": "Ezután válassz egy jegyzetfüzetet. Minden jegyzet új kézírásos blokkjai ebbe kerülnek."
 }
