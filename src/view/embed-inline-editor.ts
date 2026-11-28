@@ -30,7 +30,15 @@ import {
   isInlineSketchPage,
   mergeInlinePageEdits,
 } from "../model/inline-sketch";
-import { DARK_PAPER, LIGHT_PAPER, type PaperTheme } from "../canvas/backdrop";
+import {
+  DARK_PAPER,
+  LIGHT_PAPER,
+  drawSynthetic,
+  pageLook,
+  type PaperTheme,
+} from "../canvas/backdrop";
+import { paintWritingGuides } from "../canvas/writing-guides";
+import type { WritingGuideStyle } from "../model/writing-guides";
 import { inlineKeyVerdict } from "./inline-editor-keys";
 import { WriteHold } from "./write-hold";
 import { TemplatePickerModal } from "./template-picker";
@@ -107,6 +115,9 @@ function inlineLayoutFrom(raw: unknown, savedPenIds: ReadonlySet<string>): Toolb
   return { start, middle, end, off: full.off };
 }
 
+/** Remembers whether the inline options pill was open when the user last closed a block. */
+let lastInlineOptionsOpen = false;
+
 export class EmbedInlineEditor implements InlineEditorHandle {
   private surface: InkSurface | null = null;
   private toolbar: Toolbar | null = null;
@@ -116,6 +127,13 @@ export class EmbedInlineEditor implements InlineEditorHandle {
   private doc: InkDocument | null = null;
   private basePage: Page | null = null;
   private stageEl: HTMLElement | null = null;
+  private toolbarHostEl: HTMLElement | null = null;
+  private fauxBgEl: HTMLElement | null = null;
+  private fauxHeaderEl: HTMLElement | null = null;
+  private fauxCanvasEl: HTMLCanvasElement | null = null;
+  private fauxHeaderPx = 0;
+  private mountedPillRow = false;
+  private guidesStyle: WritingGuideStyle | null = null;
   private manualHeight: number | null = null;
   private closed = false;
   private revision = 0;
@@ -236,11 +254,11 @@ export class EmbedInlineEditor implements InlineEditorHandle {
   private effectivePaperTheme(): PaperTheme {
     if (this.isTransparent()) {
       const base = this.paperIsDark ? DARK_PAPER : LIGHT_PAPER;
-      return { ...base, desk: "transparent", seeThrough: true };
+      return { ...base, desk: "transparent", edge: "transparent", seeThrough: true };
     }
     // Paper follows the dark-pages setting, as in the notebook view.
     const shown = shownPaperTheme(this.req.plugin.settings, this.paperIsDark);
-    return { ...shown, desk: "transparent" };
+    return { ...shown, desk: "transparent", edge: "transparent" };
   }
 
   /** The page's paper changed (picked, or undone): the surface, the bar and the block follow. */
@@ -252,6 +270,7 @@ export class EmbedInlineEditor implements InlineEditorHandle {
     this.surface?.setPaperTheme(theme);
     this.toolbar?.setNight(theme.night === true);
     this.syncStageAspect();
+    this.paintFauxHeader();
     this.surface?.refreshInlinePage(page.id);
   }
 
@@ -263,30 +282,129 @@ export class EmbedInlineEditor implements InlineEditorHandle {
     const expandable = isInlineSketchPage(page);
 
     slotEl.addClass("is-inline-editing");
-    const embedHost = slotEl.closest<HTMLElement>(".internal-embed, .cm-embed-block");
-    embedHost?.addClass("finenotes-inline-active-embed");
-    const scroller = slotEl.closest<HTMLElement>(".cm-scroller");
+    const scroller = slotEl.closest<HTMLElement>(".cm-scroller, .markdown-preview-view");
+    const activeHosts: HTMLElement[] = [];
+    const viewWin = slotEl.ownerDocument.defaultView ?? window;
+    for (let el = slotEl.parentElement; el && el !== scroller; el = el.parentElement) {
+      if (
+        el.matches(".internal-embed, .cm-embed-block, .callout, .callout-content, .cm-callout") ||
+        viewWin.getComputedStyle(el).overflowY === "hidden"
+      ) {
+        el.addClass("finenotes-inline-active-embed");
+        activeHosts.push(el);
+      }
+    }
     scroller?.addClass("finenotes-inline-active-scroller");
     this.cleanups.push(() => {
       slotEl.removeClass("is-inline-editing");
-      embedHost?.removeClass("finenotes-inline-active-embed");
+      for (const host of activeHosts) host.removeClass("finenotes-inline-active-embed");
       scroller?.removeClass("finenotes-inline-active-scroller");
       const p = this.doc?.pages[0];
       if (p) slotEl.setCssStyles({ aspectRatio: `${p.geometry.width} / ${p.geometry.height}` });
     });
 
-    const overlay = slotEl.createDiv({ cls: "goodobsidian-inline-overlay" });
+    const overlay = slotEl.createDiv({ cls: "goodobsidian-inline-overlay is-mounting" });
     this.cleanups.push(() => overlay.remove());
+    const mountWin = slotEl.ownerDocument.defaultView ?? window;
+    const mountRaf = mountWin.requestAnimationFrame(() => overlay.removeClass("is-mounting"));
+    this.cleanups.push(() => mountWin.cancelAnimationFrame(mountRaf));
+
+    // Non-writable faux paper backdrop extending behind both the primary bar and open floating pill.
+    const fauxBg = overlay.createDiv({ cls: "goodobsidian-inline-faux-bg" });
+    const fauxCanvas = fauxBg.createEl("canvas", { cls: "goodobsidian-inline-faux-canvas" });
+    this.fauxBgEl = fauxBg;
+    this.fauxCanvasEl = fauxCanvas;
 
     // Native FineNotes Toolbar directly at the top of the active block (same style as normal notebooks)
     const toolbarHost = overlay.createDiv({ cls: "goodobsidian-inline-toolbar-host" });
+    this.toolbarHostEl = toolbarHost;
+
+    // Spacer that expands smoothly beneath the primary bar when a floating tool pill opens.
+    const fauxHeader = overlay.createDiv({ cls: "goodobsidian-inline-faux-header" });
+    this.fauxHeaderEl = fauxHeader;
+
+    // Let the scroller position the bar during fast scrolling. A theme can
+    // still introduce a scroll container between the block and that scroller.
+    let needsTransform = false;
+    for (let el: HTMLElement | null = slotEl; el && el !== scroller; el = el.parentElement) {
+      const overflow = viewWin.getComputedStyle(el).overflowY;
+      if (overflow !== "visible" && overflow !== "clip") {
+        needsTransform = true;
+        break;
+      }
+    }
+    const followInset = 2;
+    toolbarHost.setCssProps({ "--gob-inline-follow-inset": `${followInset}px` });
+    let scheduleFollow: (() => void) | undefined;
+    if (needsTransform) {
+      toolbarHost.addClass("is-floating-follow");
+      let followFrame = 0;
+      let lastShift = 0;
+      const updateFollow = (): void => {
+        followFrame = 0;
+        const rootTop = scroller ? scroller.getBoundingClientRect().top + scroller.clientTop : 0;
+        const rect = overlay.getBoundingClientRect();
+        const distance = rootTop + followInset - rect.top;
+        const shift = Math.max(0, Math.min(rect.height - toolbarHost.offsetHeight, distance));
+        if (shift !== lastShift) {
+          toolbarHost.setCssProps({ "--gob-pill-y": `${shift}px` });
+          if (shift > 0 !== lastShift > 0) toolbarHost.toggleClass("is-detached", shift > 0);
+          lastShift = shift;
+        }
+      };
+      const onScroll = (): void => {
+        if (!followFrame) followFrame = viewWin.requestAnimationFrame(updateFollow);
+      };
+      scheduleFollow = onScroll;
+      const scrollTarget: EventTarget = scroller ?? viewWin;
+      scrollTarget.addEventListener("scroll", onScroll, { passive: true });
+      this.cleanups.push(() => {
+        scrollTarget.removeEventListener("scroll", onScroll);
+        if (followFrame) viewWin.cancelAnimationFrame(followFrame);
+      });
+      onScroll();
+    } else {
+      // Sticky positions the bar without a scroll listener. The observer
+      // only switches its appearance when the block passes the sticky inset.
+      const anchor = overlay.createDiv({ cls: "goodobsidian-sr-only" });
+      anchor.setCssStyles({ top: "0", left: "0" });
+      const observer = new IntersectionObserver(
+        (entries) => {
+          const entry = entries[entries.length - 1];
+          if (!entry?.rootBounds) return;
+          const detached =
+            entry.target === anchor
+              ? entry.intersectionRatio < 1 && entry.boundingClientRect.top < entry.rootBounds.top
+              : entry.boundingClientRect.top < entry.rootBounds.top;
+          toolbarHost.toggleClass("is-detached", detached);
+        },
+        { root: scroller, rootMargin: `-${followInset}px 0px 0px`, threshold: [0, 1] },
+      );
+      observer.observe(anchor);
+      observer.observe(overlay); // Also handle a jump past the anchor into a visible block.
+      this.cleanups.push(() => observer.disconnect());
+    }
 
     // Stage hosting FineNotes' real InkSurface
     const stage = overlay.createDiv({ cls: "goodobsidian-inline-stage" });
     this.stageEl = stage;
     this.syncStageAspect();
-    const ro = new ResizeObserver(() => this.syncStageAspect());
-    ro.observe(stage);
+    let lastOverlayW = overlay.clientWidth;
+    const ro = new ResizeObserver(() => {
+      scheduleFollow?.();
+      const w = overlay.clientWidth;
+      if (w === lastOverlayW || w <= 0) return;
+      lastOverlayW = w;
+      overlay.addClass("is-mounting");
+      this.syncStageAspect();
+      this.paintFauxHeader();
+      mountWin.requestAnimationFrame(() => overlay.removeClass("is-mounting"));
+    });
+    ro.observe(overlay);
+    if (needsTransform) {
+      ro.observe(toolbarHost);
+      if (scroller) ro.observe(scroller);
+    }
     this.cleanups.push(() => ro.disconnect());
 
     // Bottom drag handle for expandable inline sketches
@@ -309,6 +427,8 @@ export class EmbedInlineEditor implements InlineEditorHandle {
       ...INLINE_BAR_ITEMS,
       ...(savedPenIds as Set<BarItemId>),
     ]);
+
+    this.mountedPillRow = plugin.pillRow === true;
 
     this.toolbar = new Toolbar(
       toolbarHost,
@@ -411,6 +531,7 @@ export class EmbedInlineEditor implements InlineEditorHandle {
             if (file) void this.pastePicture(file);
           });
         },
+        onPillPlaced: () => this.syncFauxHeader(),
         onWritingGuides: () => this.guides?.toggle(),
         writingGuidesEnabled: () => this.guides?.on() === true,
         renderWritingGuides: (body, resize) => this.guides?.render(body, resize) ?? (() => {}),
@@ -463,8 +584,8 @@ export class EmbedInlineEditor implements InlineEditorHandle {
         popoverBounds: slotEl,
         // A press anywhere in the block, the page included, closes a popover.
         dismissRoot: slotEl,
-        pillRow: true,
-        startOptionsTucked: true,
+        pillRow: plugin.pillRow === true,
+        startOptionsTucked: !lastInlineOptionsOpen,
         onlyStylusMode: plugin.stylusOnly,
         fingerDrawing: plugin.fingerDrawing,
       },
@@ -590,6 +711,7 @@ export class EmbedInlineEditor implements InlineEditorHandle {
       },
     );
     this.surface.setInlineWidthLocked(true);
+    this.syncStageAspect();
     this.syncFingerScroll();
     this.surface.setBackdropPainter(new VaultBackdropRenderer(null));
     this.images.onReady = (path) => this.surface?.imageReady(path);
@@ -611,7 +733,11 @@ export class EmbedInlineEditor implements InlineEditorHandle {
       settings: plugin.settings,
       save: () => void plugin.saveSettings(),
       path: () => this.req.notebookFile.path,
-      apply: (style) => this.surface?.setWritingGuides(style),
+      apply: (style) => {
+        this.guidesStyle = style;
+        this.surface?.setWritingGuides(style);
+        this.paintFauxHeader();
+      },
       changed: () => this.toolbar?.syncWritingGuides(),
     });
     const onKey = (e: KeyboardEvent): void => {
@@ -699,6 +825,89 @@ export class EmbedInlineEditor implements InlineEditorHandle {
     );
   }
 
+  private syncFauxHeader(): void {
+    const header = this.fauxHeaderEl;
+    const host = this.toolbarHostEl;
+    if (!header || !host) return;
+    if (this.mountedPillRow) {
+      this.fauxHeaderPx = 0;
+      header.setCssStyles({ height: "0px" });
+      this.fauxBgEl?.setCssStyles({ height: "0px" });
+      return;
+    }
+    const pill = host.querySelector<HTMLElement>(".goodobsidian-options");
+    // Keep the original paper position as the bar floats over the block.
+    const open = pill !== null && !pill.hasClass("is-collapsed") && pill.childElementCount > 0;
+    const nextPx = open ? Math.max(48, Math.ceil(pill.offsetHeight || 44) + 14) : 0;
+    if (nextPx !== this.fauxHeaderPx) {
+      this.fauxHeaderPx = nextPx;
+      header.setCssStyles({ height: `${nextPx}px` });
+    }
+    this.paintFauxHeader();
+  }
+
+  private paintFauxHeader(): void {
+    const bg = this.fauxBgEl;
+    const canvas = this.fauxCanvasEl;
+    const host = this.toolbarHostEl;
+    const stage = this.stageEl;
+    const page = this.doc?.pages[0];
+    if (!bg || !canvas || !host || !stage || !page) return;
+    if (this.mountedPillRow) {
+      bg.setCssStyles({ height: "0px" });
+      return;
+    }
+    const barH = Math.ceil(host.getBoundingClientRect().height || host.offsetHeight || 52);
+    const totalH = barH + this.fauxHeaderPx + (this.fauxHeaderPx > 0 ? 1 : 0);
+    bg.setCssStyles({ height: `${totalH}px` });
+    if (totalH <= 0) return;
+    // Paint at least barH + max pill height once, pinned to the bottom edge of `bg`,
+    // so opening/closing the pill never stretches the canvas bitmap or repaints per frame.
+    const paintH = Math.max(totalH, barH + 64);
+    const cssW = stage.clientWidth || this.req.slotEl.clientWidth || page.geometry.width;
+    if (!(cssW > 0)) return;
+    const dpr = Math.min(
+      3,
+      (this.req.slotEl.ownerDocument.defaultView ?? window).devicePixelRatio || 1,
+    );
+    const pxW = Math.max(1, Math.round(cssW * dpr));
+    const pxH = Math.max(1, Math.round(paintH * dpr));
+    if (canvas.width !== pxW || canvas.height !== pxH) {
+      canvas.width = pxW;
+      canvas.height = pxH;
+    }
+    canvas.setCssStyles({ height: `${paintH}px` });
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, pxW, pxH);
+    const scale = cssW / page.geometry.width;
+    const headerPageH = paintH / scale;
+    const theme = this.effectivePaperTheme();
+    const geom = { width: page.geometry.width, height: headerPageH };
+    ctx.save();
+    ctx.scale(scale * dpr, scale * dpr);
+    const phase = { x: 0, y: -headerPageH };
+    if (page.backdrop.kind !== "pdf") {
+      drawSynthetic(ctx, page.backdrop, geom, theme, 1, undefined, phase);
+    }
+    if (this.guidesStyle) {
+      const look = pageLook(page.backdrop, theme);
+      const fauxPage: Page = { ...page, geometry: geom };
+      paintWritingGuides(
+        ctx,
+        fauxPage,
+        { minX: 0, minY: 0, maxX: geom.width, maxY: geom.height },
+        this.guidesStyle,
+        look.paper,
+        scale,
+        scale * dpr,
+        phase,
+      );
+    }
+    ctx.restore();
+  }
+
   private syncStageAspect(): void {
     const page = this.doc?.pages[0];
     if (!page || !this.stageEl) return;
@@ -742,6 +951,7 @@ export class EmbedInlineEditor implements InlineEditorHandle {
       startH = page.geometry.height;
       const cssW = this.stageEl.clientWidth || 600;
       scale = page.geometry.width / cssW;
+      this.stageEl.addClass("is-resizing");
       handle.setPointerCapture(pointerId);
     };
     const onMove = (e: PointerEvent): void => {
@@ -762,6 +972,7 @@ export class EmbedInlineEditor implements InlineEditorHandle {
       if (pointerId === null || e.pointerId !== pointerId) return;
       if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
       pointerId = null;
+      this.stageEl?.removeClass("is-resizing");
       const page = this.doc?.pages[0];
       if (page) this.surface?.refreshInlinePage(page.id);
       this.scheduleSave();
@@ -908,6 +1119,10 @@ export class EmbedInlineEditor implements InlineEditorHandle {
     if (this.saveTimer !== null) {
       window.clearTimeout(this.saveTimer);
       this.saveTimer = null;
+    }
+    const pill = this.toolbarHostEl?.querySelector<HTMLElement>(".goodobsidian-options");
+    if (pill) {
+      lastInlineOptionsOpen = !pill.hasClass("is-collapsed") && pill.childElementCount > 0;
     }
     this.toolbar?.destroy();
     this.toolbar = null;

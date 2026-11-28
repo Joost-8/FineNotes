@@ -1492,7 +1492,17 @@ export class Toolbar {
       this.pillDock = offeredDock(this.barDock);
     }
     // Docked, the pen's pill covers nothing: it need not start tucked away.
-    this.optionsVisible = !options.startOptionsTucked && !this.startsTucked(state.tool);
+    this.optionsVisible =
+      options.startOptionsTucked !== undefined
+        ? !options.startOptionsTucked
+        : !this.startsTucked(state.tool);
+    this.optionsEl.addClass("is-mounting");
+    this.optionsEl.toggleClass("is-collapsed", !this.optionsVisible);
+    const mountWin = this.host.ownerDocument.defaultView ?? window;
+    const mountRaf = mountWin.requestAnimationFrame(() =>
+      this.optionsEl.removeClass("is-mounting"),
+    );
+    this.disposers.push(() => mountWin.cancelAnimationFrame(mountRaf));
     this.optionsEl.addClass(`is-dock-${this.pillDock}`);
     this.optionsEl.toggleClass("is-upright", isUpright(this.pillDock));
     bindPillDrag(this.optionsEl, {
@@ -8098,6 +8108,7 @@ export class Toolbar {
     else {
       this.clearForPill(null, this.host.getBoundingClientRect());
       this.syncPillRow(false, 0);
+      this.callbacks.onPillPlaced?.();
     }
   }
 
