@@ -202,13 +202,35 @@ export function printPaintSize(cssWidth: number, aspect = 0): { cssWidth: number
   return embedPaintSize(width, PRINT_DPR, aspect) ?? { cssWidth: PRINT_FALLBACK_WIDTH, dpr: 1 };
 }
 
+const QUOTE_PREFIX_RE = /^((?:[ \t]*>[ \t]?)+)/;
+
+function stripQuotePrefix(line: string, depth: number): string | null {
+  let rest = line;
+  for (let i = 0; i < depth; i++) {
+    const match = /^[ \t]*>[ \t]?/.exec(rest);
+    if (!match) return null;
+    rest = rest.slice(match[0].length);
+  }
+  return rest;
+}
+
+/** Whether `line` is an Obsidian callout header (`> [!type] optional title`). */
+export function isCalloutHeaderLine(line: string): boolean {
+  const quote = QUOTE_PREFIX_RE.exec(line);
+  if (!quote) return false;
+  return /^\[![^\]]+\]/.test(line.slice(quote[1].length).trim());
+}
+
 /**
  * The text that embeds a new notebook at the cursor: `link` (as Obsidian's
  * `generateMarkdownLink` wrote it, `[[…]]` or `[…](…)`) made an embed, on a
  * paragraph of its own: a blank line from text `before` and `after` the
  * cursor on its line, and from the lines above (`above`) and below
  * (`below`) when they hold text, so the embed shows as a block and the text
- * around it stays where it was.
+ * around it stays where it was. Inside a blockquote or callout (`> `), keeps
+ * the quote prefix on every inserted line so the callout is never broken, and
+ * separates unquoted following text with a blank line so CommonMark does not
+ * pull it into the quote as a lazy continuation.
  */
 export function embedInsertion(
   link: string,
@@ -218,8 +240,52 @@ export function embedInsertion(
   below = "",
 ): string {
   const embed = link.startsWith("!") ? link : `!${link}`;
-  const head = before.trim() ? "\n\n" : above.trim() ? "\n" : "";
-  const tail = after.trim() ? "\n\n" : below.trim() ? "\n" : "";
+  const quote = QUOTE_PREFIX_RE.exec(before);
+  if (!quote) {
+    const head = before.trim() ? "\n\n" : above.trim() ? "\n" : "";
+    const tail = after.trim() ? "\n\n" : below.trim() ? "\n" : "";
+    return `${head}${embed}${tail}`;
+  }
+  const rawPrefix = quote[1];
+  const depth = (rawPrefix.match(/>/g) ?? []).length;
+  const hasTrailingSpace = /[ \t]$/.test(rawPrefix);
+  const prefix = hasTrailingSpace ? rawPrefix : `${rawPrefix} `;
+  const blank = prefix.trimEnd();
+  const beforeText = before.slice(rawPrefix.length).trim();
+  const afterText = after.trim();
+  const aboveQuoted = stripQuotePrefix(above, depth);
+  const belowQuoted = stripQuotePrefix(below, depth);
+  const aboveText = aboveQuoted !== null ? aboveQuoted.trim() : "";
+  const belowText = belowQuoted !== null ? belowQuoted.trim() : "";
+  const isCalloutHeader = (s: string): boolean => /^\[![^\]]+\]/.test(s);
+
+  let head: string;
+  if (beforeText) {
+    head = isCalloutHeader(beforeText) ? `\n${prefix}` : `\n${blank}\n${prefix}`;
+  } else if (aboveText && !isCalloutHeader(aboveText)) {
+    head = `\n${prefix}`;
+  } else {
+    head = hasTrailingSpace ? "" : " ";
+  }
+
+  const belowQuote = QUOTE_PREFIX_RE.exec(below);
+  const belowDepth = belowQuote ? (belowQuote[1].match(/>/g) ?? []).length : 0;
+  let tail: string;
+  if (afterText) {
+    tail = `\n${blank}\n${prefix}`;
+  } else if (belowText) {
+    tail = `\n${blank}`;
+  } else if (belowDepth === 0 && below.trim()) {
+    // Unquoted text directly below would lazy-continue the blockquote without a blank line.
+    tail = "\n";
+  } else if (belowDepth > 0 && belowDepth < depth) {
+    // Returning to an outer callout/quote: keep the parent quote intact with an outer blank quote line.
+    const outerPrefix = belowQuote ? belowQuote[1].trimEnd() : "";
+    const outerText = stripQuotePrefix(below, belowDepth)?.trim() ?? "";
+    tail = outerText ? `\n${outerPrefix}` : "";
+  } else {
+    tail = "";
+  }
   return `${head}${embed}${tail}`;
 }
 

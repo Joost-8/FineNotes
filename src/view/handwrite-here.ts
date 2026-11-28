@@ -22,7 +22,7 @@ import {
 import { cleanTitle, newNoteBody, stripInkSuffix } from "../model/new-notebook";
 import { HandwriteBlocksModal, InlineNotebookPickerModal } from "./handwrite-modals";
 import { type BlockTarget, blockTarget, followHandwriteNotebook } from "../model/handwrite-blocks";
-import { embedInsertion } from "./page-embed-model";
+import { embedInsertion, isCalloutHeaderLine } from "./page-embed-model";
 import { editClosedNotebook, notebookIsOpen, readClosedNotebook } from "./notebook-transaction";
 import { EmbedInlineEditor, type EmbedInlineEditRequest } from "./embed-inline-editor";
 import { closeAnyInlineEditor, closeInlineEditorIn } from "./inline-editor-registry";
@@ -219,8 +219,13 @@ export async function insertInlineHandwriting(
   }
 
   const link = plugin.app.fileManager.generateMarkdownLink(notebook, source.path, `#id=${pageId}`);
-  const cursor = editor.getCursor();
-  const lineText = editor.getLine(cursor.line);
+  const rawCursor = editor.getCursor();
+  const lineText = editor.getLine(rawCursor.line);
+  // If the cursor is anywhere inside a callout header (`> [!answer] Custom title`),
+  // insert after the header so the custom title is never split.
+  const cursor = isCalloutHeaderLine(lineText)
+    ? { line: rawCursor.line, ch: lineText.length }
+    : rawCursor;
   const before = lineText.slice(0, cursor.ch);
   const after = lineText.slice(cursor.ch);
   const above = cursor.line > 0 ? editor.getLine(cursor.line - 1) : "";

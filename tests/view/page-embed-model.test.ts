@@ -384,6 +384,42 @@ describe("embedInsertion", () => {
     expect(embedInsertion("[[A.notebook]]", "", "", "", "")).toBe("![[A.notebook]]");
     expect(embedInsertion("[[A.notebook]]", "", "", "Text", "  ")).toBe("\n![[A.notebook]]");
   });
+
+  it("preserves callout and blockquote prefixes without breaking the callout", () => {
+    expect(embedInsertion("[[A.notebook]]", "> ", "", "> [!answer]", "")).toBe("![[A.notebook]]");
+    expect(embedInsertion("[[A.notebook]]", ">", "", "> [!answer]", "")).toBe(" ![[A.notebook]]");
+    expect(embedInsertion("[[A.notebook]]", "> [!answer]", "", "", "")).toBe("\n> ![[A.notebook]]");
+    expect(embedInsertion("[[A.notebook]]", "> [!answer]", "", "", "> Existing")).toBe(
+      "\n> ![[A.notebook]]\n>",
+    );
+    expect(embedInsertion("[[A.notebook]]", "> ", "", "> Some text", "")).toBe(
+      "\n> ![[A.notebook]]",
+    );
+    expect(embedInsertion("[[A.notebook]]", "> Some text", "", "> [!answer]", "")).toBe(
+      "\n>\n> ![[A.notebook]]",
+    );
+    expect(embedInsertion("[[A.notebook]]", "> Some ", "text", "", "")).toBe(
+      "\n>\n> ![[A.notebook]]\n>\n> ",
+    );
+    expect(embedInsertion("[[A.notebook]]", "> > Nested", "", "", "")).toBe(
+      "\n> >\n> > ![[A.notebook]]",
+    );
+    // Unquoted text directly below must be separated by a blank line so CommonMark
+    // does not pull it into the quote as a lazy continuation.
+    expect(embedInsertion("[[A.notebook]]", "> ", "", "> [!answer]", "Outside paragraph")).toBe(
+      "![[A.notebook]]\n",
+    );
+    expect(embedInsertion("[[A.notebook]]", "> [!answer] Custom title", "", "", "")).toBe(
+      "\n> ![[A.notebook]]",
+    );
+    // Nested callout returning to its outer parent must not emit a bare blank line that splits the parent.
+    expect(embedInsertion("[[A.notebook]]", "> > Nested", "", "", "> Outer text")).toBe(
+      "\n> >\n> > ![[A.notebook]]\n>",
+    );
+    expect(embedInsertion("[[A.notebook]]", "> > ", "", "> > [!note]", ">")).toBe(
+      "![[A.notebook]]",
+    );
+  });
 });
 
 /** A board's one page, as a new board starts: five blocks each way, nothing on it. */
