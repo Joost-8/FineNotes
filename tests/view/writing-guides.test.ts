@@ -5,6 +5,7 @@ import type { WritingGuideStyle } from "../../src/model/writing-guides";
 vi.mock("obsidian", () => import("./fake-obsidian"));
 
 const { bindWritingGuides } = await import("../../src/view/writing-guides");
+const { Toolbar } = await import("../../src/view/toolbar");
 
 function bind(settings: typeof DEFAULT_SETTINGS, path: string, save = vi.fn()) {
   const shown: Array<WritingGuideStyle | null> = [];
@@ -80,4 +81,99 @@ it("shows a notebook's guides once its file loads, after binding with none (the 
   path = "B.md";
   binding.sync();
   expect(shown.at(-1)).toBeNull();
+});
+
+it("opens the guides popover from the right caret strip when horizontal and bottom strip when upright", () => {
+  interface MiniEl {
+    classes: Set<string>;
+    listeners: Map<string, Array<(e: unknown) => void>>;
+    createEl: () => MiniEl;
+    createSpan: () => MiniEl;
+    setAttr: () => void;
+    setAttribute: () => void;
+    addClass: (c: string) => void;
+    hasClass: (c: string) => boolean;
+    addEventListener: (t: string, fn: (e: unknown) => void) => void;
+    querySelector: () => null;
+    empty: () => void;
+    setText: () => void;
+    getBoundingClientRect: () => DOMRect;
+    click: (e: { detail: number; clientX: number; clientY: number }) => void;
+  }
+  const makeEl = (): MiniEl => {
+    const classes = new Set<string>();
+    const listeners = new Map<string, Array<(e: unknown) => void>>();
+    const el: MiniEl = {
+      classes,
+      listeners,
+      createEl: () => makeEl(),
+      createSpan: () => makeEl(),
+      setAttr: () => undefined,
+      setAttribute: () => undefined,
+      addClass: (c) => {
+        classes.add(c);
+      },
+      hasClass: (c) => classes.has(c),
+      addEventListener: (t, fn) => {
+        const list = listeners.get(t) ?? [];
+        list.push(fn);
+        listeners.set(t, list);
+      },
+      querySelector: () => null,
+      empty: () => undefined,
+      setText: () => undefined,
+      getBoundingClientRect: () =>
+        ({ left: 0, top: 0, right: 58, bottom: 58, width: 58, height: 58 }) as DOMRect,
+      click: (e) => {
+        for (const fn of listeners.get("click") ?? []) fn(e);
+      },
+    };
+    return el;
+  };
+
+  type FakeBar = Record<string, unknown>;
+  const makeBar = (barDock: "top" | "bottom" | "left" | "right") => {
+    const onWritingGuides = vi.fn();
+    const toggleGuidesPopover = vi.fn();
+    const closePopover = vi.fn();
+    const bar: FakeBar = Object.assign(Object.create(Toolbar.prototype), {
+      barDock,
+      callbacks: { onWritingGuides },
+      toggleGuidesPopover,
+      closePopover,
+      fold: vi.fn(),
+    });
+    const parent = makeEl();
+    const button = (
+      Toolbar.prototype as unknown as {
+        addGuidesButton(p: unknown): MiniEl;
+      }
+    ).addGuidesButton.call(bar, parent);
+    return { button, onWritingGuides, toggleGuidesPopover, closePopover };
+  };
+
+  // Horizontal (top): while on, right edge opens popover; left/body toggles off.
+  const horiz = makeBar("top");
+  horiz.button.addClass("is-on");
+  horiz.button.click({ detail: 1, clientX: 52, clientY: 20 });
+  expect(horiz.toggleGuidesPopover).toHaveBeenCalledOnce();
+  expect(horiz.onWritingGuides).not.toHaveBeenCalled();
+
+  horiz.button.click({ detail: 1, clientX: 20, clientY: 20 });
+  expect(horiz.onWritingGuides).toHaveBeenCalledOnce();
+
+  // Upright (left): while on, bottom strip opens popover; upper/right area toggles off.
+  const upright = makeBar("left");
+  upright.button.addClass("is-on");
+  upright.button.click({ detail: 1, clientX: 20, clientY: 52 });
+  expect(upright.toggleGuidesPopover).toHaveBeenCalledOnce();
+  expect(upright.onWritingGuides).not.toHaveBeenCalled();
+
+  upright.button.click({ detail: 1, clientX: 52, clientY: 20 });
+  expect(upright.onWritingGuides).toHaveBeenCalledOnce();
+
+  // Keyboard activation (detail === 0) always toggles guides instead of opening popover.
+  upright.button.click({ detail: 0, clientX: 20, clientY: 52 });
+  expect(upright.onWritingGuides).toHaveBeenCalledTimes(2);
+  expect(upright.toggleGuidesPopover).toHaveBeenCalledOnce();
 });

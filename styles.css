@@ -8370,7 +8370,8 @@ textarea.goodobsidian-chat-input:focus-visible {
   position: relative;
 }
 
-.goodobsidian-toolbar button.has-caret.is-active {
+.goodobsidian-toolbar button.has-caret.is-active,
+.goodobsidian-toolbar button.has-caret.is-on {
   min-width: 58px;
   padding-right: 18px;
 }
@@ -8386,7 +8387,8 @@ textarea.goodobsidian-chat-input:focus-visible {
   transition: opacity 0.3s ease;
 }
 
-.goodobsidian-toolbar button.has-caret.is-active .goodobsidian-tool-caret {
+.goodobsidian-toolbar button.has-caret.is-active .goodobsidian-tool-caret,
+.goodobsidian-toolbar button.has-caret.is-on .goodobsidian-tool-caret {
   opacity: 0.85;
 }
 
@@ -17125,7 +17127,7 @@ button.clickable-icon.goodobsidian-zoombox-window-button.is-active {
 
 /* A tool with a menu grows downwards, not sideways, its ▾ under the icon. */
 .goodobsidian-toolbar.is-upright button.has-caret.is-active,
-.goodobsidian-toolbar.is-upright button.goodobsidian-ruler-button.is-on,
+.goodobsidian-toolbar.is-upright button.has-caret.is-on,
 .goodobsidian-toolbar.is-upright button.goodobsidian-accessories-button {
   min-width: var(--gob-bar-button, var(--gob-touch));
   height: calc(var(--gob-bar-button, var(--gob-touch)) + 14px);
