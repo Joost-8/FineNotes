@@ -900,6 +900,10 @@ export class InkView extends TextFileView {
   private devicePages: DevicePagesSession | null = null;
   /** Counts loads, so page files read for an earlier one are dropped. */
   private devicePagesRead = 0;
+  /** True while `readDevicePages` is awaiting this notebook's page files. */
+  private devicePagesLoading = false;
+  /** True while the last `readDevicePages` snapshot was partial (pages still syncing). */
+  private devicePagesPartial = false;
   private devicePagesTimer = 0;
   /** The notebook whose "still syncing" notice has shown, so a reread does not repeat it. */
   private devicePagesNoticed: string | null = null;
@@ -1406,6 +1410,8 @@ export class InkView extends TextFileView {
     }
     this.devicePages = null;
     this.devicePagesRead++;
+    this.devicePagesLoading = false;
+    this.devicePagesPartial = false;
     if (doc && payload !== undefined && !held) this.encoder.remember(payload, json);
     // Files it points at that moved while it was closed (#14), and notes
     // its links lead to that Obsidian renamed in the links list.
@@ -1468,7 +1474,13 @@ export class InkView extends TextFileView {
     const shown = this.devicePages;
     if (!shown) return;
     const read = ++this.devicePagesRead;
-    const texts = await shown.readFiles();
+    this.devicePagesLoading = true;
+    let texts: Map<string, string>;
+    try {
+      texts = await shown.readFiles();
+    } finally {
+      if (read === this.devicePagesRead) this.devicePagesLoading = false;
+    }
     if (read !== this.devicePagesRead || this.devicePages !== shown) return;
     if (this.file?.path !== shown.path) return;
     let load: DevicePagesLoad;
@@ -1481,6 +1493,7 @@ export class InkView extends TextFileView {
       return;
     }
     this.doc = load.doc;
+    this.devicePagesPartial = load.syncing;
     if (load.newer.length > 0) {
       if (this.devicePagesNoticed !== shown.path) new Notice(t("view.notice.newerFormat"), 10000);
       this.devicePagesNoticed = shown.path;
@@ -1499,7 +1512,7 @@ export class InkView extends TextFileView {
     if (!this.mounted) return;
     this.showDocument();
     this.matchPdfResolution();
-    this.applyPendingPage();
+    if (!load.syncing) this.applyPendingPage();
   }
 
   /**
@@ -1718,6 +1731,13 @@ export class InkView extends TextFileView {
     this.ownTexts.forget();
     this.devicePages = null;
     this.devicePagesRead++;
+    this.devicePagesLoading = false;
+    this.devicePagesPartial = false;
+    this.pendingSubpath = null;
+    this.pendingPageIndex = null;
+    this.pendingPageId = null;
+    this.pendingSearch = null;
+    this.pendingHighlightPage = false;
     // The worker holds this notebook's pages: let it go with them.
     this.saver.stop();
     this.noteBody = "";
@@ -6339,25 +6359,47 @@ export class InkView extends TextFileView {
       search?: unknown;
       highlightPage?: unknown;
     };
-    if (highlightPage === true) this.pendingHighlightPage = true;
-    if (typeof pageId === "string" && pageId) this.pendingPageId = pageId;
     // A result of Obsidian's own search: its page, with the words lit up (2.5).
     const found =
       typeof match?.content === "string" && Array.isArray(match.matches)
         ? searchMatchTarget(match.content, match.matches as Array<[number, number]>)
         : null;
-    if (found) {
-      this.pendingSearch = found;
-      this.pendingPageIndex = found.pageIndex;
-    } else if (typeof subpath === "string" && subpath) this.pendingSubpath = subpath;
-    else if (typeof pageIndex === "number" && Number.isInteger(pageIndex) && pageIndex >= 0) {
-      // Back or Forward: the page this note was on then (see getEphemeralState);
-      // or a page Home's search found, with its words lit up.
-      this.pendingPageIndex = pageIndex;
-      if (typeof search === "string" && search.trim())
-        this.pendingSearch = { pageIndex, query: search };
-    } else return;
-    if (this.loadedPath !== null && this.loadedPath === this.file?.path) this.applyPendingPage();
+    const hasSubpath = typeof subpath === "string" && subpath.length > 0;
+    const hasPageIndex =
+      typeof pageIndex === "number" && Number.isInteger(pageIndex) && pageIndex >= 0;
+    const hasPageId = typeof pageId === "string" && pageId.length > 0;
+    if (found || hasSubpath || hasPageIndex) {
+      // A newer explicit navigation replaces any earlier deferred request.
+      this.pendingSubpath = null;
+      this.pendingPageIndex = null;
+      this.pendingPageId = hasPageId ? pageId : null;
+      this.pendingSearch = null;
+      this.pendingHighlightPage = highlightPage === true;
+      if (found) {
+        this.pendingSearch = found;
+        this.pendingPageIndex = found.pageIndex;
+      } else if (hasSubpath) {
+        this.pendingSubpath = subpath;
+      } else if (hasPageIndex) {
+        // Back or Forward: the page this note was on then (see getEphemeralState);
+        // or a page Home's search found, with its words lit up.
+        this.pendingPageIndex = pageIndex;
+        if (typeof search === "string" && search.trim())
+          this.pendingSearch = { pageIndex, query: search };
+      }
+    } else {
+      if (highlightPage === true) this.pendingHighlightPage = true;
+      if (hasPageId) this.pendingPageId = pageId;
+      return;
+    }
+    if (
+      this.loadedPath !== null &&
+      this.loadedPath === this.file?.path &&
+      !this.devicePagesLoading &&
+      !this.devicePagesPartial
+    ) {
+      this.applyPendingPage();
+    }
   }
 
   /** What Back and Forward come back to: the page being read. */
@@ -6377,7 +6419,7 @@ export class InkView extends TextFileView {
   private applyPendingPage(attempt = 0): void {
     const surface = this.surface;
     const path = this.loadedPath;
-    if (!surface || path === null) return;
+    if (!surface || path === null || this.devicePagesLoading || this.devicePagesPartial) return;
     const fresh = path !== this.restoredPath;
     const subpath = this.pendingSubpath;
     const back = this.pendingPageIndex;
