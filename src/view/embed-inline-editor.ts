@@ -706,6 +706,8 @@ export class EmbedInlineEditor implements InlineEditorHandle {
     const scale = availW / page.geometry.width;
     const scaledH = Math.max(40, Math.ceil(page.geometry.height * scale));
     this.stageEl.setCssStyles({ height: `${scaledH}px` });
+    const surfaceEl = this.stageEl.querySelector<HTMLElement>(".goodobsidian-surface");
+    if (surfaceEl) surfaceEl.setCssStyles({ height: `${scaledH}px` });
     this.req.slotEl.setCssStyles({ aspectRatio: "" });
     this.req.slotEl.toggleClass("is-transparent", this.isTransparent());
   }
@@ -719,8 +721,6 @@ export class EmbedInlineEditor implements InlineEditorHandle {
       page.geometry = { ...page.geometry, height: nextH };
       this.syncStageAspect();
       this.surface?.refreshInlinePage(page.id);
-      const win = this.req.slotEl.ownerDocument.defaultView ?? window;
-      win.requestAnimationFrame(() => this.surface?.refreshInlinePage(page.id));
       return true;
     }
     return false;
